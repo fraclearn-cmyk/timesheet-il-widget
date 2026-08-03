@@ -1,0 +1,55 @@
+{
+  "widget": {
+    "name": "Timesheet IL",
+    "short_description": "Time tracking",
+    "description": "Widget for time tracking with automatic activity tracking in amoCRM cards"
+  },
+  "session": {
+    "title": "Work Time",
+    "status_idle": "Work day not started",
+    "status_working": "Working",
+    "status_break": "On break",
+    "status_finished": "Day finished",
+    "start_button": "Start work day",
+    "break_button": "Take break",
+    "resume_button": "Resume work",
+    "finish_button": "Finish day",
+    "timer_label": "Work time:",
+    "breaks_label": "Breaks:",
+    "loading": "Loading..."
+  },
+  "activity": {
+    "current_card": "Current card:",
+    "entity_lead": "Lead",
+    "entity_contact": "Contact",
+    "entity_company": "Company",
+    "entity_task": "Task"
+  },
+  "messages": {
+    "session_started": "Work day started!",
+    "break_started": "Break started",
+    "work_resumed": "Work resumed",
+    "session_finished": "Work day finished!",
+    "work_time": "Work time:",
+    "error_loading": "Error loading data",
+    "error_starting": "Error starting work day",
+    "error_break": "Error starting break",
+    "error_resume": "Error resuming work",
+    "error_finish": "Error finishing work day",
+    "confirm_finish": "Finish work day?"
+  },
+  "settings": {
+    "title": "Widget Settings",
+    "api_url": "API URL:",
+    "api_url_placeholder": "http://your-server.com/api/v1",
+    "auto_pause": "Auto-pause when closing card",
+    "require_category": "Require activity category",
+    "track_idle": "Track idle time",
+    "idle_threshold": "Idle threshold (minutes):",
+    "show_team_stats": "Show team statistics",
+    "enable_reports": "Enable reports",
+    "save_button": "Save",
+    "cancel_button": "Cancel",
+    "reset_button": "Reset"
+  }
+}

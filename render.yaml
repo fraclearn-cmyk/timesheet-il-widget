@@ -1,0 +1,38 @@
+# Render.com Configuration for Timesheet IL Widget
+# https://render.com/docs/yaml-spec
+
+services:
+  # Backend Web Service
+  - type: web
+    name: timesheet-backend
+    env: python
+    region: frankfurt
+    plan: free
+    branch: main
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: DEBUG
+        value: False
+      - key: CORS_ORIGINS
+        value: '["https://timesheet-backend.onrender.com","https://*.amocrm.ru","https://*.amocrm.com"]'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: timesheet-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+databases:
+  # PostgreSQL Database
+  - name: timesheet-db
+    databaseName: timesheet_db
+    user: postgres
+    plan: free
+    region: frankfurt

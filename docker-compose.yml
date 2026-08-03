@@ -1,0 +1,65 @@
+name: timesheet-il-widget
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15
+    container_name: timesheet_db
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-timesheet_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: timesheet_backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-timesheet_db}
+      AMOCRM_CLIENT_ID: ${AMOCRM_CLIENT_ID}
+      AMOCRM_CLIENT_SECRET: ${AMOCRM_CLIENT_SECRET}
+      AMOCRM_REDIRECT_URI: ${AMOCRM_REDIRECT_URI}
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      POLLING_INTERVAL: ${POLLING_INTERVAL:-15}
+      INACTIVITY_TIMEOUT: ${INACTIVITY_TIMEOUT:-300}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+      - ./exports:/exports
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Nginx (optional, for production)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: timesheet_nginx
+  #   restart: always
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf
+  #     - ./ssl:/etc/nginx/ssl
+  #   depends_on:
+  #     - backend
+
+volumes:
+  postgres_data:

@@ -1,0 +1,105 @@
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database
+*.db
+*.sqlite3
+*.sql
+*.dump
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker
+docker-compose.override.yml
+
+# Backup files
+*.bak
+*.backup
+backups/
+*.tar.gz
+*.zip
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules (if any)
+node_modules/
+package-lock.json
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Secrets and sensitive data
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+
+# Build artifacts
+timesheet_il_widget.zip
+widget/images/logo.png
+widget/images/icon.png
+
+# Alembic
+# Keep migrations but ignore local stuff
+backend/migrations/versions/__pycache__/
+
+# Local development
+*.local
+
+# Archives
+*.tar
+*.gz
+*.zip
+*.rar

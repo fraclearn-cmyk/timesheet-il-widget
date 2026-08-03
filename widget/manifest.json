@@ -1,0 +1,43 @@
+﻿{
+    "widget":  {
+                   "name":  "widget.timesheet_il",
+                   "description":  "Табель учёта рабочего времени с отслеживанием активности",
+                   "short_description":  "Учёт рабочего времени",
+                   "version":  "1.0.0",
+                   "interface_version":  2,
+                   "init_once":  false,
+                   "locale":  [
+                                  "ru",
+                                  "en"
+                              ],
+                   "installation":  true,
+                   "support":  {
+                                   "link":  "https://example.com/support",
+                                   "email":  "support@example.com"
+                               }
+               },
+    "locations":  [
+                      "lcard-1",
+                      "lcard-2",
+                      "ccard",
+                      "comcard",
+                      "tcard",
+                      "settings"
+                  ],
+    "settings":  {
+                     "login":  "",
+                     "client_id":  "",
+                     "client_secret":  "",
+                     "redirect_uri":  ""
+                 },
+    "tour":  {
+                 "is_tour":  false
+             },
+    "images":  {
+                   "logo":  "images/logo.png",
+                   "icon":  "images/icon.png"
+               },
+    "scopes":  [
+                   "crm"
+               ]
+}

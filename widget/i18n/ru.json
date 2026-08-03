@@ -1,0 +1,55 @@
+{
+  "widget": {
+    "name": "Табель IL",
+    "short_description": "Учёт рабочего времени",
+    "description": "Виджет для учёта рабочего времени с автоматическим отслеживанием активности в карточках amoCRM"
+  },
+  "session": {
+    "title": "Рабочее время",
+    "status_idle": "Рабочий день не начат",
+    "status_working": "Работаю",
+    "status_break": "На перерыве",
+    "status_finished": "День завершён",
+    "start_button": "Начать рабочий день",
+    "break_button": "Перерыв",
+    "resume_button": "Продолжить работу",
+    "finish_button": "Завершить день",
+    "timer_label": "Время работы:",
+    "breaks_label": "Перерывы:",
+    "loading": "Загрузка..."
+  },
+  "activity": {
+    "current_card": "Текущая карточка:",
+    "entity_lead": "Сделка",
+    "entity_contact": "Контакт",
+    "entity_company": "Компания",
+    "entity_task": "Задача"
+  },
+  "messages": {
+    "session_started": "Рабочий день начат!",
+    "break_started": "Перерыв начат",
+    "work_resumed": "Работа возобновлена",
+    "session_finished": "Рабочий день завершён!",
+    "work_time": "Время работы:",
+    "error_loading": "Ошибка загрузки данных",
+    "error_starting": "Ошибка начала рабочего дня",
+    "error_break": "Ошибка начала перерыва",
+    "error_resume": "Ошибка возобновления работы",
+    "error_finish": "Ошибка завершения рабочего дня",
+    "confirm_finish": "Завершить рабочий день?"
+  },
+  "settings": {
+    "title": "Настройки виджета",
+    "api_url": "URL API:",
+    "api_url_placeholder": "http://your-server.com/api/v1",
+    "auto_pause": "Автопауза при закрытии карточки",
+    "require_category": "Требовать категорию активности",
+    "track_idle": "Отслеживать неактивность",
+    "idle_threshold": "Порог неактивности (минут):",
+    "show_team_stats": "Показывать статистику команды",
+    "enable_reports": "Включить отчёты",
+    "save_button": "Сохранить",
+    "cancel_button": "Отмена",
+    "reset_button": "Сбросить"
+  }
+}

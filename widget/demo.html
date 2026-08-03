@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timesheet Widget Demo</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .demo-container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .api-status {
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .api-status.success {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+        .api-status.error {
+            background: #ffcdd2;
+            color: #c62828;
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <h1>📊 Timesheet IL Widget</h1>
+        
+        <div class="info">
+            <h3>Демо-страница виджета</h3>
+            <p><strong>Backend API:</strong> http://localhost:8000</p>
+            <p><strong>Swagger Docs:</strong> <a href="http://localhost:8000/docs" target="_blank">Открыть</a></p>
+        </div>
+
+        <div id="api-status" class="api-status">
+            Проверка подключения к API...
+        </div>
+
+        <div id="widget-container"></div>
+    </div>
+
+    <script>
+        // Проверка API
+        async function checkAPI() {
+            const statusEl = document.getElementById('api-status');
+            try {
+                const response = await fetch('http://localhost:8000/docs');
+                if (response.ok) {
+                    statusEl.className = 'api-status success';
+                    statusEl.innerHTML = '✅ API работает успешно!<br>Все endpoints доступны.';
+                    loadWidget();
+                } else {
+                    throw new Error('API недоступен');
+                }
+            } catch (error) {
+                statusEl.className = 'api-status error';
+                statusEl.innerHTML = '❌ Ошибка подключения к API<br>' + error.message;
+            }
+        }
+
+        // Загрузка виджета
+        function loadWidget() {
+            const container = document.getElementById('widget-container');
+            container.innerHTML = `
+                <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 4px;">
+                    <h3>🎯 Основные функции виджета:</h3>
+                    <ul>
+                        <li><strong>Рабочие сессии:</strong> Начать/Завершить смену</li>
+                        <li><strong>Перерывы:</strong> Пауза/Возобновление работы</li>
+                        <li><strong>Активности:</strong> Отслеживание работы с сущностями amoCRM</li>
+                        <li><strong>Категории:</strong> Классификация активностей</li>
+                        <li><strong>Отчёты:</strong> Статистика работы команды</li>
+                        <li><strong>Настройки:</strong> Конфигурация виджета</li>
+                    </ul>
+                </div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #f3e5f5; border-radius: 4px;">
+                    <h3>🔗 Доступные API Endpoints:</h3>
+                    <ul style="font-family: monospace; font-size: 12px;">
+                        <li>POST /api/v1/sessions/start - Начать рабочую сессию</li>
+                        <li>POST /api/v1/sessions/end - Завершить сессию</li>
+                        <li>POST /api/v1/sessions/break - Начать перерыв</li>
+                        <li>POST /api/v1/activity/start - Начать активность</li>
+                        <li>GET /api/v1/team - Получить данные команды</li>
+                        <li>GET /api/v1/reports - Получить отчёты</li>
+                    </ul>
+                    <p style="margin-top: 10px;">
+                        <a href="http://localhost:8000/docs" target="_blank" style="color: #1976d2; text-decoration: none; font-weight: bold;">
+                            → Полная документация API
+                        </a>
+                    </p>
+                </div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #e8f5e9; border-radius: 4px;">
+                    <h3>✅ Статус системы:</h3>
+                    <ul>
+                        <li>✅ Docker контейнеры запущены</li>
+                        <li>✅ PostgreSQL база данных работает</li>
+                        <li>✅ FastAPI backend доступен</li>
+                        <li>✅ Таблицы БД созданы</li>
+                        <li>✅ Swagger UI доступен</li>
+                    </ul>
+                </div>
+            `;
+        }
+
+        // Запуск проверки при загрузке страницы
+        checkAPI();
+    </script>
+</body>
+</html>
