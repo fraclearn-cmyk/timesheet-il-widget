@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Табель - Командный мониторинг (РОП)</title>
+    <link rel="stylesheet" href="assets/css/rop.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>📊 Командный мониторинг</h1>
+        <div class="header-info">
+            <span id="department-name">Загрузка...</span>
+            <span id="last-update">Обновлено: --:--</span>
+        </div>
+    </header>
+
+    <!-- Filters -->
+    <section class="filters">
+        <div class="filter-buttons">
+            <button class="filter-btn active" data-filter="all">Все <span class="count" id="count-all">0</span></button>
+            <button class="filter-btn" data-filter="working">Работают <span class="count" id="count-working">0</span></button>
+            <button class="filter-btn" data-filter="break">На перерыве <span class="count" id="count-break">0</span></button>
+            <button class="filter-btn" data-filter="finished">Завершили <span class="count" id="count-finished">0</span></button>
+            <button class="filter-btn" data-filter="not-started">Не начали <span class="count" id="count-not-started">0</span></button>
+        </div>
+        <div class="search-box">
+            <input type="text" id="search-input" placeholder="🔍 Поиск по имени...">
+        </div>
+    </section>
+
+    <!-- Stats Summary -->
+    <section class="stats-summary">
+        <div class="stat-card">
+            <div class="stat-label">Онлайн</div>
+            <div class="stat-value" id="stat-online">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Средние часы</div>
+            <div class="stat-value" id="stat-avg-hours">0.0ч</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Опоздали сегодня</div>
+            <div class="stat-value warning" id="stat-late">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Выполнение нормы</div>
+            <div class="stat-value" id="stat-completion">0%</div>
+        </div>
+    </section>
+
+    <!-- Employees Grid -->
+    <section class="employees-section">
+        <h2>Сотрудники</h2>
+        <div class="employees-grid" id="employees-grid">
+            <!-- Employee cards will be inserted here -->
+        </div>
+    </section>
+
+    <!-- KPI Section -->
+    <section class="kpi-section">
+        <h2>KPI подразделения</h2>
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Часы сегодня</div>
+                <div class="kpi-value" id="kpi-today">0.0ч</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Часы неделя</div>
+                <div class="kpi-value" id="kpi-week">0.0ч</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Часы месяц</div>
+                <div class="kpi-value" id="kpi-month">0.0ч</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Опозданий неделя</div>
+                <div class="kpi-value warning" id="kpi-late">0</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Chart Section -->
+    <section class="chart-section">
+        <div class="section-header">
+            <h2>График работы команды</h2>
+            <div class="period-switcher">
+                <button class="btn btn-sm active" data-period="7">7 дней</button>
+                <button class="btn btn-sm" data-period="30">30 дней</button>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="team-chart"></canvas>
+        </div>
+    </section>
+
+    <!-- Timeline Modal -->
+    <div id="timeline-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Timeline: <span id="timeline-user-name"></span></h2>
+                <button class="close-btn" id="close-timeline">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="timeline-info">
+                    <p>Дата: <span id="timeline-date"></span></p>
+                    <p>Всего: <span id="timeline-total">0ч</span></p>
+                    <p>Перерывов: <span id="timeline-breaks">0</span></p>
+                </div>
+                <div class="timeline-grid" id="timeline-grid">
+                    <!-- 96 intervals will be generated here -->
+                </div>
+                <div class="timeline-legend">
+                    <div class="legend-item"><span class="legend-color working"></span> Работа</div>
+                    <div class="legend-item"><span class="legend-color break"></span> Перерыв</div>
+                    <div class="legend-item"><span class="legend-color inactive"></span> Не начато</div>
+                    <div class="legend-item"><span class="legend-dot"></span> CRM активность</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Force Finish Confirmation Modal -->
+    <div id="confirm-modal" class="modal hidden">
+        <div class="modal-content small">
+            <div class="modal-header">
+                <h2>Подтверждение</h2>
+                <button class="close-btn" id="close-confirm">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Завершить рабочий день для <strong id="confirm-user-name"></strong>?</p>
+                <div class="modal-actions">
+                    <button class="btn btn-danger" id="confirm-force-finish">Да, завершить</button>
+                    <button class="btn btn-secondary" id="cancel-force-finish">Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="assets/js/api-client.js"></script>
+    <script src="assets/js/rop.js"></script>
+</body>
+</html>

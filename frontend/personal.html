@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Табель - Личный кабинет</title>
+    <link rel="stylesheet" href="assets/css/personal.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- OVERLAY: Before Workday -->
+    <div id="overlay-before-workday" class="overlay hidden">
+        <div class="overlay-content">
+            <div class="icon-large">🌅</div>
+            <h1>Начните рабочий день</h1>
+            <div class="current-time" id="current-time"></div>
+            <div class="schedule-info" id="schedule-info">
+                <p>Начало рабочего дня: <span id="work-start-time">09:00</span></p>
+            </div>
+            <button class="btn btn-primary btn-large" id="btn-start-work">
+                НАЧАТЬ РАБОТУ
+            </button>
+        </div>
+    </div>
+
+    <!-- OVERLAY: Late -->
+    <div id="overlay-late" class="overlay hidden">
+        <div class="overlay-content">
+            <div class="icon-large warning">⚠️</div>
+            <h1>Вы опоздали</h1>
+            <p class="late-info">Опоздание: <span id="late-minutes">0</span> минут</p>
+            <div class="form-group">
+                <label for="late-reason">Причина опоздания *</label>
+                <textarea 
+                    id="late-reason" 
+                    placeholder="Укажите причину опоздания (минимум 10 символов)" 
+                    rows="4"
+                    required
+                ></textarea>
+                <div class="char-counter">
+                    <span id="reason-length">0</span> / 10 символов
+                </div>
+            </div>
+            <button class="btn btn-primary btn-large" id="btn-start-late">
+                НАЧАТЬ РАБОТУ
+            </button>
+        </div>
+    </div>
+
+    <!-- OVERLAY: Working (Compact Widget) -->
+    <div id="overlay-working" class="widget-compact hidden">
+        <div class="widget-header">
+            <span class="status-badge status-working">Работаю</span>
+            <span class="timer" id="work-timer">00:00:00</span>
+        </div>
+        <div class="widget-body">
+            <div class="crm-status" id="crm-status">
+                <span class="indicator"></span>
+                <span class="label">CRM активность</span>
+            </div>
+            <div class="widget-actions">
+                <button class="btn btn-sm btn-warning" id="btn-take-break">
+                    ☕ Перерыв
+                </button>
+                <button class="btn btn-sm btn-danger" id="btn-finish-work">
+                    🏁 Завершить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- OVERLAY: Break -->
+    <div id="overlay-break" class="overlay hidden">
+        <div class="overlay-content">
+            <div class="icon-large">☕</div>
+            <h1>Перерыв</h1>
+            <div class="timer-large" id="break-timer">00:00:00</div>
+            <div class="break-warning" id="break-warning">
+                <p>⚠️ Перерыв более 15 минут</p>
+            </div>
+            <div class="break-stats">
+                <p>Перерывов сегодня: <span id="break-count">0</span></p>
+                <p>Общее время перерывов: <span id="total-break-time">00:00</span></p>
+            </div>
+            <button class="btn btn-success btn-large" id="btn-resume-work">
+                ВЕРНУТЬСЯ К РАБОТЕ
+            </button>
+        </div>
+    </div>
+
+    <!-- OVERLAY: Finished -->
+    <div id="overlay-finished" class="overlay hidden">
+        <div class="overlay-content">
+            <div class="icon-large success">✅</div>
+            <h1>Рабочий день завершён</h1>
+            <div class="day-summary">
+                <div class="summary-item">
+                    <div class="label">Отработано времени</div>
+                    <div class="value" id="total-work-time">0:00</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Перерывов</div>
+                    <div class="value" id="total-breaks">0</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Время перерывов</div>
+                    <div class="value" id="summary-break-time">0:00</div>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-large hidden" id="btn-restart-work">
+                НАЧАТЬ ЗАНОВО
+            </button>
+            <p class="info-text">Хорошего отдыха! До завтра! 👋</p>
+        </div>
+    </div>
+
+    <!-- Main Dashboard (visible when working) -->
+    <div id="dashboard" class="dashboard hidden">
+        <header class="dashboard-header">
+            <h1>Мой табель</h1>
+            <div class="user-info" id="user-info">
+                <span id="user-name">Загрузка...</span>
+            </div>
+        </header>
+
+        <main class="dashboard-main">
+            <!-- KPI Cards -->
+            <section class="kpi-section">
+                <h2>Мои показатели</h2>
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-label">Сегодня</div>
+                        <div class="kpi-value" id="kpi-today">0.0ч</div>
+                        <div class="kpi-sublabel">из 8ч нормы</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Эта неделя</div>
+                        <div class="kpi-value" id="kpi-week">0.0ч</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Этот месяц</div>
+                        <div class="kpi-value" id="kpi-month">0.0ч</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Опоздания</div>
+                        <div class="kpi-value warning" id="kpi-late">0</div>
+                        <div class="kpi-sublabel">за неделю</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Средний день</div>
+                        <div class="kpi-value" id="kpi-avg">0.0ч</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Выполнение</div>
+                        <div class="kpi-value" id="kpi-completion">0%</div>
+                        <div class="kpi-sublabel">от нормы</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chart Section -->
+            <section class="chart-section">
+                <div class="section-header">
+                    <h2>График работы</h2>
+                    <div class="period-switcher">
+                        <button class="btn btn-sm active" data-period="7">7 дней</button>
+                        <button class="btn btn-sm" data-period="30">30 дней</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="work-chart"></canvas>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="assets/js/api-client.js"></script>
+    <script src="assets/js/personal.js"></script>
+</body>
+</html>

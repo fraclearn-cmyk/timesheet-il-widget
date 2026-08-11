@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Табель - Администрирование</title>
+    <link rel="stylesheet" href="assets/css/admin.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>⚙️ Администрирование системы</h1>
+        <div class="header-info">
+            <span id="admin-name">Админ</span>
+        </div>
+    </header>
+
+    <!-- Tabs Navigation -->
+    <nav class="tabs">
+        <button class="tab-btn active" data-tab="departments">📋 Подразделения</button>
+        <button class="tab-btn" data-tab="users">👥 Пользователи</button>
+        <button class="tab-btn" data-tab="settings">⚙️ Настройки</button>
+        <button class="tab-btn" data-tab="stats">📊 Статистика</button>
+    </nav>
+
+    <!-- Tab: Departments -->
+    <section class="tab-content active" id="tab-departments">
+        <div class="section-header">
+            <h2>Подразделения</h2>
+            <button class="btn btn-primary" id="add-department">+ Добавить подразделение</button>
+        </div>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Название</th>
+                        <th>РОП</th>
+                        <th>Сотрудников</th>
+                        <th>График</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody id="departments-tbody">
+                    <tr><td colspan="5" style="text-align:center;">Загрузка...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Tab: Users -->
+    <section class="tab-content" id="tab-users">
+        <div class="section-header">
+            <h2>Пользователи</h2>
+            <div class="filters">
+                <select id="filter-department">
+                    <option value="">Все подразделения</option>
+                </select>
+                <select id="filter-role">
+                    <option value="">Все роли</option>
+                    <option value="admin">Admin</option>
+                    <option value="rop">ROP</option>
+                    <option value="employee">Employee</option>
+                </select>
+                <input type="text" id="search-user" placeholder="🔍 Поиск...">
+            </div>
+        </div>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Имя</th>
+                        <th>Подразделение</th>
+                        <th>Роль</th>
+                        <th>Статус</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody id="users-tbody">
+                    <tr><td colspan="5" style="text-align:center;">Загрузка...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Tab: Settings -->
+    <section class="tab-content" id="tab-settings">
+        <div class="section-header">
+            <h2>Настройки системы</h2>
+        </div>
+        <div class="settings-container">
+            <div class="settings-group">
+                <h3>График работы</h3>
+                <div class="form-group">
+                    <label>Начало рабочего дня:</label>
+                    <input type="time" id="setting-work-start" value="09:00">
+                </div>
+                <div class="form-group">
+                    <label>Опоздание после:</label>
+                    <input type="time" id="setting-late-after" value="09:15">
+                </div>
+                <div class="form-group">
+                    <label>Норма часов в день:</label>
+                    <input type="number" id="setting-norm-hours" value="8" min="1" max="12">
+                </div>
+                <div class="form-group">
+                    <label>Макс. время перерыва (мин):</label>
+                    <input type="number" id="setting-max-break" value="60" min="15" max="120">
+                </div>
+                <div class="form-group">
+                    <label>Предупреждение перерыва (мин):</label>
+                    <input type="number" id="setting-break-warn" value="15" min="5" max="30">
+                </div>
+            </div>
+            <div class="settings-group">
+                <h3>Уведомления</h3>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="setting-email-notify">
+                        Email уведомления РОПам
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>Частота отчётов:</label>
+                    <select id="setting-report-freq">
+                        <option value="daily">Ежедневно</option>
+                        <option value="weekly" selected>Еженедельно</option>
+                        <option value="monthly">Ежемесячно</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Webhook URL:</label>
+                    <input type="url" id="setting-webhook" placeholder="https://...">
+                </div>
+            </div>
+            <button class="btn btn-primary btn-large" id="save-settings">💾 Сохранить настройки</button>
+        </div>
+    </section>
+
+    <!-- Tab: Stats -->
+    <section class="tab-content" id="tab-stats">
+        <div class="section-header">
+            <h2>Глобальная статистика</h2>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Всего пользователей</div>
+                <div class="stat-value" id="stat-total-users">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Всего подразделений</div>
+                <div class="stat-value" id="stat-total-depts">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Активных сессий</div>
+                <div class="stat-value" id="stat-active-sessions">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Средние часы</div>
+                <div class="stat-value" id="stat-avg-hours">0.0ч</div>
+            </div>
+        </div>
+        <div class="top-departments">
+            <h3>Топ 5 подразделений по часам</h3>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Место</th>
+                        <th>Подразделение</th>
+                        <th>Средние часы</th>
+                        <th>Процент нормы</th>
+                    </tr>
+                </thead>
+                <tbody id="top-departments-tbody">
+                    <tr><td colspan="4" style="text-align:center;">Загрузка...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Modal: Add/Edit Department -->
+    <div id="department-modal" class="modal hidden">
+        <div class="modal-content small">
+            <div class="modal-header">
+                <h2 id="department-modal-title">Добавить подразделение</h2>
+                <button class="close-btn" id="close-department-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="department-form">
+                    <div class="form-group">
+                        <label>Название:</label>
+                        <input type="text" id="department-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>РОП:</label>
+                        <select id="department-rop">
+                            <option value="">Не назначен</option>
+                        </select>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-department">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Edit User -->
+    <div id="user-modal" class="modal hidden">
+        <div class="modal-content small">
+            <div class="modal-header">
+                <h2>Редактировать пользователя</h2>
+                <button class="close-btn" id="close-user-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="user-form">
+                    <div class="form-group">
+                        <label>Имя:</label>
+                        <input type="text" id="user-name" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>Роль:</label>
+                        <select id="user-role" required>
+                            <option value="employee">Employee</option>
+                            <option value="rop">ROP</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Подразделение:</label>
+                        <select id="user-department" required>
+                        </select>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-user">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="assets/js/api-client.js"></script>
+    <script src="assets/js/admin.js"></script>
+</body>
+</html>

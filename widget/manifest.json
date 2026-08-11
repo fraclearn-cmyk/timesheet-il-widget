@@ -1,32 +1,41 @@
-{
-  "widget": {
-    "name": "widget.name",
-    "description": "widget.description",
-    "short_description": "widget.short_description",
-    "version": "3.0.2",
-    "interface_version": 2,
-    "init_once": false,
-    "locale": ["ru", "en"],
-    "installation": true,
-    "support": {
-      "link": "https://example.com/support",
-      "email": "support@example.com"
-    }
-  },
-  "locations": ["advancedSettings"],
-  "settings": {
-    "api_url": {
-      "name": "settings.api_url",
-      "type": "text",
-      "required": false
-    }
-  },
-  "tour": {
-    "is_tour": true,
-    "tour_images": {
-      "ru": ["/images/tour_ru.png"],
-      "en": ["/images/tour_en.png"]
-    },
-    "tour_description": "widget.tour_description"
-  }
+﻿{
+    "widget":  {
+                   "name":  "widget.name",
+                   "description":  "widget.description",
+                   "short_description":  "widget.short_description",
+                   "version":  "3.0.2",
+                   "interface_version":  2,
+                   "init_once":  false,
+                   "locale":  [
+                                  "ru",
+                                  "en"
+                              ],
+                   "installation":  true,
+                   "support":  {
+                                   "link":  "https://example.com/support",
+                                   "email":  "support@example.com"
+                               }
+               },
+    "locations":  [
+                      "advancedSettings"
+                  ],
+    "settings":  {
+                     "api_url":  {
+                                     "name":  "settings.api_url",
+                                     "type":  "text",
+                                     "required":  false
+                                 }
+                 },
+    "tour":  {
+                 "is_tour":  true,
+                 "tour_images":  {
+                                     "ru":  [
+                                                "/images/tour_ru.png"
+                                            ],
+                                     "en":  [
+                                                "/images/tour_en.png"
+                                            ]
+                                 },
+                 "tour_description":  "widget.tour_description"
+             }
 }

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -30,6 +30,16 @@ class WorkSession(Base):
     total_work_time = Column(Integer, default=0)  # seconds
     total_break_time = Column(Integer, default=0)  # seconds
     break_count = Column(Integer, default=0)
+    
+    # Late arrival tracking
+    is_late = Column(Boolean, default=False)
+    late_minutes = Column(Integer, nullable=True)  # Количество минут опоздания
+    late_reason = Column(String(500), nullable=True)  # Причина опоздания
+    
+    # Forced finish tracking
+    forced_finish = Column(Boolean, default=False)
+    forced_finish_by = Column(Integer, nullable=True)  # User ID администратора
+    forced_finish_reason = Column(String(500), nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Табель - Отчёты</title>
+    <link rel="stylesheet" href="assets/css/reports.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>📊 Генерация отчётов</h1>
+        <div class="header-info">
+            <span id="user-name">Пользователь</span>
+        </div>
+    </header>
+
+    <!-- Filters Section -->
+    <section class="filters-section">
+        <div class="filters-container">
+            <!-- Period Section -->
+            <div class="filter-group">
+                <h3>Период</h3>
+                <div class="quick-select">
+                    <button class="quick-btn" data-period="today">Сегодня</button>
+                    <button class="quick-btn" data-period="week">Неделя</button>
+                    <button class="quick-btn" data-period="month">Месяц</button>
+                </div>
+                <div class="date-inputs">
+                    <div class="date-group">
+                        <label>От:</label>
+                        <input type="date" id="date-from">
+                    </div>
+                    <div class="date-group">
+                        <label>До:</label>
+                        <input type="date" id="date-to">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Report Type -->
+            <div class="filter-group">
+                <h3>Тип отчёта</h3>
+                <select id="report-type" class="form-select">
+                    <option value="summary">Сводный отчёт</option>
+                    <option value="detailed">Детальный отчёт</option>
+                    <option value="timeline">Таймлайн отчёт</option>
+                </select>
+            </div>
+
+            <!-- Department -->
+            <div class="filter-group">
+                <h3>Подразделение</h3>
+                <select id="department" class="form-select">
+                    <option value="">Все подразделения</option>
+                </select>
+            </div>
+
+            <!-- User (for detailed/timeline) -->
+            <div class="filter-group" id="user-filter-group">
+                <h3>Пользователь</h3>
+                <select id="user" class="form-select">
+                    <option value="">Выберите пользователя</option>
+                </select>
+            </div>
+
+            <!-- Actions -->
+            <div class="filter-group actions-group">
+                <button class="btn btn-primary" id="generate-report">
+                    📋 Сгенерировать отчёт
+                </button>
+                <button class="btn btn-success" id="export-excel" disabled>
+                    📥 Экспорт в Excel
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Preview Section -->
+    <section class="preview-section">
+        <div class="preview-header">
+            <h2>Предпросмотр отчёта</h2>
+            <span id="report-info"></span>
+        </div>
+
+        <!-- Loading State -->
+        <div class="loading-state hidden" id="loading">
+            <div class="spinner"></div>
+            <p>Генерация отчёта...</p>
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="empty-state">
+            <div class="empty-icon">📊</div>
+            <h3>Выберите параметры отчёта</h3>
+            <p>Укажите период и тип отчёта, затем нажмите "Сгенерировать отчёт"</p>
+        </div>
+
+        <!-- Preview Table: Summary -->
+        <div class="preview-content hidden" id="preview-summary">
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Сотрудник</th>
+                            <th>Подразделение</th>
+                            <th>Всего часов</th>
+                            <th>Среднее/день</th>
+                            <th>Опозданий</th>
+                            <th>Перерывов</th>
+                            <th>Выполнение нормы</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summary-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Preview Table: Detailed -->
+        <div class="preview-content hidden" id="preview-detailed">
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Начало</th>
+                            <th>Конец</th>
+                            <th>Всего часов</th>
+                            <th>Перерывов</th>
+                            <th>Опоздание</th>
+                            <th>CRM активность</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailed-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Preview Table: Timeline -->
+        <div class="preview-content hidden" id="preview-timeline">
+            <div class="timeline-info">
+                <p><strong>Пользователь:</strong> <span id="timeline-user"></span></p>
+                <p><strong>Дата:</strong> <span id="timeline-date"></span></p>
+            </div>
+            <div class="timeline-grid" id="timeline-grid">
+                <!-- Timeline будет сгенерирован в JS -->
+            </div>
+            <div class="timeline-legend">
+                <div class="legend-item">
+                    <span class="legend-color work"></span>
+                    <span>Работа</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color break"></span>
+                    <span>Перерыв</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color idle"></span>
+                    <span>Не начато</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="assets/js/api-client.js"></script>
+    <script src="assets/js/reports.js"></script>
+</body>
+</html>
