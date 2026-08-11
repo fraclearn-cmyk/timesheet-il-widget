@@ -1,204 +1,214 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
+"""
+Service layer for work session management
+Separates business logic from API endpoints
+"""
+
 from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
+from app.models.work_session import WorkSession
 from typing import Optional, List
-from app.models.work_session import WorkSession, WorkStatus
-from app.models.status_transition import StatusTransition
-from app.schemas.work_session import WorkSessionCreate, WorkSessionUpdate
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SessionService:
-    """Service for managing work sessions"""
+    """Business logic for work sessions with proper error handling"""
     
     def __init__(self, db: Session):
         self.db = db
     
-    def start_session(self, data: WorkSessionCreate) -> WorkSession:
-        """Start new work session"""
-        # Check if user has active session
-        active_session = self.get_current_session(data.user_id)
-        if active_session:
-            raise ValueError("User already has an active session")
-        
-        # Create new session
-        session = WorkSession(
-            user_id=data.user_id,
-            user_name=data.user_name,
-            department=data.department,
-            start_time=datetime.utcnow(),
-            current_status=WorkStatus.WORKING
-        )
-        self.db.add(session)
-        self.db.flush()
-        
-        # Create initial status transition
-        transition = StatusTransition(
-            work_session_id=session.id,
-            from_status=None,
-            to_status=WorkStatus.WORKING.value,
-            timestamp=session.start_time
-        )
-        self.db.add(transition)
-        self.db.commit()
-        self.db.refresh(session)
-        
-        return session
-    
-    def take_break(self, user_id: int) -> WorkSession:
-        """Switch session to break status"""
-        session = self.get_current_session(user_id)
-        if not session:
-            raise ValueError("No active session found")
-        
-        if session.current_status == WorkStatus.BREAK:
-            raise ValueError("Already on break")
-        
-        if session.current_status == WorkStatus.FINISHED:
-            raise ValueError("Session already finished")
-        
-        # Calculate work time
-        last_transition = self.db.query(StatusTransition)\
-            .filter(StatusTransition.work_session_id == session.id)\
-            .order_by(StatusTransition.timestamp.desc())\
-            .first()
-        
-        now = datetime.utcnow()
-        if last_transition and session.current_status == WorkStatus.WORKING:
-            work_duration = int((now - last_transition.timestamp).total_seconds())
-            session.total_work_time += work_duration
-        
-        # Update status
-        old_status = session.current_status
-        session.current_status = WorkStatus.BREAK
-        session.break_count += 1
-        
-        # Create transition
-        transition = StatusTransition(
-            work_session_id=session.id,
-            from_status=old_status.value,
-            to_status=WorkStatus.BREAK.value,
-            timestamp=now,
-            duration=work_duration if old_status == WorkStatus.WORKING else None
-        )
-        self.db.add(transition)
-        self.db.commit()
-        self.db.refresh(session)
-        
-        return session
-    
-    def resume_work(self, user_id: int) -> WorkSession:
-        """Resume work from break"""
-        session = self.get_current_session(user_id)
-        if not session:
-            raise ValueError("No active session found")
-        
-        if session.current_status != WorkStatus.BREAK:
-            raise ValueError("Not on break")
-        
-        # Calculate break time
-        last_transition = self.db.query(StatusTransition)\
-            .filter(StatusTransition.work_session_id == session.id)\
-            .order_by(StatusTransition.timestamp.desc())\
-            .first()
-        
-        now = datetime.utcnow()
-        if last_transition:
-            break_duration = int((now - last_transition.timestamp).total_seconds())
-            session.total_break_time += break_duration
-        
-        # Update status
-        session.current_status = WorkStatus.WORKING
-        
-        # Create transition
-        transition = StatusTransition(
-            work_session_id=session.id,
-            from_status=WorkStatus.BREAK.value,
-            to_status=WorkStatus.WORKING.value,
-            timestamp=now,
-            duration=break_duration if last_transition else None
-        )
-        self.db.add(transition)
-        self.db.commit()
-        self.db.refresh(session)
-        
-        return session
-    
-    def finish_session(self, user_id: int) -> WorkSession:
-        """Finish work session"""
-        session = self.get_current_session(user_id)
-        if not session:
-            raise ValueError("No active session found")
-        
-        if session.current_status == WorkStatus.FINISHED:
-            raise ValueError("Session already finished")
-        
-        # Calculate final time
-        last_transition = self.db.query(StatusTransition)\
-            .filter(StatusTransition.work_session_id == session.id)\
-            .order_by(StatusTransition.timestamp.desc())\
-            .first()
-        
-        now = datetime.utcnow()
-        if last_transition:
-            if session.current_status == WorkStatus.WORKING:
-                work_duration = int((now - last_transition.timestamp).total_seconds())
-                session.total_work_time += work_duration
-            elif session.current_status == WorkStatus.BREAK:
-                break_duration = int((now - last_transition.timestamp).total_seconds())
-                session.total_break_time += break_duration
-        
-        # Update session
-        old_status = session.current_status
-        session.current_status = WorkStatus.FINISHED
-        session.end_time = now
-        
-        # Create transition
-        transition = StatusTransition(
-            work_session_id=session.id,
-            from_status=old_status.value,
-            to_status=WorkStatus.FINISHED.value,
-            timestamp=now
-        )
-        self.db.add(transition)
-        self.db.commit()
-        self.db.refresh(session)
-        
-        return session
-    
-    def get_current_session(self, user_id: int) -> Optional[WorkSession]:
-        """Get user's current active session"""
-        return self.db.query(WorkSession)\
-            .filter(
-                and_(
-                    WorkSession.user_id == user_id,
-                    WorkSession.current_status != WorkStatus.FINISHED
-                )
-            )\
-            .first()
-    
-    def get_session_history(
+    def get_current_session(
         self, 
-        user_id: int, 
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
-        limit: int = 100
-    ) -> List[WorkSession]:
-        """Get user's session history"""
-        query = self.db.query(WorkSession)\
-            .filter(WorkSession.user_id == user_id)
+        account_id: str, 
+        user_id: int
+    ) -> Optional[WorkSession]:
+        """
+        Get active or paused session for user
         
-        if date_from:
-            query = query.filter(WorkSession.start_time >= date_from)
-        
-        if date_to:
-            query = query.filter(WorkSession.start_time <= date_to)
-        
-        return query.order_by(WorkSession.start_time.desc())\
-            .limit(limit)\
-            .all()
+        Args:
+            account_id: Account ID (validated)
+            user_id: User ID (validated)
+            
+        Returns:
+            WorkSession or None
+        """
+        try:
+            session = self.db.query(WorkSession).filter(
+                and_(
+                    WorkSession.account_id == account_id,
+                    WorkSession.user_id == user_id,
+                    WorkSession.status.in_(['active', 'paused'])
+                )
+            ).first()
+            return session
+        except Exception as e:
+            logger.error(f"Error getting current session: {e}")
+            return None
     
-    def get_session_by_id(self, session_id: int) -> Optional[WorkSession]:
-        """Get session by ID"""
-        return self.db.query(WorkSession)\
-            .filter(WorkSession.id == session_id)\
-            .first()
+    def create_session(
+        self, 
+        account_id: str, 
+        user_id: int,
+        user_name: str
+    ) -> WorkSession:
+        """
+        Create new work session with validation
+        
+        Args:
+            account_id: Account ID (must be alphanumeric)
+            user_id: User ID (must be positive)
+            user_name: User name (sanitized)
+            
+        Returns:
+            Created WorkSession
+            
+        Raises:
+            ValueError: If validation fails or active session exists
+        """
+        try:
+            # Validate inputs
+            if not account_id or not isinstance(account_id, str):
+                raise ValueError("Invalid account_id")
+            if not user_id or user_id <= 0:
+                raise ValueError("Invalid user_id")
+            
+            # Check for existing active session
+            existing = self.get_current_session(account_id, user_id)
+            if existing:
+                raise ValueError(f"Active session already exists: {existing.session_id}")
+            
+            # Sanitize user_name (remove HTML tags)
+            import re
+            clean_name = re.sub(r'<[^>]+>', '', user_name) if user_name else 'Unknown'
+            
+            # Create new session
+            session = WorkSession(
+                account_id=account_id,
+                user_id=user_id,
+                user_name=clean_name[:100],  # Limit length
+                start_time=datetime.utcnow(),
+                status='active'
+            )
+            self.db.add(session)
+            self.db.commit()
+            self.db.refresh(session)
+            
+            logger.info(f"Session created: {session.session_id} for user {user_id}")
+            return session
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Error creating session: {e}")
+            raise ValueError(f"Failed to create session: {str(e)}")
+    
+    def update_session(
+        self, 
+        session_id: int,
+        status: Optional[str] = None,
+        comment: Optional[str] = None
+    ) -> Optional[WorkSession]:
+        """
+        Update existing session with validation
+        
+        Args:
+            session_id: Session ID
+            status: New status (active, paused, finished)
+            comment: Optional comment (sanitized)
+            
+        Returns:
+            Updated WorkSession or None if not found
+            
+        Raises:
+            ValueError: If validation fails
+        """
+        try:
+            session = self.db.query(WorkSession).filter(
+                WorkSession.session_id == session_id
+            ).first()
+            
+            if not session:
+                logger.warning(f"Session not found: {session_id}")
+                return None
+            
+            # Validate and update status
+            if status:
+                valid_statuses = ['active', 'paused', 'finished']
+                if status not in valid_statuses:
+                    raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
+                session.status = status
+                
+                if status == 'finished':
+                    session.end_time = datetime.utcnow()
+            
+            # Sanitize and update comment
+            if comment:
+                import re
+                clean_comment = re.sub(r'<[^>]+>', '', comment)
+                session.comment = clean_comment[:500]  # Limit length
+            
+            self.db.commit()
+            self.db.refresh(session)
+            
+            logger.info(f"Session updated: {session_id} -> status={status}")
+            return session
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Error updating session {session_id}: {e}")
+            raise ValueError(f"Failed to update session: {str(e)}")
+    
+    def finish_session(self, session_id: int) -> Optional[WorkSession]:
+        """
+        Finish work session
+        
+        Args:
+            session_id: Session ID
+            
+        Returns:
+            Finished session or None
+        """
+        return self.update_session(session_id, status='finished')
+    
+    def get_user_sessions(
+        self,
+        account_id: str,
+        user_id: int,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[WorkSession]:
+        """
+        Get user's sessions with pagination
+        
+        Args:
+            account_id: Account ID
+            user_id: User ID
+            limit: Max results (default 100, max 1000)
+            offset: Offset for pagination
+            
+        Returns:
+            List of sessions
+        """
+        try:
+            # Validate pagination params
+            limit = min(max(1, limit), 1000)  # Between 1 and 1000
+            offset = max(0, offset)
+            
+            sessions = self.db.query(WorkSession).filter(
+                and_(
+                    WorkSession.account_id == account_id,
+                    WorkSession.user_id == user_id
+                )
+            ).order_by(
+                WorkSession.start_time.desc()
+            ).limit(limit).offset(offset).all()
+            
+            return sessions
+        except Exception as e:
+            logger.error(f"Error getting user sessions: {e}")
+            return []

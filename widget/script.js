@@ -3,7 +3,7 @@
         var widget = this;
         
         // API Configuration
-        this.API_URL = 'https://storage-turkey-multitask.ngrok-free.dev/api/v1';
+        this.API_URL = null; // Must be configured in widget settings
         this.currentSession = null;
         this.updateTimer = null;
         this.sessionStart = null;
@@ -29,10 +29,15 @@
                     widget.userName = 'Demo User';
                 }
                 
-                // Load custom settings if provided
+                // Load custom settings (REQUIRED!)
                 var settings = widget.get_settings();
                 if (settings && settings.api_url) {
                     widget.API_URL = settings.api_url;
+                    console.log('API URL configured:', widget.API_URL);
+                } else {
+                    console.error('⚠️ API URL not configured in widget settings!');
+                    alert('Please configure API URL in widget settings');
+                    return false;
                 }
                 
                 // Load current session from API
