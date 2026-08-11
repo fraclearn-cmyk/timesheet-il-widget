@@ -1,0 +1,11 @@
+{
+  "widget": {
+    "name": "Test Widget",
+    "description": "Minimal test widget",
+    "short_description": "Test",
+    "tour_description": "Test tour"
+  },
+  "settings": {
+    "login": "API ключ или логин"
+  }
+}

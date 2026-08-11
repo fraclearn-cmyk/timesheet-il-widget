@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Timesheet IL Widget - Тестовый интерфейс</title>
+    <title>Табель учёта рабочего времени</title>
     <style>
         * {
             margin: 0;
@@ -12,35 +12,173 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             padding: 20px;
         }
 
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .header {
             background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
         }
 
-        .header h1 {
+        h1 {
             color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 14px;
             margin-bottom: 10px;
         }
 
+        .status-badge.working {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-badge.paused {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-badge.stopped {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .timer {
+            font-size: 48px;
+            font-weight: 700;
+            color: #667eea;
+            margin: 20px 0;
+        }
+
+        .user-info {
+            background: #e3f2fd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .user-info input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #90caf9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .user-info input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .button-group {
+            display: grid;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 16px 32px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: white;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .btn-pause {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .btn-end {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+
         .api-status {
-            display: inline-block;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-weight: 500;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 20px;
             font-size: 14px;
         }
 
@@ -54,528 +192,296 @@
             color: #721c24;
         }
 
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 20px;
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
             margin-bottom: 20px;
+            display: none;
         }
 
-        .card {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .card h2 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 18px;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
-        }
-
-        .button {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            width: 100%;
-            margin-bottom: 10px;
-            transition: background 0.3s;
-        }
-
-        .button:hover {
-            background: #5568d3;
-        }
-
-        .button.danger {
-            background: #dc3545;
-        }
-
-        .button.danger:hover {
-            background: #c82333;
-        }
-
-        .button.success {
-            background: #28a745;
-        }
-
-        .button.success:hover {
-            background: #218838;
-        }
-
-        .button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-
-        .input-group {
-            margin-bottom: 15px;
-        }
-
-        .input-group label {
+        .alert.success {
+            background: #d4edda;
+            color: #155724;
             display: block;
-            margin-bottom: 5px;
-            color: #555;
-            font-weight: 500;
-            font-size: 14px;
         }
 
-        .input-group input, .input-group select, .input-group textarea {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-
-        .output {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
-            padding: 15px;
-            max-height: 300px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            margin-top: 15px;
-        }
-
-        .output pre {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .status-indicator.active {
-            background: #28a745;
-            animation: pulse 2s infinite;
-        }
-
-        .status-indicator.inactive {
-            background: #dc3545;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .session-info {
-            background: #e7f3ff;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-        }
-
-        .session-info p {
-            margin: 5px 0;
-            font-size: 14px;
-        }
-
-        .session-info strong {
-            color: #667eea;
+        .alert.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>📊 Timesheet IL Widget - Тестовый интерфейс</h1>
-            <p style="color: #666; margin: 10px 0;">Backend API: <strong>http://localhost:8000</strong></p>
-            <div id="apiStatus" class="api-status offline">⚠️ Проверка соединения...</div>
+        <h1>⏰ Табель учёта времени</h1>
+        <p class="subtitle">Система контроля рабочего времени</p>
+
+        <div id="apiStatus" class="api-status offline">
+            🔴 Проверка связи с сервером...
         </div>
 
-        <div class="grid">
-            <!-- Рабочие сессии -->
-            <div class="card">
-                <h2>🕐 Рабочие сессии</h2>
-                <div id="sessionInfo" class="session-info" style="display: none;">
-                    <p><strong>Статус:</strong> <span id="sessionStatus">-</span></p>
-                    <p><strong>ID сессии:</strong> <span id="sessionId">-</span></p>
-                    <p><strong>Начало:</strong> <span id="sessionStart">-</span></p>
-                </div>
-                <div class="input-group">
-                    <label>User ID:</label>
-                    <input type="number" id="userId" value="1" placeholder="1">
-                </div>
-                <button class="button success" onclick="startSession()">▶️ Начать смену</button>
-                <button class="button" onclick="startBreak()">⏸️ Начать перерыв</button>
-                <button class="button" onclick="endBreak()">▶️ Закончить перерыв</button>
-                <button class="button danger" onclick="endSession()">⏹️ Завершить смену</button>
-                <button class="button" onclick="getCurrentSession()">📊 Текущая сессия</button>
-                <div id="sessionOutput" class="output" style="display: none;"></div>
-            </div>
+        <div id="alert" class="alert"></div>
 
-            <!-- Активности -->
-            <div class="card">
-                <h2>📝 Активности</h2>
-                <div class="input-group">
-                    <label>Entity Type:</label>
-                    <select id="entityType">
-                        <option value="lead">Сделка (Lead)</option>
-                        <option value="contact">Контакт</option>
-                        <option value="company">Компания</option>
-                        <option value="task">Задача</option>
-                    </select>
-                </div>
-                <div class="input-group">
-                    <label>Entity ID:</label>
-                    <input type="number" id="entityId" value="100" placeholder="100">
-                </div>
-                <div class="input-group">
-                    <label>Category ID:</label>
-                    <input type="number" id="categoryId" value="1" placeholder="1">
-                </div>
-                <button class="button success" onclick="startActivity()">▶️ Начать активность</button>
-                <button class="button danger" onclick="stopActivity()">⏹️ Остановить активность</button>
-                <button class="button" onclick="pauseActivity()">⏸️ Пауза</button>
-                <button class="button" onclick="resumeActivity()">▶️ Продолжить</button>
-                <div id="activityOutput" class="output" style="display: none;"></div>
-            </div>
+        <div class="user-info">
+            <input type="text" id="userName" placeholder="Введите ваше имя" value="Иван Иванов">
+        </div>
 
-            <!-- Категории -->
-            <div class="card">
-                <h2>🏷️ Категории активностей</h2>
-                <div class="input-group">
-                    <label>Название категории:</label>
-                    <input type="text" id="categoryName" placeholder="Обработка лидов">
-                </div>
-                <div class="input-group">
-                    <label>Цвет:</label>
-                    <input type="color" id="categoryColor" value="#667eea">
-                </div>
-                <button class="button success" onclick="createCategory()">➕ Создать категорию</button>
-                <button class="button" onclick="getCategories()">📋 Список категорий</button>
-                <div id="categoryOutput" class="output" style="display: none;"></div>
+        <div class="status">
+            <div id="statusBadge" class="status-badge stopped">
+                ⭕ Смена не начата
             </div>
-
-            <!-- Команда -->
-            <div class="card">
-                <h2>👥 Команда</h2>
-                <div class="input-group">
-                    <label>Дата (YYYY-MM-DD):</label>
-                    <input type="date" id="teamDate" value="">
-                </div>
-                <button class="button" onclick="getTeamStats()">📊 Статистика команды</button>
-                <button class="button" onclick="getTeamActivity()">📈 Активность команды</button>
-                <div id="teamOutput" class="output" style="display: none;"></div>
+            <div id="timer" class="timer">00:00:00</div>
+            <div id="sessionInfo" style="color: #666; font-size: 14px;">
+                Нажмите "Начать смену" для старта
             </div>
+        </div>
 
-            <!-- Отчёты -->
-            <div class="card">
-                <h2>📈 Отчёты</h2>
-                <div class="input-group">
-                    <label>Начало периода:</label>
-                    <input type="date" id="reportStartDate">
-                </div>
-                <div class="input-group">
-                    <label>Конец периода:</label>
-                    <input type="date" id="reportEndDate">
-                </div>
-                <div class="input-group">
-                    <label>User ID:</label>
-                    <input type="number" id="reportUserId" value="1">
-                </div>
-                <button class="button" onclick="generateReport()">📊 Генерировать отчёт</button>
-                <button class="button" onclick="getReports()">📋 Список отчётов</button>
-                <div id="reportOutput" class="output" style="display: none;"></div>
+        <div class="button-group">
+            <button id="btnStart" class="btn-start" onclick="startSession()">
+                ▶️ Начать смену
+            </button>
+            <button id="btnPause" class="btn-pause" onclick="toggleBreak()" disabled>
+                ⏸️ Перерыв
+            </button>
+            <button id="btnEnd" class="btn-end" onclick="endSession()" disabled>
+                ⏹️ Завершить смену
+            </button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div id="workTime" class="stat-value">0:00</div>
+                <div class="stat-label">Время работы</div>
             </div>
-
-            <!-- Настройки -->
-            <div class="card">
-                <h2>⚙️ Настройки виджета</h2>
-                <button class="button" onclick="getSettings()">📋 Получить настройки</button>
-                <button class="button success" onclick="updateSettings()">💾 Обновить настройки</button>
-                <div id="settingsOutput" class="output" style="display: none;"></div>
+            <div class="stat-card">
+                <div id="breakTime" class="stat-value">0:00</div>
+                <div class="stat-label">Время перерыва</div>
             </div>
         </div>
     </div>
 
     <script>
-        const API_URL = 'http://localhost:8000';
-        let currentSessionId = null;
-        let currentActivityId = null;
+        const API_URL = 'https://storage-turkey-multitask.ngrok-free.dev/api/v1';
+        
+        let sessionData = {
+            sessionId: null,
+            startTime: null,
+            isWorking: false,
+            isPaused: false,
+            workSeconds: 0,
+            breakSeconds: 0
+        };
 
-        // Установка текущей даты
-        document.getElementById('teamDate').value = new Date().toISOString().split('T')[0];
-        document.getElementById('reportStartDate').value = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        document.getElementById('reportEndDate').value = new Date().toISOString().split('T')[0];
-
-        // Проверка API
-        async function checkAPI() {
-            const statusEl = document.getElementById('apiStatus');
-            try {
-                const response = await fetch(`${API_URL}/docs`);
-                if (response.ok) {
-                    statusEl.className = 'api-status online';
-                    statusEl.innerHTML = '✅ API онлайн';
-                } else {
-                    throw new Error('API недоступен');
-                }
-            } catch (error) {
-                statusEl.className = 'api-status offline';
-                statusEl.innerHTML = '❌ API оффлайн';
-            }
-        }
-
-        // Вспомогательная функция для API запросов
-        async function apiRequest(endpoint, method = 'GET', body = null) {
-            const options = {
-                method,
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            };
-            if (body) {
-                options.body = JSON.stringify(body);
-            }
-            const response = await fetch(`${API_URL}${endpoint}`, options);
-            return await response.json();
-        }
-
-        function showOutput(elementId, data) {
-            const el = document.getElementById(elementId);
-            el.style.display = 'block';
-            el.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
-        }
-
-        function updateSessionInfo(data) {
-            const infoEl = document.getElementById('sessionInfo');
-            if (data && data.id) {
-                currentSessionId = data.id;
-                infoEl.style.display = 'block';
-                document.getElementById('sessionStatus').textContent = data.status || 'active';
-                document.getElementById('sessionId').textContent = data.id;
-                document.getElementById('sessionStart').textContent = new Date(data.start_time).toLocaleString('ru-RU');
-            }
-        }
-
-        // Рабочие сессии
-        async function startSession() {
-            try {
-                const userId = document.getElementById('userId').value;
-                const data = await apiRequest('/api/v1/sessions/start', 'POST', {
-                    user_id: parseInt(userId),
-                    account_id: 1
-                });
-                updateSessionInfo(data);
-                showOutput('sessionOutput', data);
-            } catch (error) {
-                showOutput('sessionOutput', { error: error.message });
-            }
-        }
-
-        async function endSession() {
-            try {
-                const userId = document.getElementById('userId').value;
-                const data = await apiRequest('/api/v1/sessions/end', 'POST', {
-                    user_id: parseInt(userId)
-                });
-                currentSessionId = null;
-                document.getElementById('sessionInfo').style.display = 'none';
-                showOutput('sessionOutput', data);
-            } catch (error) {
-                showOutput('sessionOutput', { error: error.message });
-            }
-        }
-
-        async function startBreak() {
-            try {
-                const userId = document.getElementById('userId').value;
-                const data = await apiRequest('/api/v1/sessions/break', 'POST', {
-                    user_id: parseInt(userId)
-                });
-                showOutput('sessionOutput', data);
-            } catch (error) {
-                showOutput('sessionOutput', { error: error.message });
-            }
-        }
-
-        async function endBreak() {
-            try {
-                const userId = document.getElementById('userId').value;
-                const data = await apiRequest('/api/v1/sessions/break/end', 'POST', {
-                    user_id: parseInt(userId)
-                });
-                showOutput('sessionOutput', data);
-            } catch (error) {
-                showOutput('sessionOutput', { error: error.message });
-            }
-        }
-
-        async function getCurrentSession() {
-            try {
-                const userId = document.getElementById('userId').value;
-                const data = await apiRequest(`/api/v1/sessions/current/${userId}`);
-                updateSessionInfo(data);
-                showOutput('sessionOutput', data);
-            } catch (error) {
-                showOutput('sessionOutput', { error: error.message });
-            }
-        }
-
-        // Активности
-        async function startActivity() {
-            try {
-                const data = await apiRequest('/api/v1/activity/start', 'POST', {
-                    user_id: parseInt(document.getElementById('userId').value),
-                    entity_type: document.getElementById('entityType').value,
-                    entity_id: parseInt(document.getElementById('entityId').value),
-                    category_id: parseInt(document.getElementById('categoryId').value)
-                });
-                currentActivityId = data.id;
-                showOutput('activityOutput', data);
-            } catch (error) {
-                showOutput('activityOutput', { error: error.message });
-            }
-        }
-
-        async function stopActivity() {
-            try {
-                const data = await apiRequest('/api/v1/activity/stop', 'POST', {
-                    user_id: parseInt(document.getElementById('userId').value)
-                });
-                currentActivityId = null;
-                showOutput('activityOutput', data);
-            } catch (error) {
-                showOutput('activityOutput', { error: error.message });
-            }
-        }
-
-        async function pauseActivity() {
-            try {
-                const data = await apiRequest('/api/v1/activity/pause', 'POST', {
-                    user_id: parseInt(document.getElementById('userId').value)
-                });
-                showOutput('activityOutput', data);
-            } catch (error) {
-                showOutput('activityOutput', { error: error.message });
-            }
-        }
-
-        async function resumeActivity() {
-            try {
-                const data = await apiRequest('/api/v1/activity/resume', 'POST', {
-                    user_id: parseInt(document.getElementById('userId').value)
-                });
-                showOutput('activityOutput', data);
-            } catch (error) {
-                showOutput('activityOutput', { error: error.message });
-            }
-        }
-
-        // Категории
-        async function createCategory() {
-            try {
-                const data = await apiRequest('/api/v1/categories', 'POST', {
-                    name: document.getElementById('categoryName').value,
-                    color: document.getElementById('categoryColor').value,
-                    account_id: 1
-                });
-                showOutput('categoryOutput', data);
-            } catch (error) {
-                showOutput('categoryOutput', { error: error.message });
-            }
-        }
-
-        async function getCategories() {
-            try {
-                const data = await apiRequest('/api/v1/categories/1');
-                showOutput('categoryOutput', data);
-            } catch (error) {
-                showOutput('categoryOutput', { error: error.message });
-            }
-        }
-
-        // Команда
-        async function getTeamStats() {
-            try {
-                const date = document.getElementById('teamDate').value;
-                const data = await apiRequest(`/api/v1/team/stats/1?date=${date}`);
-                showOutput('teamOutput', data);
-            } catch (error) {
-                showOutput('teamOutput', { error: error.message });
-            }
-        }
-
-        async function getTeamActivity() {
-            try {
-                const date = document.getElementById('teamDate').value;
-                const data = await apiRequest(`/api/v1/team/activity/1?date=${date}`);
-                showOutput('teamOutput', data);
-            } catch (error) {
-                showOutput('teamOutput', { error: error.message });
-            }
-        }
-
-        // Отчёты
-        async function generateReport() {
-            try {
-                const data = await apiRequest('/api/v1/reports/generate', 'POST', {
-                    user_id: parseInt(document.getElementById('reportUserId').value),
-                    start_date: document.getElementById('reportStartDate').value,
-                    end_date: document.getElementById('reportEndDate').value,
-                    account_id: 1
-                });
-                showOutput('reportOutput', data);
-            } catch (error) {
-                showOutput('reportOutput', { error: error.message });
-            }
-        }
-
-        async function getReports() {
-            try {
-                const userId = document.getElementById('reportUserId').value;
-                const data = await apiRequest(`/api/v1/reports/${userId}`);
-                showOutput('reportOutput', data);
-            } catch (error) {
-                showOutput('reportOutput', { error: error.message });
-            }
-        }
-
-        // Настройки
-        async function getSettings() {
-            try {
-                const data = await apiRequest('/api/v1/settings/1');
-                showOutput('settingsOutput', data);
-            } catch (error) {
-                showOutput('settingsOutput', { error: error.message });
-            }
-        }
-
-        async function updateSettings() {
-            try {
-                const data = await apiRequest('/api/v1/settings', 'POST', {
-                    account_id: 1,
-                    working_hours_start: "09:00:00",
-                    working_hours_end: "18:00:00",
-                    auto_break_minutes: 60,
-                    max_session_hours: 12,
-                    activity_timeout_seconds: 300
-                });
-                showOutput('settingsOutput', data);
-            } catch (error) {
-                showOutput('settingsOutput', { error: error.message });
-            }
-        }
+        let timerInterval = null;
 
         // Проверка API при загрузке
-        checkAPI();
-        setInterval(checkAPI, 10000); // Проверка каждые 10 секунд
+        async function checkAPI() {
+            try {
+                const response = await fetch(`${API_URL.replace('/api/v1', '')}/health`);
+                if (response.ok) {
+                    document.getElementById('apiStatus').className = 'api-status online';
+                    document.getElementById('apiStatus').textContent = '✅ Сервер подключен';
+                    return true;
+                }
+            } catch (error) {
+                console.error('API недоступен:', error);
+            }
+            document.getElementById('apiStatus').className = 'api-status offline';
+            document.getElementById('apiStatus').textContent = '🔴 Сервер недоступен';
+            return false;
+        }
+
+        // Начать смену
+        async function startSession() {
+            const userName = document.getElementById('userName').value.trim();
+            if (!userName) {
+                showAlert('Введите ваше имя', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/sessions/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: 'demo_account',
+                        user_id: Math.floor(Math.random() * 10000),
+                        user_name: userName
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    sessionData.sessionId = data.session_id;
+                    sessionData.startTime = new Date();
+                    sessionData.isWorking = true;
+                    sessionData.isPaused = false;
+                    
+                    updateUI();
+                    startTimer();
+                    showAlert('Смена началась!', 'success');
+                } else {
+                    showAlert('Ошибка при запуске смены', 'error');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                showAlert('Не удалось связаться с сервером', 'error');
+            }
+        }
+
+        // Перерыв
+        async function toggleBreak() {
+            if (!sessionData.sessionId) return;
+
+            try {
+                const endpoint = sessionData.isPaused ? 'resume' : 'break';
+                const response = await fetch(`${API_URL}/sessions/${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionData.sessionId,
+                        account_id: 'demo_account'
+                    })
+                });
+
+                if (response.ok) {
+                    sessionData.isPaused = !sessionData.isPaused;
+                    updateUI();
+                    showAlert(sessionData.isPaused ? 'Перерыв начат' : 'Работа возобновлена', 'success');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                showAlert('Ошибка при изменении статуса', 'error');
+            }
+        }
+
+        // Завершить смену
+        async function endSession() {
+            if (!sessionData.sessionId) return;
+
+            try {
+                const response = await fetch(`${API_URL}/sessions/end`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionData.sessionId,
+                        account_id: 'demo_account'
+                    })
+                });
+
+                if (response.ok) {
+                    stopTimer();
+                    const workHours = Math.floor(sessionData.workSeconds / 3600);
+                    const workMinutes = Math.floor((sessionData.workSeconds % 3600) / 60);
+                    showAlert(`Смена завершена! Отработано: ${workHours}ч ${workMinutes}м`, 'success');
+                    
+                    // Сброс
+                    sessionData = {
+                        sessionId: null,
+                        startTime: null,
+                        isWorking: false,
+                        isPaused: false,
+                        workSeconds: 0,
+                        breakSeconds: 0
+                    };
+                    updateUI();
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                showAlert('Ошибка при завершении смены', 'error');
+            }
+        }
+
+        // Таймер
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            
+            timerInterval = setInterval(() => {
+                if (sessionData.isPaused) {
+                    sessionData.breakSeconds++;
+                } else {
+                    sessionData.workSeconds++;
+                }
+                updateTimer();
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        function updateTimer() {
+            const totalSeconds = sessionData.workSeconds + sessionData.breakSeconds;
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            
+            document.getElementById('timer').textContent = 
+                `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            
+            // Обновить статистику
+            const workHours = Math.floor(sessionData.workSeconds / 3600);
+            const workMinutes = Math.floor((sessionData.workSeconds % 3600) / 60);
+            document.getElementById('workTime').textContent = `${workHours}:${String(workMinutes).padStart(2, '0')}`;
+            
+            const breakHours = Math.floor(sessionData.breakSeconds / 3600);
+            const breakMinutes = Math.floor((sessionData.breakSeconds % 3600) / 60);
+            document.getElementById('breakTime').textContent = `${breakHours}:${String(breakMinutes).padStart(2, '0')}`;
+        }
+
+        // Обновить интерфейс
+        function updateUI() {
+            const btnStart = document.getElementById('btnStart');
+            const btnPause = document.getElementById('btnPause');
+            const btnEnd = document.getElementById('btnEnd');
+            const badge = document.getElementById('statusBadge');
+            const info = document.getElementById('sessionInfo');
+
+            if (sessionData.isWorking) {
+                btnStart.disabled = true;
+                btnPause.disabled = false;
+                btnEnd.disabled = false;
+                
+                if (sessionData.isPaused) {
+                    badge.className = 'status-badge paused';
+                    badge.textContent = '⏸️ Перерыв';
+                    btnPause.textContent = '▶️ Продолжить';
+                    info.textContent = 'Вы на перерыве';
+                } else {
+                    badge.className = 'status-badge working';
+                    badge.textContent = '✅ Работаю';
+                    btnPause.textContent = '⏸️ Перерыв';
+                    info.textContent = 'Смена идёт';
+                }
+            } else {
+                btnStart.disabled = false;
+                btnPause.disabled = true;
+                btnEnd.disabled = true;
+                badge.className = 'status-badge stopped';
+                badge.textContent = '⭕ Смена не начата';
+                info.textContent = 'Нажмите "Начать смену" для старта';
+            }
+        }
+
+        // Показать уведомление
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            alert.textContent = message;
+            alert.className = `alert ${type}`;
+            setTimeout(() => {
+                alert.className = 'alert';
+            }, 3000);
+        }
+
+        // Инициализация при загрузке
+        window.addEventListener('load', async () => {
+            await checkAPI();
+            updateUI();
+        });
     </script>
 </body>
 </html>

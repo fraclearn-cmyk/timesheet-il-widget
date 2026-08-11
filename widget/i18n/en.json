@@ -1,8 +1,12 @@
 {
+  "api_key": "API key (optional)",
+  "enable_widget": "Enable widget",
+  "backend_url": "Backend URL",
   "widget": {
     "name": "Timesheet IL",
     "short_description": "Time tracking",
-    "description": "Widget for time tracking with automatic activity tracking in amoCRM cards"
+    "description": "Widget for time tracking with automatic activity tracking in amoCRM cards",
+    "tour_description": "Widget for automatic employee time tracking with activity monitoring in cards"
   },
   "session": {
     "title": "Work Time",
@@ -40,6 +44,10 @@
   },
   "settings": {
     "title": "Widget Settings",
+    "api_url": "API Server URL (optional)",
+    "enable_widget": "Enable widget",
+    "backend_url": "Backend URL",
+    "login": "API key or login",
     "api_url": "API URL:",
     "api_url_placeholder": "http://your-server.com/api/v1",
     "auto_pause": "Auto-pause when closing card",

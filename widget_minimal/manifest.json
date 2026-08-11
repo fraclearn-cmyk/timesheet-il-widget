@@ -1,0 +1,21 @@
+{
+  "widget": {
+    "name": "widget.name",
+    "description": "widget.description",
+    "short_description": "widget.short_description",
+    "version": "1.0.1",
+    "interface_version": 2,
+    "init_once": false,
+    "locale": ["ru"],
+    "installation": false,
+    "support": {
+      "link": "https://example.com"
+    }
+  },
+  "locations": ["lcard"],
+  "tour": {
+    "is_tour": true,
+    "tour_images": {"ru": ["/images/tour_ru.png"]},
+    "tour_description": "widget.tour_description"
+  }
+}
