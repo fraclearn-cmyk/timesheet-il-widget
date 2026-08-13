@@ -44,11 +44,10 @@
   },
   "settings": {
     "title": "Настройки виджета",
-    "api_url": "URL API сервера (необязательно)",
+    "api_url": "URL API сервера",
     "enable_widget": "Включить виджет",
     "backend_url": "URL сервера",
     "login": "API ключ или логин",
-    "api_url": "URL API:",
     "api_url_placeholder": "http://your-server.com/api/v1",
     "auto_pause": "Автопауза при закрытии карточки",
     "require_category": "Требовать категорию активности",

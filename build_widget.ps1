@@ -138,8 +138,19 @@ if (Test-Path "widget/images") {
     Copy-Item "widget/images" "$tempDir/" -Recurse -Force
 }
 
-# Create archive
-Compress-Archive -Path "$tempDir/*" -DestinationPath $zipPath -Force
+# Create archive with correct structure (files in root, not in subfolder)
+# We need to change to temp directory to ensure files are in root of zip
+$currentDir = Get-Location
+Set-Location $tempDir
+
+# Get all items to compress
+$items = Get-ChildItem -Path . -Recurse
+
+# Create the archive from within the temp directory
+Compress-Archive -Path * -DestinationPath "../$zipPath" -Force
+
+# Return to original directory
+Set-Location $currentDir
 
 # Cleanup
 Remove-Item $tempDir -Recurse -Force

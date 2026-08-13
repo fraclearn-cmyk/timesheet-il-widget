@@ -1,4 +1,29 @@
 ﻿define(['jquery'], function($) {
+    // Polyfill for String.prototype.padStart (IE11 compatibility)
+    if (!String.prototype.padStart) {
+        String.prototype.padStart = function padStart(targetLength, padString) {
+            targetLength = Math.floor(targetLength) || 0;
+            if (targetLength < this.length) {
+                return String(this);
+            } else {
+                padString = String((typeof padString !== 'undefined' ? padString : ' '));
+                if (padString.length === 0) {
+                    padString = ' ';
+                }
+                var padLen = targetLength - this.length;
+                var repeatCount = Math.ceil(padLen / padString.length);
+                if (repeatCount > 1e6) {
+                    throw new RangeError('repeat count must not overflow maximum string size');
+                }
+                var padStr = '';
+                for (var i = 0; i < repeatCount; i++) {
+                    padStr += padString;
+                }
+                return padStr.slice(0, padLen) + String(this);
+            }
+        };
+    }
+    
     var CustomWidget = function() {
         var widget = this;
         
@@ -29,46 +54,57 @@
                     widget.userName = 'Demo User';
                 }
                 
-                // Load custom settings (REQUIRED!)
+                // Load custom settings
                 var settings = widget.get_settings();
                 if (settings && settings.api_url) {
                     widget.API_URL = settings.api_url;
                     console.log('API URL configured:', widget.API_URL);
                 } else {
-                    console.error('⚠️ API URL not configured in widget settings!');
-                    alert('Please configure API URL in widget settings');
-                    return false;
+                    console.warn('⚠️ API URL not configured - widget will work in demo mode');
+                    widget.API_URL = null; // Work without backend
                 }
                 
                 // Load current session from API
-                $.ajax({
-                    url: widget.API_URL + '/sessions/current',
-                    method: 'GET',
-                    data: {
-                        account_id: widget.accountId,
-                        user_id: widget.userId
-                    },
-                    success: function(response) {
-                        if (response && response.session_id && response.status !== 'finished') {
-                            widget.currentSession = response;
-                            widget.sessionStart = new Date(response.start_time);
-                            console.log('Session loaded:', response.status);
-                        } else {
+                if (widget.API_URL) {
+                    $.ajax({
+                        url: widget.API_URL + '/sessions/current',
+                        method: 'GET',
+                        timeout: 10000,
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        data: {
+                            account_id: widget.accountId,
+                            user_id: widget.userId
+                        },
+                        success: function(response) {
+                            // Validate response structure
+                            if (response && typeof response === 'object' && response.session_id && response.status && response.status !== 'finished') {
+                                widget.currentSession = response;
+                                widget.sessionStart = new Date(response.start_time);
+                                console.log('Session loaded:', response.status);
+                            } else {
+                                widget.currentSession = null;
+                                console.log('No active session');
+                            }
+                            // Create overlay after session loaded
+                            widget.createOverlay();
+                            widget.updateOverlayState();
+                        },
+                        error: function(xhr, status, error) {
+                            console.warn('Failed to load session:', status, error);
                             widget.currentSession = null;
-                            console.log('No active session');
+                            // Create overlay even if backend fails
+                            widget.createOverlay();
+                            widget.updateOverlayState();
                         }
-                        // Create overlay after session loaded
-                        widget.createOverlay();
-                        widget.updateOverlayState();
-                    },
-                    error: function(xhr, status, error) {
-                        console.log('No session loaded (backend may be offline)');
-                        widget.currentSession = null;
-                        // Create overlay even if backend fails
-                        widget.createOverlay();
-                        widget.updateOverlayState();
-                    }
-                });
+                    });
+                } else {
+                    // No API URL configured - work in demo mode
+                    widget.currentSession = null;
+                    widget.createOverlay();
+                    widget.updateOverlayState();
+                }
                 
                 // Start update timer
                 widget.startUpdateTimer();
@@ -96,51 +132,7 @@
         };
     };
 
-    // Get current user from amoCRM
-    CustomWidget.prototype.getCurrentUser = function() {
-        try {
-            this.accountId = AMOCRM.constant('account').id;
-            this.userId = AMOCRM.constant('user').id;
-            this.userName = AMOCRM.constant('user').name;
-            console.log('User:', this.userName, 'ID:', this.userId);
-        } catch (e) {
-            console.error('Failed to get user info:', e);
-            this.accountId = 'demo_account';
-            this.userId = 1;
-            this.userName = 'Demo User';
-        }
-    };
-
-    // Load current session from API
-    CustomWidget.prototype.loadCurrentSession = function(callback) {
-        var self = this;
-        
-        $.ajax({
-            url: self.API_URL + '/sessions/current',
-            method: 'GET',
-            data: {
-                account_id: self.accountId,
-                user_id: self.userId
-            },
-            success: function(response) {
-                if (response && response.session_id && response.status !== 'finished') {
-                    self.currentSession = response;
-                    self.sessionStart = new Date(response.start_time);
-                    console.log('Session loaded:', response.status);
-                } else {
-                    self.currentSession = null;
-                    console.log('No active session');
-                }
-                if (callback) callback();
-            },
-            error: function(xhr, status, error) {
-                console.log('No session loaded (backend may be offline)');
-                self.currentSession = null;
-                if (callback) callback();
-            }
-        });
-    };
-
+    
     // Create full-screen overlay
     CustomWidget.prototype.createOverlay = function() {
         var self = this;
@@ -656,5 +648,6 @@
 
     return CustomWidget;
 });
+
 
 

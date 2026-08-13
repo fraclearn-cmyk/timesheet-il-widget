@@ -44,11 +44,10 @@
   },
   "settings": {
     "title": "Widget Settings",
-    "api_url": "API Server URL (optional)",
+    "api_url": "API Server URL",
     "enable_widget": "Enable widget",
     "backend_url": "Backend URL",
     "login": "API key or login",
-    "api_url": "API URL:",
     "api_url_placeholder": "http://your-server.com/api/v1",
     "auto_pause": "Auto-pause when closing card",
     "require_category": "Require activity category",

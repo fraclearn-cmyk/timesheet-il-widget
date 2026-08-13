@@ -16,6 +16,7 @@
                                    "email":  "support@example.com"
                                }
                },
+    "scopes":  ["crm"],
     "locations":  [
                       "advancedSettings"
                   ],
@@ -23,7 +24,7 @@
                      "api_url":  {
                                      "name":  "settings.api_url",
                                      "type":  "text",
-                                     "required":  false
+                                     "required":  true
                                  }
                  },
     "tour":  {
