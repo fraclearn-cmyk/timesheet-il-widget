@@ -80,3 +80,45 @@ workspace нет авторизованной amoCRM-сессии и OAuth clien
 
 До успешного live spike все перечисленные данные остаются mock-only или unavailable,
 как указано в `docs/amocrm-integration-limits.md`.
+
+## Fix round 1
+
+### Изменения
+
+- OAuth authorization-code и refresh-token grants теперь отправляют JSON body с
+  `Content-Type: application/json`; mock проверяет весь payload, включая redirect URI.
+- Tenant URL нормализуется только как server-side origin `https://<tenant>.amocrm.ru`,
+  `https://<tenant>.amocrm.com` или `https://<tenant>.kommo.com`, без path, query,
+  credentials и port. Невалидный URL блокируется до обращения к transport, поэтому
+  client secret не покидает разрешённый tenant.
+- CRM event получает `confirmed` только для mock-validated пары
+  `lead_status_changed`/`leads`, положительных integer ID/timestamp/author и строкового
+  self link. Неизвестный type, неверный ID/timestamp/link и неподтверждённая сущность
+  возвращают `incomplete_event` без исключения.
+- API-контракт закрепляет server-side re-check действующих OAuth/account/amoCRM прав на
+  каждом запросе privileged route, timezone на уровне группы, UTC storage/API и
+  нейтральные `unconfirmed/browser_input` и `idle/no_confirmed_crm_event` интервалы.
+
+### RED
+
+1. `Push-Location backend; & 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q tests\integration\test_amocrm_contract.py`
+   → `12 failed, 4 passed`: mock отверг form-encoded OAuth payload; untrusted URL не
+   отклонялся; malformed/unknown events ошибочно подтверждались или выбрасывали `ValueError`.
+2. `Push-Location backend; & 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q tests\integration\test_amocrm_contract.py -k malformed`
+   → `8 failed, 10 deselected`: новый случай invalid ID/link также не переходил в fallback.
+3. `Push-Location backend; & 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q tests\integration\test_amocrm_contract.py -k untrusted`
+   → `1 failed, 4 passed, 14 deselected`: malformed port выдавал parser error вместо
+   controlled tenant-rejection, хотя transport не вызывался.
+
+### GREEN
+
+`Push-Location backend; & 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q tests\integration\test_amocrm_contract.py`
+→ `19 passed in 0.63s` после минимальных исправлений. Полная финальная верификация
+(включая full pytest, Black, flake8 и `git diff --check`) выполняется перед коммитом.
+
+### Итоговый вывод
+
+Открытые Critical/Important замечания Fix round 1 закрыты локальными контрактными тестами
+и явными правилами API. Live проверки amoCRM по-прежнему отсутствуют: allowlist и единственная
+подтверждаемая event shape являются безопасным mock-contract, а не доказательством полного
+набора tenant-specific fields или прав.

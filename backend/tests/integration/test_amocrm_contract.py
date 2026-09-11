@@ -7,6 +7,8 @@ recorded separately in the phase report.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -26,19 +28,17 @@ def test_exchanges_authorization_code_for_refreshable_token_set() -> None:
     """A wrong OAuth grant payload must not yield a usable token set."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        payload = dict(
-            item.split("=", 1) for item in request.content.decode().split("&")
-        )
         if (
             request.method != "POST"
             or str(request.url) != f"{ACCOUNT_URL}/oauth2/access_token"
-            or payload
+            or request.headers.get("Content-Type") != "application/json"
+            or json.loads(request.content)
             != {
                 "client_id": "client-id",
                 "client_secret": "client-secret",
                 "grant_type": "authorization_code",
                 "code": "authorization-code",
-                "redirect_uri": ("https%3A%2F%2Fwidget.example%2Foauth%2Fcallback"),
+                "redirect_uri": "https://widget.example/oauth/callback",
             }
         ):
             return httpx.Response(422, json={"title": "unexpected OAuth request"})
@@ -92,13 +92,15 @@ def test_refreshes_expired_access_token_with_stored_refresh_token() -> None:
     """Refreshing through authorization_code would lose a renewed session."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        payload = dict(
-            item.split("=", 1) for item in request.content.decode().split("&")
-        )
-        if (
-            payload.get("grant_type") != "refresh_token"
-            or payload.get("refresh_token") != "refresh-token"
-        ):
+        if request.headers.get("Content-Type") != "application/json" or json.loads(
+            request.content
+        ) != {
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "grant_type": "refresh_token",
+            "refresh_token": "refresh-token",
+            "redirect_uri": "https://widget.example/oauth/callback",
+        }:
             return httpx.Response(422, json={"title": "unexpected refresh request"})
         return httpx.Response(
             200,
@@ -121,6 +123,47 @@ def test_refreshes_expired_access_token_with_stored_refresh_token() -> None:
 
     assert tokens.access_token == "renewed-access-token"
     assert tokens.refresh_token == "rotated-refresh-token"
+
+
+@pytest.mark.parametrize(
+    "untrusted_url",
+    [
+        "http://tenant.amocrm.ru",
+        "https://tenant.amocrm.ru.attacker.invalid",
+        "https://attacker.invalid",
+        "https://tenant.amocrm.ru:not-a-port",
+        "https://tenant.kommo.com/oauth2/access_token",
+    ],
+)
+def test_rejects_untrusted_tenant_url_before_sending_oauth_secret(
+    untrusted_url: str,
+) -> None:
+    """An attacker URL must never receive the OAuth client secret."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json={
+                "access_token": "access-token",
+                "refresh_token": "refresh-token",
+                "expires_in": 86400,
+            },
+        )
+
+    client = AmoCRMAuthClient(
+        client_id="client-id",
+        client_secret="client-secret",
+        redirect_uri="https://widget.example/oauth/callback",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(ValueError, match="trusted HTTPS amoCRM/Kommo tenant"):
+        client.exchange_authorization_code(untrusted_url, "authorization-code")
+
+    assert calls == 0
 
 
 def test_marks_unauthorized_account_request_as_expired_token() -> None:
@@ -182,6 +225,42 @@ def test_normalizes_complete_timeline_event_without_inventing_fields() -> None:
             "_links": {"self": {"href": "/api/v4/events/9001"}},
         },
     }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", "9001"),
+        ("type", "lead_deleted"),
+        ("type", 17),
+        ("created_at", "not-a-unix-timestamp"),
+        ("created_by", "456"),
+        ("entity_id", True),
+        ("entity_type", "contacts"),
+        ("_links", {"self": {"href": 42}}),
+    ],
+)
+def test_marks_unknown_or_malformed_timeline_event_incomplete(
+    field: str, value: object
+) -> None:
+    """Unknown types and invalid values must not make confirmed activity."""
+    payload = {
+        "id": 9001,
+        "type": "lead_status_changed",
+        "created_at": 1_789_113_600,
+        "created_by": 456,
+        "entity_id": 1001,
+        "entity_type": "leads",
+        "_links": {"self": {"href": "/api/v4/events/9001"}},
+    }
+    payload[field] = value
+
+    event = normalize_timeline_event(payload)
+
+    assert event["kind"] == "incomplete_event"
+    assert event["source"] == "crm_event"
+    assert event["event_type"] == "unknown_event"
+    assert event["raw_payload"] == payload
 
 
 def test_marks_unsupported_call_payload_incomplete() -> None:

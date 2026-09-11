@@ -42,6 +42,10 @@
 
 `account_id` и `amocrm_id` получают из проверенного OAuth/account context. `role` —
 локальная policy mapping; её источник в amoCRM не подтверждён до live spike.
+Backend повторно проверяет действующий OAuth token, account context и актуальные права
+amoCRM на **каждом** запросе. Любой privileged route (настройки, группы, team, timeline,
+reports и export) обязан выполнять эту server-side проверку до local RBAC policy; browser
+`account_id`, `user_id`, `role` и ранее закэшированные права не могут её заменить.
 
 ## Рабочие статусы
 
@@ -65,15 +69,20 @@
 
 ## Настройки
 
-`GET /api/v1/settings` и `PUT /api/v1/settings` работают с настройками аккаунта;
+`GET /api/v1/settings` и `PUT /api/v1/settings` работают с настройками аккаунта и групп;
 `GET /api/v1/settings/users`, `PUT /api/v1/settings/users/{amocrm_user_id}` — с
 настройкой сотрудника:
 
 ```json
 {
-  "timezone": "Europe/Minsk",
-  "default_workday_start": "09:00:00",
-  "default_workday_end": "18:00:00",
+  "groups": [
+    {
+      "id": 10,
+      "timezone": "Europe/Minsk",
+      "workday_start": "09:00:00",
+      "workday_end": "18:00:00"
+    }
+  ],
   "users": []
 }
 ```
@@ -88,6 +97,10 @@
 
 Группы обслуживают `GET/POST /api/v1/settings/groups`,
 `PUT/DELETE /api/v1/settings/groups/{group_id}`. `hide_widget` не отключает `track_time`.
+Все timestamps в хранилище и JSON передаются в UTC (`Z`). Calendar date, границы
+`date_from/date_to`, timeline и строки отчёта вычисляются и отображаются в timezone группы,
+а не в timezone аккаунта, браузера или пользователя; локальные границы периода сначала
+конвертируются в UTC.
 
 ## Команда и timeline
 
@@ -127,6 +140,23 @@
 `kind=confirmed` разрешён только для полноатрибутированного CRM event или live-validated
 call. Неизвестные данные хранятся как `incomplete_event` и не окрашивают timeline как
 подтверждённую активность.
+
+Mouse/keyboard без CRM event образует только нейтральный интервал, например:
+
+```json
+{
+  "started_at": "2026-09-11T08:24:00Z",
+  "ended_at": "2026-09-11T08:29:00Z",
+  "kind": "unconfirmed",
+  "source": "browser_input",
+  "duration_source": "observed"
+}
+```
+
+`kind=unconfirmed`, `source=browser_input` и `kind=idle`,
+`source=no_confirmed_crm_event` отображаются нейтрально, не как подтверждённая (зелёная)
+работа, и не увеличивают `work_seconds` в timeline, reports или export. Только
+`kind=confirmed`, `source=crm_event|call` может учитываться как подтверждённая работа.
 
 ## Отчёт и экспорт
 
