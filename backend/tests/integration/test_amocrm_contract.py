@@ -201,7 +201,7 @@ def test_normalizes_complete_timeline_event_without_inventing_fields() -> None:
             "created_by": 456,
             "entity_id": 1001,
             "entity_type": "leads",
-            "_links": {"self": {"href": "/api/v4/events/9001"}},
+            "_links": {"self": {"href": "https://example.amocrm.ru/leads/detail/1001"}},
         }
     )
 
@@ -214,7 +214,7 @@ def test_normalizes_complete_timeline_event_without_inventing_fields() -> None:
         "author_amocrm_id": 456,
         "object_type": "leads",
         "object_id": 1001,
-        "object_url": "/api/v4/events/9001",
+        "object_url": "https://example.amocrm.ru/leads/detail/1001",
         "raw_payload": {
             "id": 9001,
             "type": "lead_status_changed",
@@ -222,7 +222,7 @@ def test_normalizes_complete_timeline_event_without_inventing_fields() -> None:
             "created_by": 456,
             "entity_id": 1001,
             "entity_type": "leads",
-            "_links": {"self": {"href": "/api/v4/events/9001"}},
+            "_links": {"self": {"href": "https://example.amocrm.ru/leads/detail/1001"}},
         },
     }
 
@@ -238,6 +238,11 @@ def test_normalizes_complete_timeline_event_without_inventing_fields() -> None:
         ("entity_id", True),
         ("entity_type", "contacts"),
         ("_links", {"self": {"href": 42}}),
+        ("_links", {"self": {"href": "not a URL"}}),
+        (
+            "_links",
+            {"self": {"href": "https://attacker.invalid/leads/detail/1001"}},
+        ),
     ],
 )
 def test_marks_unknown_or_malformed_timeline_event_incomplete(
@@ -251,7 +256,7 @@ def test_marks_unknown_or_malformed_timeline_event_incomplete(
         "created_by": 456,
         "entity_id": 1001,
         "entity_type": "leads",
-        "_links": {"self": {"href": "/api/v4/events/9001"}},
+        "_links": {"self": {"href": "https://example.amocrm.ru/leads/detail/1001"}},
     }
     payload[field] = value
 

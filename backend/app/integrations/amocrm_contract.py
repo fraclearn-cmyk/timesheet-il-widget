@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Mapping
@@ -214,8 +215,7 @@ def _validated_timeline_event(
         )
         or event_type != "lead_status_changed"
         or entity_type != "leads"
-        or not isinstance(object_url, str)
-        or not object_url
+        or not _is_safe_card_url(object_url, entity_type, entity_id)
     ):
         return None
 
@@ -237,3 +237,26 @@ def _validated_timeline_event(
 
 def _is_positive_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _is_safe_card_url(
+    object_url: object, entity_type: object, entity_id: object
+) -> bool:
+    """Allow only a trusted tenant's HTTPS URL for this entity's card."""
+    if (
+        not isinstance(object_url, str)
+        or not isinstance(entity_type, str)
+        or not _is_positive_int(entity_id)
+    ):
+        return False
+    try:
+        parsed = urlsplit(object_url)
+        _trusted_tenant_origin(f"{parsed.scheme}://{parsed.netloc}")
+    except (AmoCRMAccountURLInvalid, ValueError):
+        return False
+    return (
+        not parsed.query
+        and not parsed.fragment
+        and re.fullmatch(rf"/{re.escape(entity_type)}/detail/{entity_id}", parsed.path)
+        is not None
+    )

@@ -122,3 +122,29 @@ workspace нет авторизованной amoCRM-сессии и OAuth clien
 и явными правилами API. Live проверки amoCRM по-прежнему отсутствуют: allowlist и единственная
 подтверждаемая event shape являются безопасным mock-contract, а не доказательством полного
 набора tenant-specific fields или прав.
+
+## Fix round 2
+
+### Изменения
+
+- `normalize_timeline_event` теперь признаёт ссылку объекта безопасной только как HTTPS URL
+  разрешённого amoCRM/Kommo tenant без query/fragment, ведущий ровно на карточку текущей
+  сущности (`/{entity_type}/detail/{entity_id}`). Строковая, но malformed или чужая ссылка
+  даёт `incomplete_event`, не исключение.
+
+### RED
+
+`Push-Location backend; & 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q tests\integration\test_amocrm_contract.py -k malformed`
+→ `2 failed, 8 passed, 11 deselected`: `href="not a URL"` и URL внешнего host ошибочно
+создавали `confirmed` event.
+
+### GREEN
+
+`Push-Location backend; & 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q tests\integration\test_amocrm_contract.py`
+→ `21 passed in 0.52s` после минимальной URL-проверки. Полная проверка и `git diff --check`
+выполнены перед коммитом.
+
+### Итоговый вывод
+
+Строковый `href` больше не достаточен для confirmed activity: event привязан к безопасной
+карточке на разрешённом tenant. Live-format ссылок по-прежнему требует отдельного spike.
