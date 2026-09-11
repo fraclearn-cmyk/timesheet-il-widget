@@ -13,6 +13,7 @@ class Department(Base):
     # Work schedule
     work_start_time = Column(Time, nullable=False)  # Например: 09:00:00
     work_end_time = Column(Time, nullable=False)    # Например: 18:00:00
+    timezone = Column(String(64), nullable=False, default="UTC")
     
     # Settings
     is_active = Column(Boolean, default=True)

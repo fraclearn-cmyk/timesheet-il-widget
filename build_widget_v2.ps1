@@ -1,28 +1,5 @@
-# Widget Builder for amoCRM Timesheet IL
-# Version: 3.0.2
+# Widget Builder for amoCRM Timesheet IL v3.0.2
 # Creates ZIP package with UTF-8 encoding (no BOM)
-
-param(
-    [string]$ApiUrl = "http://localhost:8000/api/v1",
-    [string]$CssUrl = ""
-)
-
-function Set-UTF8Content {
-    param(
-        [string]$Path,
-        [string]$Value
-    )
-    $utf8NoBOM = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($Path, $Value, $utf8NoBOM)
-}
-
-function Remove-UTF8BOM {
-    param([string]$FilePath)
-    $content = [System.IO.File]::ReadAllBytes($FilePath)
-    if ($content.Length -ge 3 -and $content[0] -eq 0xEF -and $content[1] -eq 0xBB -and $content[2] -eq 0xBF) {
-        [System.IO.File]::WriteAllBytes($FilePath, $content[3..($content.Length - 1)])
-    }
-}
 
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "  amoCRM Widget Builder" -ForegroundColor Cyan
@@ -44,10 +21,10 @@ $requiredFiles = @(
 $allExist = $true
 foreach ($file in $requiredFiles) {
     if (Test-Path $file) {
-        Write-Host "  ✓ $file" -ForegroundColor Green
+        Write-Host "  OK: $file" -ForegroundColor Green
     }
     else {
-        Write-Host "  ✗ $file (MISSING)" -ForegroundColor Red
+        Write-Host "  MISSING: $file" -ForegroundColor Red
         $allExist = $false
     }
 }
@@ -63,14 +40,14 @@ Write-Host ""
 Write-Host "Step 2: Checking images..." -ForegroundColor Cyan
 
 if (Test-Path "widget/images/logo.png") {
-    Write-Host "  ✓ logo.png" -ForegroundColor Green
+    Write-Host "  OK: logo.png" -ForegroundColor Green
 }
 else {
-    Write-Host "  ✗ logo.png (REQUIRED)" -ForegroundColor Red
+    Write-Host "  ERROR: logo.png required" -ForegroundColor Red
     exit 1
 }
 
-# Step 3: Remove BOM and prepare files
+# Step 3: Remove BOM from text files
 Write-Host ""
 Write-Host "Step 3: Preparing files (removing BOM)..." -ForegroundColor Cyan
 
@@ -87,7 +64,7 @@ foreach ($file in $textFiles) {
         $content = [System.IO.File]::ReadAllBytes($file)
         if ($content.Length -ge 3 -and $content[0] -eq 0xEF -and $content[1] -eq 0xBB -and $content[2] -eq 0xBF) {
             [System.IO.File]::WriteAllBytes($file, $content[3..($content.Length - 1)])
-            Write-Host "  ✓ Removed BOM from: $file" -ForegroundColor Green
+            Write-Host "  Removed BOM: $file" -ForegroundColor Green
         }
     }
 }
@@ -100,7 +77,7 @@ $zipPath = "timesheet_il_widget.zip"
 
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
-    Write-Host "  ✓ Old archive removed" -ForegroundColor Yellow
+    Write-Host "  Old archive removed"
 }
 
 $tempDir = "temp_widget_build"
@@ -119,17 +96,15 @@ if (Test-Path "widget/images") {
     Copy-Item "widget/images" "$tempDir/" -Recurse -Force
 }
 
-Write-Host "  ✓ Files copied to temp directory" -ForegroundColor Green
+Write-Host "  Files prepared"
 
-# Create archive with correct structure (files in root, not in subfolder)
+# Create archive from temp directory
 $currentDir = Get-Location
 Set-Location $tempDir
 
-# Create the archive from within the temp directory
 Compress-Archive -Path * -DestinationPath "../$zipPath" -Force
-Write-Host "  ✓ Archive created: $zipPath" -ForegroundColor Green
+Write-Host "  Archive created: $zipPath" -ForegroundColor Green
 
-# Return to original directory
 Set-Location $currentDir
 
 # Cleanup
@@ -143,15 +118,7 @@ Write-Host "==========================================" -ForegroundColor Green
 Write-Host "  WIDGET BUILD SUCCESSFUL" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Archive: $zipPath" -ForegroundColor Cyan
-Write-Host "Size: $zipSizeKB KB" -ForegroundColor Cyan
+Write-Host "Archive: $zipPath ($zipSizeKB KB)" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Files packaged:" -ForegroundColor Green
-Write-Host "  - manifest.json" -ForegroundColor White
-Write-Host "  - script.js" -ForegroundColor White
-Write-Host "  - styles.css" -ForegroundColor White
-Write-Host "  - i18n files (ru.json, en.json)" -ForegroundColor White
-Write-Host "  - images/logo.png" -ForegroundColor White
-Write-Host ""
-Write-Host "Next: Run validate_widget_zip.py to verify package" -ForegroundColor Cyan
+Write-Host "Next: Run validate_widget_zip.py to verify" -ForegroundColor Cyan
 Write-Host ""

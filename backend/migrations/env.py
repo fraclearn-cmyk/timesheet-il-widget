@@ -16,6 +16,11 @@ from app.models.activity_session import ActivitySession
 from app.models.activity_event import ActivityEvent
 from app.models.activity_category import ActivityCategory
 from app.models.widget_settings import WidgetSettings
+from app.models.widget_group import WidgetGroup
+from app.models.group_member import GroupMember
+from app.models.crm_event import CrmEvent
+from app.models.call_event import CallEvent
+from app.models.activity_interval import ActivityInterval
 
 # this is the Alembic Config object
 config = context.config

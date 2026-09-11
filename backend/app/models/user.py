@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -15,6 +15,9 @@ class UserRole(str, enum.Enum):
 class User(Base):
     """User model - represents amoCRM users with roles and permissions"""
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("amocrm_account_id", "amocrm_user_id", name="uq_users_account_amocrm_user"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     amocrm_user_id = Column(Integer, unique=True, nullable=False, index=True)

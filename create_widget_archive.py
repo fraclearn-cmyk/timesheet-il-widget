@@ -18,6 +18,9 @@ def create_widget_archive(source_dir, output_file):
     # Walk through directory
     for root, dirs, files in os.walk(source_dir):
         for file in files:
+            if file == 'demo.html':
+                print(f"[SKIP] Excluding demo.html from archive")
+                continue
             full_path = os.path.join(root, file)
             # Get relative path from source_dir
             rel_path = os.path.relpath(full_path, source_dir)

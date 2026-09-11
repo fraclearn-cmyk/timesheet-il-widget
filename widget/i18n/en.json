@@ -58,5 +58,8 @@
     "save_button": "Save",
     "cancel_button": "Cancel",
     "reset_button": "Reset"
+  },
+  "advanced": {
+    "title": "Timesheet Settings"
   }
 }

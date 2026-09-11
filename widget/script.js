@@ -1,4 +1,4 @@
-﻿define(['jquery'], function($) {
+define(['jquery'], function($) {
     // Polyfill for String.prototype.padStart (IE11 compatibility)
     if (!String.prototype.padStart) {
         String.prototype.padStart = function padStart(targetLength, padString) {
@@ -115,6 +115,10 @@
                 return true;
             },
             settings: function() {
+                return true;
+            },
+            advancedSettings: function() {
+                console.log('Advanced settings opened');
                 return true;
             },
             onSave: function() {
@@ -460,7 +464,7 @@
         $('#btn-break-resume').on('click', function() { self.toggleBreak(); });
         $('#btn-break-end').on('click', function() { self.endSession(); });
         
-        console.log('Overlay v3.0.1 created');
+        console.log('Overlay v3.0.2 created');
     };
 
     // Show overlay with start button

@@ -11,6 +11,11 @@ from app.models.widget_settings import WidgetSettings
 from app.models.report import Report
 from app.models.work_comment import WorkComment
 from app.models.dashboard_settings import DashboardSettings
+from app.models.widget_group import WidgetGroup
+from app.models.group_member import GroupMember
+from app.models.crm_event import CrmEvent
+from app.models.call_event import CallEvent
+from app.models.activity_interval import ActivityInterval
 
 __all__ = [
     "User",
@@ -27,4 +32,9 @@ __all__ = [
     "Report",
     "WorkComment",
     "DashboardSettings",
+    "WidgetGroup",
+    "GroupMember",
+    "CrmEvent",
+    "CallEvent",
+    "ActivityInterval",
 ]

@@ -58,5 +58,8 @@
     "save_button": "Сохранить",
     "cancel_button": "Отмена",
     "reset_button": "Сбросить"
+  },
+  "advanced": {
+    "title": "Настройки табеля"
   }
 }
