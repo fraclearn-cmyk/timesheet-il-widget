@@ -1,36 +1,61 @@
 # Ограничения интеграции amoCRM
 
-## Проверено локально
+Статус на 2026-09-11: live spike не выполнен. В доступной локальной среде нет
+авторизованной amoCRM-сессии и заполненных OAuth client credentials. В этом документе
+«неизвестно» не заменяется предположением.
 
-- В `widget/manifest.json` указано расположение `advanced_settings`.
-- Текущий manifest содержит обязательный `api_url`, но OAuth-настройка и scopes явно не описаны.
-- `widget/script.js` получает `account` и `user` через SDK и при отсутствии API переходит в demo-режим.
-- Каталог `backend/app/integrations/` пуст, поэтому реального клиента amoCRM в проекте нет.
-- Activity-модели и enum существуют, но ingestion из аналитики amoCRM и звонков отсутствует.
+## Подтверждено локально и mock-контрактом
 
-## Пока не подтверждено без тестового аккаунта
+- `widget/manifest.json` использует единственную location `advanced_settings`. Она
+  соответствует собственной странице расширенных настроек Web SDK.
+- В виджете читаются `AMOCRM.constant('account').id` и
+  `AMOCRM.constant('user').{id,name}`. Эти значения доступны UI, но текущий fallback
+  подставляет demo account/user и поэтому не пригоден для серверной аутентификации.
+- OAuth adapter фазы 0 отправляет server-side `authorization_code` либо
+  `refresh_token` grant на `{account_url}/oauth2/access_token`; успешный mock-ответ
+  требует `access_token`, `refresh_token`, `expires_in`. Значения токенов не логируются.
+- Нет access token — `AmoCRMTokenMissing`; 401 при `GET /api/v4/account` —
+  `AmoCRMTokenExpired`, то есть нужен refresh/re-auth, а не доверие к ID из браузера.
+- Полное CRM-событие становится `confirmed` только с `id`, `type`, `created_at`,
+  `created_by`, `entity_id`, `entity_type`. Пропуски и неизвестный звонок —
+  `incomplete_event` с сохранённым raw payload.
 
-- Полный перечень событий, доступный через публичный API/аналитику.
-- Наличие автора и точного времени у каждого события.
-- Доступность длительности и направления звонка.
-- Способ получения события, когда пользователь изменяет карточку мышью или клавиатурой.
-- Возможность слушать события всей страницы amoCRM из iframe виджета.
-- Набор scopes и формат OAuth для текущей версии аккаунта.
+## Не подтверждено без тестового аккаунта
 
-## Безопасное поведение до подтверждения
+| Тема | Что нельзя утверждать до live spike | Безопасный fallback |
+|---|---|---|
+| OAuth redirect | Реальный delivery authorization code, redirect URI и точный набор scopes текущей интеграции | Не включать OAuth flow в production и не принимать browser ID как identity |
+| Account/user/role | Поля account API, user role/rights и их связь с local RBAC | Роль не присваивается автоматически; deny по умолчанию для privileged actions |
+| Event analytics | Endpoint, event types, author, timestamp, entity/link, cursor/page, latency и duplicate delivery | Хранить только полные события; остальные `incomplete_event`; не устанавливать polling/dedup window на догадке |
+| Calls | Reader API и фактические direction, duration, author, associated card/link | Не выводить duration/direction и не создавать confirmed interval из opaque call payload |
+| Browser signals | Доступность события всей страницы из iframe и связь mouse/keyboard с CRM action | Локальные click/keyboard не считаются CRM-активностью |
+| Manifest scopes | Передаются ли scopes и permissions через manifest для этого типа виджета | Не добавлять фиктивные manifest fields; проверить настройки OAuth-интеграции в аккаунте |
 
-- Не считать локальный клик или ввод подтверждённой CRM-активностью.
-- Не создавать зелёный интервал без события amoCRM или звонка.
-- Неполное событие хранить как `incomplete_event` с исходным типом и не терять payload.
-- При отсутствии OAuth не принимать ID пользователя/аккаунта от клиента как доказательство личности.
-- При недоступности API показывать пользователю: «Не удалось получить данные amoCRM. Повторите попытку через минуту.»
+## Официальные источники, использованные для mock-границы
 
-## Что нужно проверить в тестовом аккаунте
+- [Web SDK: расширенные настройки](https://www.amocrm.ru/developers/content/web_sdk/settings)
+  описывает `advanced_settings` и callback `advancedSettings`.
+- [Структура виджета](https://www.amocrm.ru/developers/content/integrations/structure)
+  описывает контекстные переменные `#ACCOUNT_ID#` и `#USER_ID#`; это не server-side
+  удостоверение личности.
+- [Web SDK locations](https://www.amocrm.ru/developers/content/web_sdk/start) перечисляет
+  доступные locations; только используемая location оставлена в manifest.
+- [Возможности телефонии](https://www.amocrm.ru/developers/content/telephony/capabilities-2)
+  показывает notification payload, но не подтверждает универсальный API чтения истории
+  звонков для данного виджета.
 
-1. Установить текущий архив и открыть настройки.
-2. Получить OAuth-контекст аккаунта и пользователя.
-3. Выполнить изменение сделки, задачи, контакта, компании, примечания и email.
-4. Выполнить входящий и исходящий звонок.
-5. Сопоставить событие с пользователем, timestamp, объектом и ссылкой.
-6. Проверить задержку и повторную доставку одного события.
-7. Проверить поведение в `Работаю`, `Перерыв` и `Закончил(а)`.
+## Обязательная программа live spike
+
+1. Установить архив в тестовый аккаунт и открыть `advanced_settings`.
+2. Пройти OAuth без раскрытия code/token в журнале; зафиксировать только имена полей,
+   HTTP code и обезличенную форму ответа.
+3. Проверить account/user context и документированный источник ролей.
+4. Выполнить изменения сделки, задачи, контакта, компании, примечания и email; сверить
+   author, timestamp, entity, URL, pagination/cursor, задержку и повторную доставку.
+5. Выполнить входящий и исходящий звонок; проверить direction, duration, author и
+   привязанную карточку.
+6. Повторить в состояниях «Работаю», «Перерыв», «Закончил(а)» и проверить, что browser
+   mouse/keyboard без amoCRM события не меняют confirmed timeline.
+
+До выполнения этой программы завершение фазы — `DONE_WITH_CONCERNS`, а не live-validated
+интеграция.
