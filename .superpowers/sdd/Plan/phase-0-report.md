@@ -225,3 +225,72 @@ Inline scripts намеренно не сохранены: их единстве
 
 Metadata shape подтверждён одним read-only response; утверждений о multi-page traversal
 или pagination behavior в документации больше нет.
+
+## Live spike: controlled analytics follow-up (2026-09-16)
+
+### Разрешённые изменения
+
+По явному разрешению пользователя создан один временный набор с префиксом `[TEST CODEX]`:
+
+| Тип | Количество | Обезличенный reference |
+|---|---:|---|
+| Contact | 1 | `contact:sha256:55ce2261e6fa` |
+| Company | 1 | `company:sha256:7ff1a67661c7` |
+| Lead, связанная с contact/company | 1 | `lead:sha256:6dbcc46c3951` |
+| Task на test lead | 1 | `task:sha256:3955a981da3d` |
+| Common note на test lead | 1 | `common_note:sha256:3a9acbf97939` |
+| Изменение только test lead | 1 PATCH | rename field `name`, reference test lead выше |
+
+Numeric IDs держались только в памяти; таблица содержит односторонние opaque references.
+Объекты можно найти в тестовом аккаунте по префиксу `[TEST CODEX]`. Ничего не удалялось;
+существующие CRM entities не менялись; phone notes и calls не создавались. Первая попытка
+создать task вернула HTTP 400 и не продолжила сценарий; после read-only получения task type
+shape task был успешно создан HTTP 200. Error body не читался и не сохранялся.
+
+### Observed events
+
+- После создания/связи/note/update `GET /api/v4/events?limit=250&page=1` вернул HTTP 200
+  с 11 target events в первом immediate poll. Observed types: `contact_added`,
+  `company_added`, `lead_added`, `entity_linked`, `task_added`, `common_note_added`,
+  `name_field_changed`. Это ровно наблюдённый набор для test actions, не полный catalog
+  amoCRM.
+- Event top-level response fields: `_embedded`, `_links`, `_page`; event fields:
+  `_embedded`, `_links`, `account_id`, `created_at`, `created_by`, `entity_id`,
+  `entity_type`, `id`, `oauth_client_uuid`, `type`, `value_after`, `value_before`.
+  Shapes: `id`/`type` string; author/timestamp/entity ID integer; entity type string;
+  before/after array. Presence подтверждены для author, timestamp, entity, `_links.self`
+  и `_embedded.entity`; raw values/payload не записывались.
+- Corrected read-only dedup polls для contact/company/lead показали 10 target events,
+  10 unique nonempty **string** event IDs, 0 duplicates и 0 новых IDs в polls через 0/2/6
+  секунд. Первичный 11-й event относится к created task (`task_added`); он не входил в
+  последующий entity filter. Это не подтверждает общую доставку, latency или dedup guarantee.
+- Events появились в первом immediate poll после lead update; точная server-side latency не
+  измерена. Response дал `_page` и `_links` без `next`; `_page_count`/`_total_items`
+  отсутствовали. Read-only `page=2` вернул HTTP 204 — это не доказывает general pagination.
+- `GET /api/v4/calls?limit=1&page=1` остаётся HTTP 405. Calls и phone notes намеренно не
+  создавались, поэтому call direction/duration/author/card не подтверждены.
+
+### Контрактная граница
+
+Live event `id` имеет тип string. Текущий phase-0 mock normalizer допускает только positive
+integer ID, поэтому live payload пока должен оставаться `incomplete_event`; это documented
+mismatch для следующей integration change, а не основание подменить данные.
+
+### Safety, self-review и remaining concerns
+
+- Использовались только ignored root `.env` credentials. Не выведены и не добавлены в Git
+  token, secret, account URL, real user values, email, phone или raw payload.
+- Документы обновлены лишь status, field names, primitive shapes, counts, opaque references
+  и observed type names. `Plan.md` не менялся; отдельный live helper не сохранялся.
+- Остались unobserved: полный event catalog, non-test actions (включая email), delivery/latency
+  guarantees, general pagination, role mapping, authorization-code redirect/scopes, widget
+  iframe behavior и call reader/events.
+
+### Verification
+
+- `Push-Location backend; D:\табель\.venv312\Scripts\python.exe -m pytest -q` →
+  `21 passed`.
+- UTF-8 doc consistency check подтвердил presence observed-type, string-ID и calls-405
+  facts во всех релевантных документах.
+- Secret scan сравнил значения из ignored `.env` с tracked diff только в памяти → pass.
+- `git diff --check` → exit code 0.

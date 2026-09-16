@@ -147,10 +147,22 @@ reports и export) обязан выполнять эту server-side прове
 call. Неизвестные данные хранятся как `incomplete_event` и не окрашивают timeline как
 подтверждённую активность.
 
-Live `GET /api/v4/events?limit=1&page=1` вернул 204 без event records; поэтому этот
-контракт пока не делает live-утверждения о `type`, author, timestamp, entity, card URL или
-events pagination. Live `GET /api/v4/calls?limit=1&page=1` вернул 405, так что call reader
-contract и `source=call` остаются недоступными до отдельной проверки.
+Controlled `[TEST CODEX]` actions дали HTTP 200 для `GET /api/v4/events?limit=250&page=1`.
+Наблюдались только `contact_added`, `company_added`, `lead_added`, `entity_linked`,
+`task_added`, `common_note_added`, `name_field_changed`; это не полный catalog amoCRM.
+Observed event shape содержит string `id`/`type`, integer `created_at`/`created_by`/
+`entity_id`, string `entity_type`, array `value_before`/`value_after`, а также
+`_links.self` и `_embedded.entity`. Author, timestamp, entity и link реально присутствовали.
+
+Важное расхождение: текущий phase-0 mock normalizer требует positive integer event `id`,
+но live events имеют string `id`. До отдельной integration change такой event должен
+оставаться `incomplete_event`, а не принудительно становиться `confirmed`.
+
+Events response показал `_page` и `_links` без `next`; `page=2` дал 204. Это не доказывает
+general multi-page traversal. Для 10 target events на contact/company/lead не наблюдалось
+duplicate/new string ID в three polls за 0/2/6 секунд; это не является delivery guarantee.
+Live `GET /api/v4/calls?limit=1&page=1` вернул 405, так что call reader contract и
+`source=call` остаются недоступными до отдельной проверки.
 
 Mouse/keyboard без CRM event образует только нейтральный интервал, например:
 

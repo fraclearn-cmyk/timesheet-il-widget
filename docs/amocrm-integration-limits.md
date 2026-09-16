@@ -21,8 +21,22 @@ console output. В этом документе «неизвестно» не з�
   `access_token`, `refresh_token`, `expires_in`, `server_time`, `token_type`. Оба token
   были заменены одним атомарным `os.replace` в игнорируемом root `.env`; новый access token
   повторно дал HTTP 200 для account read.
-- `GET /api/v4/events?limit=1&page=1` вернул HTTP 204 без JSON body. Поэтому не
-  подтверждены event types, author, timestamp, entity, link или events pagination.
+- После controlled `[TEST CODEX]` actions `GET /api/v4/events?limit=250&page=1` вернул
+  HTTP 200. Для созданных test entities observed types: `contact_added`, `company_added`,
+  `lead_added`, `entity_linked`, `task_added`, `common_note_added`, `name_field_changed`.
+  Это не полный перечень types amoCRM.
+- Observed event shape: top-level `_embedded`, `_links`, `_page`; event fields `_embedded`,
+  `_links`, `account_id`, `created_at`, `created_by`, `entity_id`, `entity_type`, `id`,
+  `oauth_client_uuid`, `type`, `value_after`, `value_before`. Primitive shape: event `id`
+  и `type` — string; `created_at`, `created_by`, `entity_id` — integer; `entity_type` —
+  string; before/after — array. Присутствуют author, timestamp, entity, `_links.self` и
+  `_embedded.entity`.
+- Events появились в первом immediate poll после update. Для 10 events, привязанных к
+  contact/company/lead, string IDs были уникальны и не дали новых/double entries в polls
+  0/2/6 секунд. Это не подтверждает общий latency, delivery или dedup behavior.
+- Events response включал `_page` и `_links` без `next`; `_page_count` и `_total_items`
+  не присутствовали. Отдельный `page=2` вернул 204. General multi-page traversal не
+  подтверждён.
 - `GET /api/v4/calls?limit=1&page=1` вернул HTTP 405. Reader contract звонков и его
   fields не подтверждены.
 
@@ -48,7 +62,7 @@ console output. В этом документе «неизвестно» не з�
 |---|---|---|
 | OAuth redirect/scopes | Одноразовый authorization code уже очищен; redirect delivery и configured scopes в этом запуске не воспроизводились | Не принимать browser ID как identity; хранить и обновлять server-side token only |
 | Account/user/role | Local Admin/ROP/employee mapping по live `rights` и `role_id` | Роль не присваивается автоматически; deny по умолчанию для privileged actions |
-| Event analytics | Events endpoint дал 204: нет record/type/author/timestamp/entity/link, events pagination, latency и duplicate delivery | Хранить только полные события; остальные `incomplete_event`; не устанавливать polling/dedup window на догадке |
+| Event analytics | Наблюдались только семь test-driven types и один page; нет полного catalog, general pagination, latency или delivery guarantee. Live event ID — string, что расходится с текущим integer-only mock adapter | До исправления mismatch не превращать live string ID в confirmed; не устанавливать polling/dedup window на догадке |
 | Calls | `GET /api/v4/calls` дал 405; reader API, direction, duration, author, associated card/link не известны | Не выводить duration/direction и не создавать confirmed interval из opaque call payload |
 | Browser signals | Доступность события всей страницы из iframe и связь mouse/keyboard с CRM action | Локальные click/keyboard не считаются CRM-активностью |
 | Manifest scopes | Передаются ли scopes и permissions через manifest для этого типа виджета | Не добавлять фиктивные manifest fields; проверить настройки OAuth-интеграции в аккаунте |
@@ -72,9 +86,9 @@ console output. В этом документе «неизвестно» не з�
 2. При следующем отдельно разрешённом authorization-code flow проверить redirect delivery
    и scopes без раскрытия code/token. Refresh flow уже подтверждён.
 3. Определить и утвердить mapping live `rights`/`role_id` к local policy.
-4. Только с отдельным разрешением выполнить изменения сделки, задачи, контакта, компании,
-   примечания и email; сверить
-   author, timestamp, entity, URL, pagination/cursor, задержку и повторную доставку.
+4. Controlled contact/company/lead/task/common-note и lead name update уже подтвердили
+   ограниченный event shape/types. С отдельным разрешением проверять только ещё
+   ненаблюдавшиеся actions (включая email) и общий catalog/pagination/delivery behavior.
 5. Только с отдельным разрешением выполнить входящий и исходящий звонок; проверить direction, duration, author и
    привязанную карточку.
 6. Повторить в состояниях «Работаю», «Перерыв», «Закончил(а)» и проверить, что browser
