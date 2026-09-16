@@ -148,3 +148,60 @@ workspace нет авторизованной amoCRM-сессии и OAuth clien
 
 Строковый `href` больше не достаточен для confirmed activity: event привязан к безопасной
 карточке на разрешённом tenant. Live-format ссылок по-прежнему требует отдельного spike.
+
+## Live spike (2026-09-16)
+
+### Safety boundary
+
+- Использован только root `.env`, который игнорируется Git. Значения account URL, token,
+  client credential и redirect URI не печатались, не коммитились и не добавлялись в файлы.
+- Выполнены только HTTP `GET` и один разрешённый OAuth refresh `POST`; CRM entities не
+  создавались, не изменялись и не удалялись, звонки не инициировались.
+- Все результаты ниже ограничены HTTP status, content type, field names, primitive shapes,
+  counts и presence; не сохранены user values, email, name, phone, full payload или token.
+
+### Выполненные live команды
+
+1. `D:\табель\.venv312\Scripts\python.exe -` — безопасная проверка presence шести OAuth
+   environment variables (только `present`/`missing`).
+2. `D:\табель\.venv312\Scripts\python.exe -` — read-only `GET` account, users (`limit=1`),
+   events (`limit=1`) и calls (`limit=1`) с sanitised field-shape output.
+3. `D:\табель\.venv312\Scripts\python.exe -` — users pagination/`rights` shape только с
+   именами keys, типами и счётчиками.
+4. `D:\табель\.venv312\Scripts\python.exe -` — refresh token grant c JSON body; после
+   проверки обеих token fields обновление `AMOCRM_ACCESS_TOKEN` и `AMOCRM_REFRESH_TOKEN`
+   сделано в temp file и одним `os.replace` в `.env`; затем read-only account re-check.
+
+Inline scripts намеренно не сохранены: их единственная цель — безопасная одноразовая проверка
+локально доступных credentials без создания ещё одного пути работы с секретами.
+
+### Подтверждено live
+
+| Проверка | Результат |
+|---|---|
+| Account context | `GET /api/v4/account` → 200, `application/hal+json`; source fields включают account/current-user/audit metadata и `_links` |
+| Users и rights | `GET /api/v4/users?limit=1&page=1` → 200; один элемент; user keys `_links,email,id,lang,name,rights`; `rights` — object с entity/access, group/admin/role и status keys |
+| Users pagination | `_page`, `_page_count`, `_total_items` присутствуют как integer; observed meta 1/1/1 |
+| Refresh | `POST /oauth2/access_token` (`refresh_token`) → 200, JSON keys `access_token,expires_in,refresh_token,server_time,token_type`; оба tokens атомарно обновлены; новый access token дал account 200 |
+| Events availability | `GET /api/v4/events?limit=1&page=1` → 204, body отсутствует |
+| Calls availability | `GET /api/v4/calls?limit=1&page=1` → 405 |
+
+### Не подтверждено / намеренно не выполнялось
+
+- Authorization-code redirect и OAuth scopes: code очищен, flow не воспроизводился.
+- Mapping amoCRM `rights`/`role_id` к local Admin/ROP/employee.
+- Event records: type, author, timestamp, entity, link, event pagination, latency и
+  duplicate delivery; live endpoint вернул 204.
+- Call reader contract и direction/duration/author/card; calls GET вернул 405.
+- Widget installation/`advanced_settings`, browser-wide event capture и mouse/keyboard
+  boundary в real iframe.
+- Изменения CRM-сущностей и входящие/исходящие calls не выполнялись без отдельного разрешения.
+
+### Документы и self-review
+
+- `docs/requirements-matrix.md`, `docs/amocrm-integration-limits.md` и
+  `docs/api-contract.md` обновлены только подтверждёнными live status/field-shape facts.
+- `Plan.md` и tracked code не менялись; отдельный live helper не добавлялся, потому что
+  одноразовые scripts безопаснее не хранить рядом с production code.
+- Проверен `git status`: `.env` не staged и не включён в commit. Документация не содержит
+  значения secret/token/PII или raw responses.

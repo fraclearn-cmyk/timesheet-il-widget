@@ -1,7 +1,7 @@
 # Матрица требований виджета «Табель»
 
-Источник: требования проекта, фактический код и mock-контракты фазы 0 от
-2026-09-11. Статус «mock» означает, что поведение проверено изолированным
+Источник: требования проекта, фактический код, mock-контракты и live read-only spike
+от 2026-09-16. Статус «mock» означает, что поведение проверено изолированным
 ответом API, а не тестовым аккаунтом amoCRM. Он не является доказательством
 доступности поля в конкретном аккаунте.
 
@@ -10,13 +10,13 @@
 | Установка | Совместимый `widget.zip` для amoMarket | В репозитории есть исходный `widget/`, архива нет | Перед публикацией собрать архив из `widget/` и загрузить в тестовый аккаунт | Не проверено live |
 | Manifest | Расширенные настройки виджета | `locations` содержит только `advanced_settings`; `advanced.title` есть | Location допустим для собственной страницы настроек; не добавлять неиспользуемые locations | Локально подтверждено |
 | Scopes | Минимальные OAuth-права | В `manifest.json` scopes не задаются и локально не известны | Не выдумывать scopes; зафиксировать их после установки OAuth-интеграции | Не проверено live |
-| Контекст | Account, user и права берутся из amoCRM | `widget/script.js` читает `AMOCRM.constant('account'/'user')`, но при ошибке подставляет demo ID | SDK-значения — только UI-контекст; backend доверяет лишь server-side OAuth token и проверенному API-ответу | SDK чтение локально; полномочия не проверены live |
-| OAuth | Authorization code, access и refresh token | Реального клиента не было; в фазе 0 добавлен строгий adapter | `authorization_code` и `refresh_token` grants, обязательные `access_token`, `refresh_token`, `expires_in`; 401 означает refresh/re-auth | Mock-контракт |
-| Роли | Admin/ROP/employee для видимости | Локальный RBAC есть, но его связь с amoCRM не подтверждена | Роль не извлекается из непроверенного SDK payload; необходима отдельная подтверждённая mapping policy | Не проверено live |
-| Активность | Только события amoCRM и звонки | Модели есть, ingestion нет | Полный event нормализуется только при ID, type, timestamp, author и entity; иначе `incomplete_event` | Mock-контракт |
+| Контекст | Account, user и права берутся из amoCRM | `GET /api/v4/account` — 200; `GET /api/v4/users?limit=1&page=1` — 200; widget SDK fallback всё ещё demo-only | SDK-значения — только UI-контекст; backend доверяет server-side OAuth token, account и users API | Account/user source fields live подтверждены; policy mapping нет |
+| OAuth | Authorization code, access и refresh token | Live access token принят API; refresh grant — 200 и возвращает обе token-пары | JSON grants; обязательные `access_token`, `refresh_token`, `expires_in`; 401 означает refresh/re-auth | Refresh flow live подтверждён; redirect/scopes не повторялись |
+| Роли | Admin/ROP/employee для видимости | Users response содержит объект `rights` и поле `role_id`; local RBAC отдельно | Роль не извлекается из SDK payload; mapping требует явной policy | Rights fields live подтверждены; mapping нет |
+| Активность | Только события amoCRM и звонки | `GET /api/v4/events?limit=1&page=1` — 204 без JSON/event records | Полный event нормализуется только при ID, type, timestamp, author и entity; иначе `incomplete_event` | Endpoint live доступен, event schema/types нет |
 | Мышь/клавиатура | Не создают подтверждённую активность без CRM-события | В текущем UI встречается локальный tracking | Такой input не может создавать `confirmed` interval | Зафиксировано контрактом |
-| Звонки | Направление, длительность, автор и карточка | Нет подтверждённого reader API/fixture аккаунта | Неподтверждённый payload хранится как `incomplete_event`; direction/duration/author/card остаются `null` | Mock safety fallback |
-| Пагинация и задержка | Не терять повторные/задержанные CRM-события | Нет ingestion или live-замеров | Параметры cursor/page и окно задержки не определены до live spike | Не проверено live |
+| Звонки | Направление, длительность, автор и карточка | `GET /api/v4/calls?limit=1&page=1` — 405 | Неподтверждённый payload хранится как `incomplete_event`; direction/duration/author/card остаются `null` | Reader endpoint/fields не подтверждены |
+| Пагинация и задержка | Не терять повторные/задержанные CRM-события | Users list live содержит `_page`, `_page_count`, `_total_items`; при `limit=1` получен один элемент и одна страница. Events — 204 | Параметры cursor/page и окно задержки не определены до live spike | Users pagination подтверждена; event latency/dedup нет |
 | Статусы | Работаю, Перерыв, Закончил(а) | Есть legacy `/sessions/*`, не совпадающий с целевым URL и idempotency | Целевой transition contract приведён в `api-contract.md`; его реализация — следующая фаза | Контракт описан |
 | Команда и timeline | Видимость по роли и 7-дневная лента | Есть разрозненные team endpoints и frontend demo data | Целевые team/timeline JSON описаны в `api-contract.md`; доступ проверяется backend после identity | Контракт описан |
 | Отчёт и Excel | До 3 месяцев; без activity в Excel | Есть legacy reports/excel routes, целевой export не реализован | Целевой report/export contract описан; диапазон > 3 месяцев — `REPORT_RANGE_LIMIT` | Контракт описан |
@@ -30,6 +30,9 @@
   личности.
 - Переход от mock-контракта к live-тесту требует сохранить обезличенный ответ и обновить
   таблицу только с реально присутствующими полями.
+- Live spike фазы 0 не выводил и не сохранял token, secret, user values, email, phone,
+  name или полный response payload; в документах оставлены только HTTP status, имена
+  полей, типы и счётчики.
 
 ## Известное расхождение с кодом
 

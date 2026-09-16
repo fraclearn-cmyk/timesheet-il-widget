@@ -19,6 +19,9 @@
 
 Для отсутствующего OAuth token применяется `AMOCRM_TOKEN_MISSING`, для отклонённого или
 просроченного token — `AMOCRM_TOKEN_EXPIRED`; оба не могут подменяться browser ID.
+Live refresh grant подтверждён как JSON response HTTP 200 с полями `access_token`,
+`refresh_token`, `expires_in`, `server_time`, `token_type`. При rotation backend должен
+атомарно сохранить обе token-пары до использования нового access token.
 
 ## Контекст
 
@@ -41,7 +44,10 @@
 ```
 
 `account_id` и `amocrm_id` получают из проверенного OAuth/account context. `role` —
-локальная policy mapping; её источник в amoCRM не подтверждён до live spike.
+локальная policy mapping. Live read-only spike подтвердил HTTP 200 для `/api/v4/account`
+и `/api/v4/users`, а также source fields `current_user_id`, user `id` и object `rights`.
+`rights` содержит entity/access flags, `group_id`, `is_admin`, `role_id` и `status_rights`;
+значения не сохранялись. Это не подтверждает mapping amoCRM rights в локальный role.
 Backend повторно проверяет действующий OAuth token, account context и актуальные права
 amoCRM на **каждом** запросе. Любой privileged route (настройки, группы, team, timeline,
 reports и export) обязан выполнять эту server-side проверку до local RBAC policy; browser
@@ -140,6 +146,11 @@ reports и export) обязан выполнять эту server-side прове
 `kind=confirmed` разрешён только для полноатрибутированного CRM event или live-validated
 call. Неизвестные данные хранятся как `incomplete_event` и не окрашивают timeline как
 подтверждённую активность.
+
+Live `GET /api/v4/events?limit=1&page=1` вернул 204 без event records; поэтому этот
+контракт пока не делает live-утверждения о `type`, author, timestamp, entity, card URL или
+events pagination. Live `GET /api/v4/calls?limit=1&page=1` вернул 405, так что call reader
+contract и `source=call` остаются недоступными до отдельной проверки.
 
 Mouse/keyboard без CRM event образует только нейтральный интервал, например:
 
