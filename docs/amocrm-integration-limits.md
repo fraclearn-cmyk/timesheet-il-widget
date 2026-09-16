@@ -1,10 +1,14 @@
 # Ограничения интеграции amoCRM
 
-Статус на 2026-09-16: выполнен безопасный live read-only spike. Ни token, ни secret,
+Статус на 2026-09-16: выполнен controlled live spike. Ни token, ни secret,
 ни пользовательские значения, ни полный payload не записывались в repository, report или
 console output. В этом документе «неизвестно» не заменяется предположением.
 
-## Подтверждено live read-only spike
+Начальный этап включал read-only чтение CRM и отдельно разрешённый OAuth refresh.
+Последующий этап — разрешённая пользователем controlled-write event generation:
+созданы `[TEST CODEX]` contact/company/lead/task/common note, выполнен PATCH только test lead.
+
+## Подтверждено controlled live spike
 
 - `GET /api/v4/account` вернул HTTP 200 с `application/hal+json`. Подтверждены только
   имена source fields: `_links`, `id`, `current_user_id`, lifecycle/account settings fields
@@ -56,7 +60,7 @@ console output. В этом документе «неизвестно» не з�
   `created_by`, `entity_id`, `entity_type`. Пропуски и неизвестный звонок —
   `incomplete_event` с сохранённым raw payload.
 
-## Не подтверждено после live read-only spike
+## Не подтверждено после controlled live spike
 
 | Тема | Что нельзя утверждать до live spike | Безопасный fallback |
 |---|---|---|

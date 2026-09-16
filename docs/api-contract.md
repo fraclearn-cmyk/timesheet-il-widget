@@ -44,7 +44,7 @@ Live refresh grant подтверждён как JSON response HTTP 200 с по�
 ```
 
 `account_id` и `amocrm_id` получают из проверенного OAuth/account context. `role` —
-локальная policy mapping. Live read-only spike подтвердил HTTP 200 для `/api/v4/account`
+локальная policy mapping. Начальный read-only этап controlled live spike подтвердил HTTP 200 для `/api/v4/account`
 и `/api/v4/users`, а также source fields `current_user_id`, user `id` и object `rights`.
 `rights` содержит entity/access flags, `group_id`, `is_admin`, `role_id` и `status_rights`;
 значения не сохранялись. Это не подтверждает mapping amoCRM rights в локальный role.

@@ -149,13 +149,13 @@ workspace нет авторизованной amoCRM-сессии и OAuth clien
 Строковый `href` больше не достаточен для confirmed activity: event привязан к безопасной
 карточке на разрешённом tenant. Live-format ссылок по-прежнему требует отдельного spike.
 
-## Live spike (2026-09-16)
+## Controlled live spike: начальный read-only этап CRM и разрешённый OAuth refresh (2026-09-16)
 
 ### Safety boundary
 
 - Использован только root `.env`, который игнорируется Git. Значения account URL, token,
   client credential и redirect URI не печатались, не коммитились и не добавлялись в файлы.
-- Выполнены только HTTP `GET` и один разрешённый OAuth refresh `POST`; CRM entities не
+- На начальном этапе выполнены только HTTP `GET` и один разрешённый OAuth refresh `POST`; CRM entities не
   создавались, не изменялись и не удалялись, звонки не инициировались.
 - Все результаты ниже ограничены HTTP status, content type, field names, primitive shapes,
   counts и presence; не сохранены user values, email, name, phone, full payload или token.
@@ -226,7 +226,7 @@ Inline scripts намеренно не сохранены: их единстве
 Metadata shape подтверждён одним read-only response; утверждений о multi-page traversal
 или pagination behavior в документации больше нет.
 
-## Live spike: controlled analytics follow-up (2026-09-16)
+## Controlled live spike: разрешённая controlled-write event generation (2026-09-16)
 
 ### Разрешённые изменения
 
@@ -294,3 +294,29 @@ mismatch для следующей integration change, а не основани�
   facts во всех релевантных документах.
 - Secret scan сравнил значения из ignored `.env` с tracked diff только в памяти → pass.
 - `git diff --check` → exit code 0.
+
+## Fix round 4
+
+### Изменения
+
+- В `docs/amocrm-integration-limits.md` и `docs/requirements-matrix.md` общий процесс
+  назван controlled live spike. Явно разделены начальное read-only чтение CRM с отдельно
+  разрешённым OAuth refresh и последующая разрешённая пользователем controlled-write
+  event generation: создание `[TEST CODEX]` contact/company/lead/task/common note и
+  PATCH только test lead.
+- В `docs/api-contract.md` подтверждение account/users привязано к начальному read-only
+  этапу. Заголовки live-разделов этого отчёта уточняют границы обоих этапов.
+- Факты наблюдений, код и остальные выводы не изменены.
+
+### Проверки
+
+- `rg -n -i 'read.only|только[ -]+чтени' docs .superpowers/sdd/Plan/phase-0-report.md`
+  → проверены все совпадения: read-only относится к начальному этапу чтения CRM или
+  отдельным запросам чтения, а не ко всему controlled live spike.
+- `git diff --check` → exit code 0; ошибок whitespace нет.
+- Проверен `git diff`: изменения ограничены формулировками в трёх документах и отчёте;
+  тесты кода не перезапускались, поскольку поведение не менялось.
+
+### Concerns
+
+Новых concerns нет; ранее зафиксированные ограничения live-проверки сохраняются.
