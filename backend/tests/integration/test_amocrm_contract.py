@@ -8,6 +8,7 @@ recorded separately in the phase report.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -22,6 +23,151 @@ from app.integrations.amocrm_contract import (
 
 
 ACCOUNT_URL = "https://example.amocrm.ru"
+
+
+@pytest.fixture
+def observed_event() -> dict:
+    """Synthetic projection of observed fields, never a copied live payload."""
+    fixture = Path(__file__).parent / "fixtures" / "amocrm_observed_event.json"
+    return json.loads(fixture.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    ("event_type", "entity_type", "object_url"),
+    [
+        ("contact_added", "contact", f"{ACCOUNT_URL}/api/v4/contacts/1001"),
+        ("company_added", "company", f"{ACCOUNT_URL}/api/v4/companies/1001"),
+        ("lead_added", "lead", f"{ACCOUNT_URL}/api/v4/leads/1001"),
+        ("entity_linked", "contact", f"{ACCOUNT_URL}/api/v4/contacts/1001"),
+        ("entity_linked", "company", f"{ACCOUNT_URL}/api/v4/companies/1001"),
+        ("entity_linked", "lead", f"{ACCOUNT_URL}/api/v4/leads/1001"),
+        ("task_added", "task", f"{ACCOUNT_URL}/api/v4/tasks/1001"),
+        ("common_note_added", "lead", f"{ACCOUNT_URL}/api/v4/leads/1001"),
+        ("name_field_changed", "lead", f"{ACCOUNT_URL}/api/v4/leads/1001"),
+    ],
+)
+def test_normalizes_observed_event_with_opaque_id_and_embedded_entity_link(
+    observed_event: dict, event_type: str, entity_type: str, object_url: str
+) -> None:
+    """Integer-only IDs or reading event self as entity self loses live activity."""
+    observed_event["type"] = event_type
+    observed_event["entity_type"] = entity_type
+    observed_event["_embedded"]["entity"]["_links"]["self"]["href"] = object_url
+
+    event = normalize_timeline_event(observed_event)
+
+    assert event == {
+        "external_id": "synthetic_event-A1",
+        "kind": "confirmed",
+        "source": "crm_event",
+        "event_type": event_type,
+        "occurred_at": "2026-09-11T08:00:00Z",
+        "author_amocrm_id": 456,
+        "object_type": entity_type,
+        "object_id": 1001,
+        "object_url": object_url,
+        "raw_payload": observed_event,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", ""),
+        ("id", " "),
+        ("id", "x" * 129),
+        ("id", "event/id"),
+        ("id", "event%2Fid"),
+        ("id", "event\nid"),
+        ("id", "event\x00id"),
+        ("id", "событие"),
+        ("id", None),
+        ("id", True),
+        ("id", 9001),
+        ("id", {}),
+        ("type", "lead_deleted"),
+        ("type", "lead_status_changed"),
+        ("type", "contact_added"),
+        ("type", "task_added"),
+        ("type", []),
+        ("created_at", "1789113600"),
+        ("created_at", True),
+        ("created_at", 0),
+        ("created_at", 10**100),
+        ("created_by", "456"),
+        ("created_by", False),
+        ("created_by", 0),
+        ("created_by", -1),
+        ("entity_id", True),
+        ("entity_id", "1001"),
+        ("entity_id", 0),
+        ("entity_type", "leads"),
+        ("entity_type", []),
+        ("_embedded", None),
+        ("_embedded", {"entity": []}),
+        ("_embedded", {"entity": {"id": 1001, "_links": None}}),
+        ("_links", {"self": []}),
+    ],
+)
+def test_rejects_malformed_observed_event_without_raising(
+    observed_event: dict, field: str, value: object
+) -> None:
+    """Unknown contexts and invalid attribution must stay incomplete."""
+    observed_event[field] = value
+
+    event = normalize_timeline_event(observed_event)
+
+    assert event["kind"] == "incomplete_event"
+    assert event["event_type"] == "unknown_event"
+    assert event["object_url"] is None
+    assert event["raw_payload"] == observed_event
+
+
+@pytest.mark.parametrize("embedded_id", [None, True, "1001", 1002])
+def test_rejects_observed_entity_id_mismatch(
+    observed_event: dict, embedded_id: object
+) -> None:
+    observed_event["_embedded"]["entity"]["id"] = embedded_id
+    assert normalize_timeline_event(observed_event)["kind"] == "incomplete_event"
+
+
+@pytest.mark.parametrize("location", ["entity", "event"])
+@pytest.mark.parametrize(
+    "href",
+    [
+        None,
+        42,
+        "not a URL",
+        "https://[broken",
+        "http://example.amocrm.ru/api/v4/leads/1001",
+        "https://attacker.invalid/api/v4/leads/1001",
+        "https://other.amocrm.ru/api/v4/leads/1001",
+        "https://example.amocrm.ru.attacker.invalid/api/v4/leads/1001",
+        "https://user@example.amocrm.ru/api/v4/leads/1001",
+        "https://example.amocrm.ru:443/api/v4/leads/1001",
+        "https://bad host.amocrm.ru/api/v4/leads/1001",
+        "https://example.amocrm.ru/api/v4/leads/1002",
+        "https://example.amocrm.ru/api/v4/contacts/1001",
+        "https://example.amocrm.ru/api/v4/leads/1001?redirect=external",
+        "https://example.amocrm.ru/api/v4/leads/1001#fragment",
+        "https://example.amocrm.ru/api/v4/leads/1001/",
+        "https://example.amocrm.ru/api/v4/leads/%31%30%30%31",
+        "\nhttps://example.amocrm.ru/api/v4/leads/1001",
+        "https://example.amocrm.ru/api/v4/leads/10\n01",
+        "https://example.amocrm.ru/leads/detail/1001",
+        "https://example.amocrm.ru/api/v4/events/another-event",
+    ],
+)
+def test_rejects_observed_external_or_malformed_links(
+    observed_event: dict, location: str, href: object
+) -> None:
+    """Only matching entity/event paths on the same trusted tenant are usable."""
+    target = observed_event
+    if location == "entity":
+        target = observed_event["_embedded"]["entity"]
+    target["_links"]["self"]["href"] = href
+
+    assert normalize_timeline_event(observed_event)["kind"] == "incomplete_event"
 
 
 def test_exchanges_authorization_code_for_refreshable_token_set() -> None:

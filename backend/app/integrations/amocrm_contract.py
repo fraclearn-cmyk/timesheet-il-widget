@@ -197,27 +197,35 @@ def _trusted_tenant_origin(account_url: str) -> str:
 def _validated_timeline_event(
     payload: Mapping[str, Any],
 ) -> dict[str, int | str] | None:
-    """Accept only the mock-validated event shape; keep all else incomplete."""
+    """Accept observed contexts or the isolated legacy mock; fail closed."""
     event_id = payload.get("id")
     event_type = payload.get("type")
     created_at = payload.get("created_at")
     created_by = payload.get("created_by")
     entity_id = payload.get("entity_id")
     entity_type = payload.get("entity_type")
-    links = payload.get("_links")
-    self_link = links.get("self") if isinstance(links, Mapping) else None
-    object_url = self_link.get("href") if isinstance(self_link, Mapping) else None
-
     if (
         not all(
-            _is_positive_int(value)
-            for value in (event_id, created_at, created_by, entity_id)
+            _is_positive_int(value) for value in (created_at, created_by, entity_id)
         )
-        or event_type != "lead_status_changed"
-        or entity_type != "leads"
-        or not _is_safe_card_url(object_url, entity_type, entity_id)
+        or not isinstance(event_type, str)
+        or not isinstance(entity_type, str)
     ):
         return None
+
+    if (
+        _is_positive_int(event_id)
+        and event_type == "lead_status_changed"
+        and entity_type == "leads"
+        and "_embedded" not in payload
+    ):
+        object_url = _self_href(payload)
+        if not _is_safe_card_url(object_url, entity_type, entity_id):
+            return None
+    else:
+        object_url = _observed_entity_url(payload)
+        if object_url is None:
+            return None
 
     try:
         datetime.fromtimestamp(created_at, UTC)
@@ -239,6 +247,78 @@ def _is_positive_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
+def _self_href(payload: Mapping[str, Any]) -> object:
+    links = payload.get("_links")
+    self_link = links.get("self") if isinstance(links, Mapping) else None
+    return self_link.get("href") if isinstance(self_link, Mapping) else None
+
+
+def _observed_entity_url(payload: Mapping[str, Any]) -> str | None:
+    """Only seven observed types, not an amoCRM event catalog."""
+    contexts = {
+        "contact_added": ("contact",),
+        "company_added": ("company",),
+        "lead_added": ("lead",),
+        "entity_linked": ("contact", "company", "lead"),
+        "task_added": ("task",),
+        "common_note_added": ("lead",),
+        "name_field_changed": ("lead",),
+    }
+    resources = {
+        "contact": "contacts",
+        "company": "companies",
+        "lead": "leads",
+        "task": "tasks",
+    }
+    event_id = payload.get("id")
+    entity_type = payload["entity_type"]
+    if (
+        not isinstance(event_id, str)
+        or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", event_id) is None
+        or entity_type not in contexts.get(payload["type"], ())
+    ):
+        return None
+
+    embedded = payload.get("_embedded")
+    entity = embedded.get("entity") if isinstance(embedded, Mapping) else None
+    if (
+        not isinstance(entity, Mapping)
+        or not _is_positive_int(entity.get("id"))
+        or entity.get("id") != payload["entity_id"]
+    ):
+        return None
+
+    object_url = _self_href(entity)
+    entity_origin = _resource_origin(
+        object_url, f"/api/v4/{resources[entity_type]}/{payload['entity_id']}"
+    )
+    event_origin = _resource_origin(_self_href(payload), f"/api/v4/events/{event_id}")
+    if entity_origin is None or entity_origin != event_origin:
+        return None
+    return object_url
+
+
+def _resource_origin(url: object, expected_path: str) -> str | None:
+    """Validate exact HTTPS resource URLs without URL-parser cleanup or redirects."""
+    if not isinstance(url, str):
+        return None
+    try:
+        parsed = urlsplit(url)
+        origin = _trusted_tenant_origin(f"{parsed.scheme}://{parsed.netloc}")
+    except (AmoCRMAccountURLInvalid, ValueError):
+        return None
+    if (
+        re.fullmatch(
+            r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.(?:amocrm\.(?:ru|com)|kommo\.com)",
+            parsed.netloc,
+        )
+        is None
+        or url != f"{origin}{expected_path}"
+    ):
+        return None
+    return origin
+
+
 def _is_safe_card_url(
     object_url: object, entity_type: object, entity_id: object
 ) -> bool:
@@ -249,14 +329,6 @@ def _is_safe_card_url(
         or not _is_positive_int(entity_id)
     ):
         return False
-    try:
-        parsed = urlsplit(object_url)
-        _trusted_tenant_origin(f"{parsed.scheme}://{parsed.netloc}")
-    except (AmoCRMAccountURLInvalid, ValueError):
-        return False
     return (
-        not parsed.query
-        and not parsed.fragment
-        and re.fullmatch(rf"/{re.escape(entity_type)}/detail/{entity_id}", parsed.path)
-        is not None
+        _resource_origin(object_url, f"/{entity_type}/detail/{entity_id}") is not None
     )

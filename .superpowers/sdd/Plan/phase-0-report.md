@@ -272,9 +272,9 @@ shape task был успешно создан HTTP 200. Error body не чита
 
 ### Контрактная граница
 
-Live event `id` имеет тип string. Текущий phase-0 mock normalizer допускает только positive
-integer ID, поэтому live payload пока должен оставаться `incomplete_event`; это documented
-mismatch для следующей integration change, а не основание подменить данные.
+Live event `id` имеет тип string. На этом этапе phase-0 mock normalizer допускал только
+positive integer ID, поэтому live payload оставался `incomplete_event`. Это расхождение
+устранено последующим Fix round 5 ниже на основании подтверждённой структуры.
 
 ### Safety, self-review и remaining concerns
 
@@ -320,3 +320,148 @@ mismatch для следующей integration change, а не основани�
 ### Concerns
 
 Новых concerns нет; ранее зафиксированные ограничения live-проверки сохраняются.
+
+## Fix round 5
+
+Дата: 2026-09-16. Статус исправления: `DONE_WITH_CONCERNS`.
+
+### Live spike: controlled analytics follow-up
+
+В этом раунде выполнялись только read-only GET, без OAuth refresh и новых CRM writes.
+Ignored `.env` прочитан только в памяти. Команда запуска inline-проверок из `D:\табель`:
+`@'<inline Python>'@ | & .venv312/Scripts/python.exe -` (PowerShell here-string).
+Inline-код не сохранён; он использовал `dotenv_values`, проверенный tenant origin,
+`httpx.Client` с bearer token и следующие запросы:
+
+- `/api/v4/contacts`, `/api/v4/companies`, `/api/v4/leads` с `query=[TEST CODEX]`,
+  `limit=250`; дополнительно проверен префикс имени в памяти.
+- `/api/v4/tasks?limit=250`; отбор task по test lead и префиксу text только в памяти.
+- `/api/v4/events?limit=250&page=1`; отбор событий только по найденным test entity IDs.
+
+Все endpoints вернули 200. Первый отбор по plural entity names дал 0 событий; повторный
+отбор по singular `entity_type` подтвердил следующие **наблюдённые**, не все возможные,
+пары:
+
+| Event type | Entity context |
+|---|---|
+| `contact_added` | `contact` |
+| `company_added` | `company` |
+| `lead_added` | `lead` |
+| `entity_linked` | `contact`, `company`, `lead` |
+| `task_added` | `task` |
+| `common_note_added` | `lead` |
+| `name_field_changed` | `lead` |
+
+`_embedded.entity` — object с integer `id` и `_links.self.href` string. Entity self
+имеет HTTPS same-tenant path `/api/v4/{contacts|companies|leads|tasks}/{entity_id}`;
+top-level self — `/api/v4/events/{opaque_event_id}`. Query/fragment не наблюдались.
+Это API resource links; UI card URL не подтверждён и не конструируется.
+
+Безопасный read-only вызов исправленного normalizer на 11 отобранных test events дал:
+`selected_count=11`, `confirmed=2`, `incomplete_event=9`. Контрольная диагностика
+печатала только bool/count: у всех 11 ID отвечает локальной string policy, embedded ID
+совпадает с entity ID и обе ссылки отвечают точным paths. У 9 author `created_by` не
+positive, поэтому fallback корректен; 2 confirmed относятся к `entity_linked` на
+lead/contact. Это не основание приписывать system/unknown author текущему сотруднику.
+Численные IDs, их значения, user data, tenant URL, tokens и raw payload не выводились.
+
+### Изменения
+
+- Добавлена синтетическая fixture-проекция только нужных observed fields/types; все
+  значения придуманы, без копирования live payload. Поля, не участвующие в normalizer
+  (`account_id`, `oauth_client_uuid` и др.), намеренно не представлены.
+- Live ветка принимает opaque event ID по локальной safety policy
+  `[A-Za-z0-9_-]{1,128}` и только семь observed types в девяти contexts выше. Author,
+  timestamp и entity ID остаются positive integer; непредставимый timestamp отклоняется.
+- Object URL извлекается из embedded entity self; ID, resource path, HTTPS tenant и
+  same-tenant event self проверяются. External/malformed URLs, whitespace cleanup,
+  credentials, ports, query/fragment и несогласованные IDs дают `incomplete_event`.
+- Legacy mock-only `lead_status_changed`/`leads` с integer ID и card self сохранён
+  отдельной веткой без `_embedded`; он не расширяет список live-подтверждённых типов.
+- Docs уточняют `object_url` как observed API entity URL и сохраняют ограничение
+  неизвестной атрибуции. `Plan.md`, `.env`, manifest и последующие фазы не менялись.
+
+### RED / GREEN и финальные команды
+
+Команды Python выполнены из `D:\табель\backend`:
+
+```powershell
+& 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q tests/integration/test_amocrm_contract.py -k normalizes_observed
+```
+
+RED: `9 failed, 100 deselected in 0.77s`; каждый observed context ошибочно возвращал
+`kind=incomplete_event` вместо `confirmed`. Это assertion failure, не import/setup error.
+
+```powershell
+& 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q tests/integration/test_amocrm_contract.py
+```
+
+Первый GREEN: `109 passed in 0.89s`. После дополнительного negative case
+`created_by=0` (по результату live re-check):
+
+```powershell
+& 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q tests/integration/test_amocrm_contract.py -k observed
+& 'D:\табель\.venv312\Scripts\python.exe' -m pytest -q
+& 'D:\табель\.venv312\Scripts\python.exe' -m black --check app/integrations tests/integration
+& 'D:\табель\.venv312\Scripts\python.exe' -m flake8 --ignore=E501,W503 app/integrations tests/integration
+```
+
+Focused GREEN: `89 passed, 21 deselected in 0.87s`. Full pytest: `110 passed in 1.02s`.
+Black: `3 files would be left unchanged`; flake8: no output, exit 0. Перед проверкой
+выполнено форматирование `-m black app/integrations tests/integration`.
+Из корня `git diff --check` — exit 0 (только штатное предупреждение Git LF→CRLF).
+
+Tracked-secret scan из корня (выводит только итог, без значений):
+
+```powershell
+$entries = @(Get-Content -LiteralPath .env | ForEach-Object {
+    if ($_ -match '^(AMOCRM_(?:CLIENT_ID|CLIENT_SECRET|AUTHORIZATION_CODE|ACCOUNT_URL|REDIRECT_URI|ACCESS_TOKEN|REFRESH_TOKEN))=(.+)$') {
+        $key = $matches[1]
+        $value = $matches[2].Trim().Trim('"').Trim("'")
+        if ($value.Length -ge 8) { [PSCustomObject]@{ Key = $key; Value = $value } }
+    }
+})
+if ($entries.Count -eq 0) { throw 'No values available for scan' }
+$tracked = @(git -c core.quotepath=false ls-files)
+$changed = @(git -c core.quotepath=false diff --name-only) + @('backend/tests/integration/fixtures/amocrm_observed_event.json')
+$leaks = 0
+foreach ($path in (($tracked + $changed) | Sort-Object -Unique)) {
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        $content = [System.IO.File]::ReadAllText((Join-Path (Get-Location) $path))
+        foreach ($entry in $entries) {
+            if (($entry.Key -ne 'AMOCRM_REDIRECT_URI' -or $changed -contains $path) -and $content.Contains($entry.Value)) { $leaks++ }
+        }
+    }
+}
+if ($leaks) { throw "Secret scan failed: $leaks matches (values suppressed)" }
+Write-Output 'PASS: tracked credentials and changed-file all-values scan; values suppressed'
+```
+
+Результат: PASS. Предварительный all-values scan обнаружил 7 совпадений только публичного
+`AMOCRM_REDIRECT_URI` в неизменённых legacy files. Tokens/credentials/account URL не найдены.
+Финальная проверка исключает этот публичный URI только для неизменённых tracked files;
+для всех изменённых файлов проверены также redirect URI и новая fixture.
+
+### Файлы
+
+- `backend/app/integrations/amocrm_contract.py`
+- `backend/tests/integration/test_amocrm_contract.py`
+- `backend/tests/integration/fixtures/amocrm_observed_event.json`
+- `docs/api-contract.md`
+- `docs/amocrm-integration-limits.md`
+- `docs/requirements-matrix.md`
+- `.superpowers/sdd/Plan/phase-0-report.md`
+
+### Self-review и concerns
+
+- Тесты вызывают реальный normalizer; удаление string-ID/embedded-link поддержки снова
+  ломает observed-shape positives. Wrong type/context, malformed/oversized ID,
+  attribution, embedded ID и unsafe links защищены negative cases без исключений.
+- Существующий integer-ID mock продолжает проходить; live и legacy branches разделены.
+- Не добавлены raw payload/PII/real IDs, новые CRM writes, token refresh или секреты.
+- Fix закрывает mismatch string ID + embedded API link. Остались неизвестными полный
+  catalog, UI card routing, general pagination/delivery/latency, calls, OAuth redirect/scopes,
+  role mapping и widget behavior. Отдельно подтверждён nonpositive author у 9 из 11 test
+  events: они намеренно не создают подтверждённую активность сотрудника.
+- Normalizer проверяет разрешённый и согласованный tenant ссылок, но привязка к текущему
+  OAuth account остаётся обязанностью server-side ingestion, как указано в API contract.

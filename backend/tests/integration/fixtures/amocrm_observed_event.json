@@ -1,0 +1,25 @@
+{
+  "id": "synthetic_event-A1",
+  "type": "lead_added",
+  "created_at": 1789113600,
+  "created_by": 456,
+  "entity_id": 1001,
+  "entity_type": "lead",
+  "value_before": [],
+  "value_after": [],
+  "_links": {
+    "self": {
+      "href": "https://example.amocrm.ru/api/v4/events/synthetic_event-A1"
+    }
+  },
+  "_embedded": {
+    "entity": {
+      "id": 1001,
+      "_links": {
+        "self": {
+          "href": "https://example.amocrm.ru/api/v4/leads/1001"
+        }
+      }
+    }
+  }
+}

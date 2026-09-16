@@ -59,6 +59,18 @@ console output. В этом документе «неизвестно» не з�
 - Полное CRM-событие становится `confirmed` только с `id`, `type`, `created_at`,
   `created_by`, `entity_id`, `entity_type`. Пропуски и неизвестный звонок —
   `incomplete_event` с сохранённым raw payload.
+- Fix round 5 адаптировал normalizer к observed string-ID shape: только семь наблюдённых
+  types в подтверждённых entity contexts (точный allowlist в `api-contract.md`). Opaque ID
+  ограничен локальной policy до 128 ASCII букв/цифр/`_`/`-`; это не полный формат amoCRM.
+  Ссылка объекта читается из `_embedded.entity._links.self.href`, совпадение embedded ID
+  и `entity_id` обязательно. Live URL — HTTPS API entity resource, а не UI-карточка;
+  top-level self — event API resource. Проверяются точные paths и один trusted tenant,
+  без credentials/port/query/fragment. Mock-only integer-ID `lead_status_changed`/`leads`
+  сохранён отдельной веткой; неизвестные/malformed события остаются incomplete.
+- Read-only проверка adapter-а на 11 test events дала 2 `confirmed` и 9 `incomplete_event`:
+  у последних `created_by` не positive. Все 11 прошли string-ID, embedded ID и link checks.
+  Наличие integer author field не доказывает атрибуцию сотруднику; system/unknown author
+  не подменяется текущим user. Сырые payloads и author IDs не сохранялись.
 
 ## Не подтверждено после controlled live spike
 
@@ -66,7 +78,7 @@ console output. В этом документе «неизвестно» не з�
 |---|---|---|
 | OAuth redirect/scopes | Одноразовый authorization code уже очищен; redirect delivery и configured scopes в этом запуске не воспроизводились | Не принимать browser ID как identity; хранить и обновлять server-side token only |
 | Account/user/role | Local Admin/ROP/employee mapping по live `rights` и `role_id` | Роль не присваивается автоматически; deny по умолчанию для privileged actions |
-| Event analytics | Наблюдались только семь test-driven types и один page; нет полного catalog, general pagination, latency или delivery guarantee. Live event ID — string, что расходится с текущим integer-only mock adapter | До исправления mismatch не превращать live string ID в confirmed; не устанавливать polling/dedup window на догадке |
+| Event analytics | Наблюдались только семь test-driven types и один page; нет полного catalog, general pagination, latency или delivery guarantee. API entity URL подтверждён, UI card URL нет | Только проверенные contexts/fields/links могут стать confirmed; неизвестные данные — incomplete_event; не устанавливать polling/dedup window на догадке |
 | Calls | `GET /api/v4/calls` дал 405; reader API, direction, duration, author, associated card/link не известны | Не выводить duration/direction и не создавать confirmed interval из opaque call payload |
 | Browser signals | Доступность события всей страницы из iframe и связь mouse/keyboard с CRM action | Локальные click/keyboard не считаются CRM-активностью |
 | Manifest scopes | Передаются ли scopes и permissions через manifest для этого типа виджета | Не добавлять фиктивные manifest fields; проверить настройки OAuth-интеграции в аккаунте |

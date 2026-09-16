@@ -154,9 +154,31 @@ Observed event shape содержит string `id`/`type`, integer `created_at`/`
 `entity_id`, string `entity_type`, array `value_before`/`value_after`, а также
 `_links.self` и `_embedded.entity`. Author, timestamp, entity и link реально присутствовали.
 
-Важное расхождение: текущий phase-0 mock normalizer требует positive integer event `id`,
-но live events имеют string `id`. До отдельной integration change такой event должен
-оставаться `incomplete_event`, а не принудительно становиться `confirmed`.
+Normalizer принимает observed shape с opaque string `id` (локальная защитная граница:
+1–128 ASCII символов `A-Z`, `a-z`, `0-9`, `_`, `-`; не заявленный формат всех amoCRM IDs).
+`created_at`, `created_by`, `entity_id` — positive integer, timestamp должен представляться
+как UTC datetime. Разрешены только наблюдённые пары: `contact_added`/`contact`,
+`company_added`/`company`, `lead_added`/`lead`, `entity_linked`/`contact|company|lead`,
+`task_added`/`task`, `common_note_added`/`lead`, `name_field_changed`/`lead`.
+
+`object_url` берётся из `_embedded.entity._links.self.href`: это реально наблюдённый
+API URL `/api/v4/{contacts|companies|leads|tasks}/{entity_id}`, **не URL UI-карточки**.
+Embedded `id` должен совпадать с `entity_id`; plural resource path соответствует singular
+`entity_type`. Top-level `_links.self.href` ведёт на `/api/v4/events/{id}` и не используется
+как ссылка объекта. Обе ссылки обязаны быть HTTPS на одном разрешённом amoCRM/Kommo tenant,
+с точным path, без credentials, port, query, fragment или URL-normalization tricks.
+Adapter не привязывает tenant к OAuth account: вызывающий ingestion обязан получать payload
+из проверенного server-side account context. UI card routing требует отдельного подтверждения.
+
+Сохранена отдельная mock-only совместимость: positive integer `id`,
+`lead_status_changed`/`leads`, отсутствие `_embedded`, top-level self строго
+`/leads/detail/{entity_id}`. Этот mock не подтверждает live поддержку такого type.
+Любая неизвестная пара, некорректный ID/author/timestamp/entity или ссылка даёт
+`incomplete_event`, не исключение. Синтетическая fixture воспроизводит только нужную
+проекцию подтверждённых field names/types, не содержит live payload или реальных IDs.
+Read-only re-check 11 test events дал 2 `confirmed`, 9 `incomplete_event` из-за
+nonpositive `created_by`; string IDs и entity links у всех 11 валидны. Integer author field
+сам по себе не подтверждает личность сотрудника, поэтому fallback сохраняется.
 
 Events response показал `_page` и `_links` без `next`; `page=2` дал 204. Это не доказывает
 general multi-page traversal. Для 10 target events на contact/company/lead не наблюдалось
