@@ -12,7 +12,7 @@ console output. В этом документе «неизвестно» не з�
 - `GET /api/v4/users?limit=1&page=1` вернул HTTP 200 с одним элементом и meta fields
   `_page`, `_page_count`, `_total_items` (все integer; observed page/count/items: 1/1/1).
   User shape содержит `_links`, `email`, `id`, `lang`, `name`, `rights`; значения не
-  сохранялись.
+  сохранялись. Наблюдалась только metadata одной страницы; обход нескольких страниц и page behavior не проверены.
 - `rights` — object. Наблюдались keys для entity permissions, `group_id`, `is_admin`,
   `role_id`, activity/report access и `status_rights`; примитивные types/containers
   подтверждены без значений. Это доказывает доступность rights fields, но не mapping

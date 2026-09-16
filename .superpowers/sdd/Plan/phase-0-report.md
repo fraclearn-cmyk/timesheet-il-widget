@@ -181,7 +181,7 @@ Inline scripts намеренно не сохранены: их единстве
 |---|---|
 | Account context | `GET /api/v4/account` → 200, `application/hal+json`; source fields включают account/current-user/audit metadata и `_links` |
 | Users и rights | `GET /api/v4/users?limit=1&page=1` → 200; один элемент; user keys `_links,email,id,lang,name,rights`; `rights` — object с entity/access, group/admin/role и status keys |
-| Users pagination | `_page`, `_page_count`, `_total_items` присутствуют как integer; observed meta 1/1/1 |
+| Users pagination | `_page`, `_page_count`, `_total_items` присутствуют как integer; observed meta 1/1/1. Обход нескольких страниц и page behavior не проверены |
 | Refresh | `POST /oauth2/access_token` (`refresh_token`) → 200, JSON keys `access_token,expires_in,refresh_token,server_time,token_type`; оба tokens атомарно обновлены; новый access token дал account 200 |
 | Events availability | `GET /api/v4/events?limit=1&page=1` → 204, body отсутствует |
 | Calls availability | `GET /api/v4/calls?limit=1&page=1` → 405 |
@@ -205,3 +205,23 @@ Inline scripts намеренно не сохранены: их единстве
   одноразовые scripts безопаснее не хранить рядом с production code.
 - Проверен `git status`: `.env` не staged и не включён в commit. Документация не содержит
   значения secret/token/PII или raw responses.
+
+## Fix round 3
+
+### Изменения
+
+- Уточнён единственный live pagination вывод: `GET /api/v4/users?limit=1&page=1` показал
+  metadata `_page`, `_page_count`, `_total_items` со значениями 1/1/1, но не проверял
+  переход на вторую страницу. Во всех соответствующих документах это теперь описано как
+  «pagination metadata наблюдались; обход нескольких страниц и page behavior не проверены».
+
+### Проверки
+
+- `rg -n -i "pagination|пагинац|_page|_total_items|page behavior|travers" docs .superpowers\sdd\Plan\phase-0-report.md`
+  — проверена согласованность всех pagination-формулировок.
+- `git diff --check` — exit code 0 перед коммитом.
+
+### Итоговый вывод
+
+Metadata shape подтверждён одним read-only response; утверждений о multi-page traversal
+или pagination behavior в документации больше нет.
