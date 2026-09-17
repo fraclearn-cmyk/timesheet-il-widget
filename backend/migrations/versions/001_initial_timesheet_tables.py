@@ -17,7 +17,7 @@ def upgrade() -> None:
     op.create_table(
         "work_sessions",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), nullable=False, index=True),
+        sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("user_name", sa.String(255), nullable=False),
         sa.Column("department", sa.String(255), nullable=True),
         sa.Column("start_time", sa.DateTime(), nullable=False),

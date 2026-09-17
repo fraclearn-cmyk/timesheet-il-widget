@@ -1,12 +1,21 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Enum as SQLEnum
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    ForeignKey,
+    JSON,
+    Enum as SQLEnum,
+)
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from app.core.time_utils import utc_now
 import enum
 from app.core.database import Base
 
 
 class EventType(str, enum.Enum):
     """Event type enum"""
+
     CALL_INCOMING = "call_incoming"
     CALL_OUTGOING = "call_outgoing"
     TASK_CREATED = "task_created"
@@ -22,22 +31,33 @@ class EventType(str, enum.Enum):
 
 class ActivityEvent(Base):
     """Activity event model - tracks amoCRM events"""
+
     __tablename__ = "activity_events"
 
     id = Column(Integer, primary_key=True, index=True)
-    activity_session_id = Column(Integer, ForeignKey("activity_sessions.id", ondelete="CASCADE"), nullable=False)
-    
-    event_type = Column(SQLEnum(EventType), nullable=False)
+    activity_session_id = Column(
+        Integer, ForeignKey("activity_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+
+    event_type = Column(
+        SQLEnum(
+            EventType,
+            values_callable=lambda cls: [e.value for e in cls],
+            native_enum=False,
+            length=50,
+        ),
+        nullable=False,
+    )
     event_data = Column(JSON, nullable=True)  # Additional event metadata
-    
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    
+
+    timestamp = Column(DateTime, nullable=False, default=utc_now, index=True)
+
     # Event details
     description = Column(String(1000), nullable=True)
     category_id = Column(Integer, ForeignKey("activity_categories.id"), nullable=True)
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
+
+    created_at = Column(DateTime, default=utc_now)
+
     # Relationships
     activity_session = relationship("ActivitySession", back_populates="activity_events")
     category = relationship("ActivityCategory", back_populates="events")
