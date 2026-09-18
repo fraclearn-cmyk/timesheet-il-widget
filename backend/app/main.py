@@ -6,6 +6,8 @@ import time
 from app.api.v1.dependencies import enforce_route_scope, get_request_context
 from fastapi import HTTPException
 from app.api.v1.dependencies import APIProblem
+from app.core.access_policy import AccessPolicy
+from app.core.database import get_db
 
 try:
     from app.core.config import settings
@@ -148,8 +150,11 @@ async def health():
 
 
 @app.get("/api/v1/me")
-async def me(context=Depends(get_request_context)):
+async def me(context=Depends(get_request_context), db=Depends(get_db)):
     """Return identity solely from the verified server-side request context."""
+    policy = AccessPolicy(db, context)
+    is_admin = policy.is_admin()
+    is_manager = policy.is_manager()
     return {
         "account_id": context.account_id,
         "user": {
@@ -158,9 +163,9 @@ async def me(context=Depends(get_request_context)):
             "role": context.user.role.value,
         },
         "permissions": {
-            "can_configure": context.user.role.value == "admin",
-            "can_view_all_groups": context.user.role.value == "admin",
-            "can_view_own_group": context.user.role.value in {"admin", "rop"},
+            "can_configure": is_admin,
+            "can_view_all_groups": is_admin,
+            "can_view_own_group": is_admin or is_manager,
         },
     }
 

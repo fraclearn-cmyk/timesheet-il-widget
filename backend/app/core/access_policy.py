@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.models.group_member import GroupMember
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.models.widget_group import WidgetGroup
 
 
@@ -31,15 +31,9 @@ class AccessPolicy:
             return False
         if target.id == self.context.user.id:
             return True
-        if (
-            self.context.privileges_verified
-            and self.context.user.role == UserRole.ADMIN
-        ):
+        if self.is_admin():
             return True
-        if (
-            not self.context.privileges_verified
-            or self.context.user.role != UserRole.ROP
-        ):
+        if not self.is_manager():
             return False
         return (
             self._db.query(GroupMember.id)
@@ -58,6 +52,99 @@ class AccessPolicy:
             .first()
             is not None
         )
+
+    def is_admin(self) -> bool:
+        rights = self.context.user.amocrm_rights
+        return (
+            self.context.privileges_verified
+            and isinstance(rights, dict)
+            and rights.get("is_admin") is True
+        )
+
+    def is_manager(self) -> bool:
+        role_id = self.context.user.amocrm_role_id
+        if not self.context.privileges_verified or not isinstance(role_id, int):
+            return False
+        return (
+            self._db.query(WidgetGroup.id)
+            .filter(
+                WidgetGroup.account_id == self.context.account_id,
+                WidgetGroup.manager_user_id == self.context.user.id,
+                WidgetGroup.manager_role_id == role_id,
+                WidgetGroup.is_active.is_(True),
+            )
+            .first()
+            is not None
+        )
+
+    def can_view_department(self, department_id: int) -> bool:
+        if self.is_admin():
+            return (
+                self._db.query(User.id)
+                .filter(
+                    User.amocrm_account_id == self.context.account_id,
+                    User.department_id == department_id,
+                    User.is_active.is_(True),
+                )
+                .first()
+                is not None
+            )
+        if not self.is_manager():
+            return False
+        return (
+            self._db.query(GroupMember.id)
+            .join(User, User.id == GroupMember.user_id)
+            .join(
+                WidgetGroup,
+                (WidgetGroup.id == GroupMember.group_id)
+                & (WidgetGroup.account_id == GroupMember.account_id),
+            )
+            .filter(
+                GroupMember.account_id == self.context.account_id,
+                GroupMember.is_active.is_(True),
+                User.department_id == department_id,
+                User.is_active.is_(True),
+                WidgetGroup.manager_user_id == self.context.user.id,
+                WidgetGroup.manager_role_id == self.context.user.amocrm_role_id,
+                WidgetGroup.is_active.is_(True),
+            )
+            .first()
+            is not None
+        )
+
+    def accessible_department_ids(self) -> set[int] | None:
+        if self.is_admin():
+            return None
+        if not self.is_manager():
+            return set()
+        rows = (
+            self._db.query(User.department_id)
+            .join(GroupMember, GroupMember.user_id == User.id)
+            .join(
+                WidgetGroup,
+                (WidgetGroup.id == GroupMember.group_id)
+                & (WidgetGroup.account_id == GroupMember.account_id),
+            )
+            .filter(
+                User.amocrm_account_id == self.context.account_id,
+                User.department_id.isnot(None),
+                User.is_active.is_(True),
+                GroupMember.account_id == self.context.account_id,
+                GroupMember.is_active.is_(True),
+                WidgetGroup.manager_user_id == self.context.user.id,
+                WidgetGroup.manager_role_id == self.context.user.amocrm_role_id,
+                WidgetGroup.is_active.is_(True),
+            )
+            .distinct()
+            .all()
+        )
+        return {department_id for (department_id,) in rows}
+
+    def can_force_finish(self) -> bool:
+        return self.is_admin()
+
+    def can_manage_departments(self) -> bool:
+        return self.is_admin()
 
     def visible_users(self):
         return [

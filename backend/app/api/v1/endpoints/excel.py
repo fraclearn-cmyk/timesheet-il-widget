@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.v1.dependencies import RequestContext, get_request_context
+from app.core.access_policy import AccessPolicy
 from app.core.rbac import RBACService, get_rbac_service
 from app.schemas.excel import ExcelExportRequest
 from app.services.excel_service import ExcelService
@@ -34,14 +35,14 @@ async def export_department_report(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
-    # Only ROP and Admin can export
-    if rbac.is_employee(user):
+    policy = AccessPolicy(db, context)
+    if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
 
     # Get accessible departments
-    accessible_dept_ids = rbac.get_accessible_departments(user)
+    accessible_dept_ids = policy.accessible_department_ids()
 
     # Filter by RBAC
     if accessible_dept_ids is not None:  # Not Admin
@@ -100,8 +101,8 @@ async def export_employee_report(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
-    # Only ROP and Admin can export
-    if rbac.is_employee(user):
+    policy = AccessPolicy(db, context)
+    if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
@@ -116,7 +117,12 @@ async def export_employee_report(
             status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found"
         )
 
-    if not rbac.can_view_employee(user, target_user.department_id):
+    try:
+        policy.require_view_user(target_user)
+    except (LookupError, PermissionError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found"
+        ) from error
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access this employee"
         )
@@ -160,14 +166,14 @@ async def export_late_arrivals_report(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
-    # Only ROP and Admin can export
-    if rbac.is_employee(user):
+    policy = AccessPolicy(db, context)
+    if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
 
     # Get accessible departments
-    accessible_dept_ids = rbac.get_accessible_departments(user)
+    accessible_dept_ids = policy.accessible_department_ids()
 
     # Filter by RBAC
     if accessible_dept_ids is not None:  # Not Admin

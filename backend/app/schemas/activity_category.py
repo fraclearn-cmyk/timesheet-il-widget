@@ -4,6 +4,7 @@ from typing import Optional
 
 class ActivityCategoryBase(BaseModel):
     """Base activity category schema"""
+
     name: str
     display_name: str
     color: str
@@ -14,11 +15,13 @@ class ActivityCategoryBase(BaseModel):
 
 class ActivityCategoryCreate(ActivityCategoryBase):
     """Schema for creating activity category"""
+
     is_active: bool = True
 
 
 class ActivityCategoryUpdate(BaseModel):
     """Schema for updating activity category"""
+
     display_name: Optional[str] = None
     color: Optional[str] = None
     icon: Optional[str] = None
@@ -29,7 +32,9 @@ class ActivityCategoryUpdate(BaseModel):
 
 class ActivityCategoryResponse(ActivityCategoryBase):
     """Schema for activity category response"""
+
     id: int
+    account_id: int | None = None
     is_active: bool
 
     class Config:

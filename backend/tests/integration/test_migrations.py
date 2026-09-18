@@ -79,7 +79,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
                 column.name,
             )
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "007"
+        assert conn.scalar(text("select version_num from alembic_version")) == "008"
     assert "amocrm_user_id" in {
         c["name"] for c in inspect(engine).get_columns("work_sessions")
     }
@@ -298,6 +298,74 @@ def test_category_scope_backfills_only_unambiguous_accounts(migrated_db):
     assert rows == {1: 100, 2: None, 3: None}
 
 
+def test_category_account_ownership_refuses_lossy_007_downgrade(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO activity_categories
+                (id,name,display_name,color,account_id,is_active,sort_order)
+                VALUES (1,'owned','Owned','#fff',100,true,0)
+                """
+            )
+        )
+    with pytest.raises(
+        RuntimeError, match="explicit activity category account ownership"
+    ):
+        command.downgrade(config, "006")
+    with engine.connect() as conn:
+        assert conn.scalar(text("select version_num from alembic_version")) == "008"
+
+
+def test_category_account_name_scope_allows_duplicate_names_per_account(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO activity_categories
+                (id,name,display_name,color,account_id,is_active,sort_order)
+                VALUES (1,'shared','One','#fff',100,true,0),
+                       (2,'shared','Two','#000',200,true,0)
+                """
+            )
+        )
+    with engine.connect() as conn:
+        assert conn.scalar(text("select count(*) from activity_categories")) == 2
+
+
+def test_manager_role_snapshot_backfills_and_downgrade_refuses_loss(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "006")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO users
+                (id,amocrm_user_id,amocrm_account_id,name,amocrm_role_id)
+                VALUES (7,700,100,'Manager',77)
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO widget_groups
+                (id,account_id,name,manager_user_id,timezone,work_start_time,work_end_time,created_at,updated_at)
+                VALUES (1,100,'Sales',7,'UTC','09:00','18:00',now(),now())
+                """
+            )
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as conn:
+        assert conn.scalar(text("select manager_role_id from widget_groups")) == 77
+    with pytest.raises(RuntimeError, match="trusted manager role snapshots"):
+        command.downgrade(config, "007")
+
+
 def test_unattributable_legacy_session_aborts_upgrade_without_data_loss(migrated_db):
     config, engine = migrated_db
     command.upgrade(config, "004")
@@ -339,5 +407,5 @@ def test_downgrade_refuses_to_erase_membership_history(migrated_db):
     with pytest.raises(RuntimeError, match="membership history"):
         command.downgrade(config, "004")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "007"
+        assert conn.scalar(text("select version_num from alembic_version")) == "008"
         assert conn.scalar(text("select count(*) from group_members")) == 2

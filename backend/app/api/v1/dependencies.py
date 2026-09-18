@@ -319,19 +319,17 @@ async def get_request_context(
     rights = observed.get("rights")
     user.amocrm_rights = dict(rights) if isinstance(rights, dict) else None
     role_id = rights.get("role_id") if isinstance(rights, dict) else None
-    user.amocrm_role_id = role_id if isinstance(role_id, int) else None
+    user.amocrm_role_id = (
+        role_id if isinstance(role_id, int) and not isinstance(role_id, bool) else None
+    )
     db.commit()
-    # The local role is configured by this application and is never inferred
-    # from role_id (amoCRM documents that as an opaque role identifier).  The
-    # observed, documented rights fields only prove that the principal is
-    # active and that a local admin is still an amoCRM admin.  A local ROP is
-    # allowed when amoCRM confirms an active non-admin principal; revocation or
-    # an unknown rights shape fails closed.
-    if not isinstance(rights, dict) or rights.get("is_active") is not True:
+    # The phase-0 contract observes only rights.is_admin and opaque role_id.
+    # Never invent an is_active field or interpret role_id semantics.  A local
+    # admin must remain a live amoCRM admin; manager authority is decided by
+    # AccessPolicy's assignment snapshot, not User.role.
+    if not isinstance(rights, dict):
         raise access_denied()
     if user.role == UserRole.ADMIN and rights.get("is_admin") is not True:
-        raise access_denied()
-    if user.role == UserRole.ROP and rights.get("is_admin") is not False:
         raise access_denied()
     context = RequestContext(account_id=account_id, user=user, privileges_verified=True)
     _inject_legacy_compatibility_headers(request, context)

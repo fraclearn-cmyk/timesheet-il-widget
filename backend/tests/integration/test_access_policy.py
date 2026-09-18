@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+import pytest
 
 from app.core.access_policy import AccessPolicy, RequestContext
 from app.core.database import Base
@@ -14,7 +15,13 @@ def test_manager_cannot_see_a_member_of_another_group():
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine)()
     manager = User(
-        id=1, amocrm_user_id=11, amocrm_account_id=1, name="Manager", role=UserRole.ROP
+        id=1,
+        amocrm_user_id=11,
+        amocrm_account_id=1,
+        name="Manager",
+        role=UserRole.EMPLOYEE,
+        amocrm_role_id=77,
+        amocrm_rights={"role_id": 77, "is_admin": False},
     )
     own_member = User(id=2, amocrm_user_id=12, amocrm_account_id=1, name="Own")
     foreign_manager = User(
@@ -22,11 +29,17 @@ def test_manager_cannot_see_a_member_of_another_group():
         amocrm_user_id=13,
         amocrm_account_id=1,
         name="Foreign manager",
-        role=UserRole.ROP,
+        role=UserRole.EMPLOYEE,
+        amocrm_role_id=88,
+        amocrm_rights={"role_id": 88, "is_admin": False},
     )
     foreign_member = User(id=4, amocrm_user_id=14, amocrm_account_id=1, name="Foreign")
-    first = WidgetGroup(id=10, account_id=1, name="First", manager_user_id=1)
-    second = WidgetGroup(id=20, account_id=1, name="Second", manager_user_id=3)
+    first = WidgetGroup(
+        id=10, account_id=1, name="First", manager_user_id=1, manager_role_id=77
+    )
+    second = WidgetGroup(
+        id=20, account_id=1, name="Second", manager_user_id=3, manager_role_id=88
+    )
     db.add_all([manager, own_member, foreign_manager, foreign_member, first, second])
     db.add_all(
         [
@@ -40,6 +53,77 @@ def test_manager_cannot_see_a_member_of_another_group():
 
     assert policy.can_view_user(own_member) is True
     assert policy.can_view_user(foreign_member) is False
+
+
+def test_manager_role_snapshot_must_match_live_role_and_assignment():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    manager = User(
+        id=1,
+        amocrm_user_id=11,
+        amocrm_account_id=1,
+        name="Manager",
+        role=UserRole.ROP,
+        amocrm_role_id=77,
+        amocrm_rights={"role_id": 77, "is_admin": False},
+    )
+    member = User(id=2, amocrm_user_id=12, amocrm_account_id=1, name="Member")
+    group = WidgetGroup(
+        id=10, account_id=1, name="First", manager_user_id=1, manager_role_id=77
+    )
+    db.add_all(
+        [manager, member, group, GroupMember(account_id=1, group_id=10, user_id=2)]
+    )
+    db.commit()
+
+    policy = AccessPolicy(db, RequestContext(account_id=1, user=manager))
+    assert policy.can_view_user(member) is True
+
+    manager.amocrm_role_id = 78
+    assert policy.can_view_user(member) is False
+    manager.amocrm_role_id = None
+    assert policy.can_view_user(member) is False
+
+
+def test_local_rop_without_snapshot_is_not_manager_authority():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    manager = User(
+        id=1, amocrm_user_id=11, amocrm_account_id=1, name="Manager", role=UserRole.ROP
+    )
+    member = User(id=2, amocrm_user_id=12, amocrm_account_id=1, name="Member")
+    group = WidgetGroup(id=10, account_id=1, name="First", manager_user_id=1)
+    db.add_all(
+        [manager, member, group, GroupMember(account_id=1, group_id=10, user_id=2)]
+    )
+    db.commit()
+
+    assert (
+        AccessPolicy(db, RequestContext(account_id=1, user=manager)).can_view_user(
+            member
+        )
+        is False
+    )
+
+
+def test_manager_assignment_captures_observed_snapshot_and_checks_account():
+    manager = User(
+        id=1,
+        amocrm_user_id=11,
+        amocrm_account_id=1,
+        name="Manager",
+        amocrm_role_id=77,
+    )
+    group = WidgetGroup(id=10, account_id=1, name="First")
+    group.assign_manager(manager)
+    assert group.manager_user_id == 1
+    assert group.manager_role_id == 77
+
+    manager.amocrm_account_id = 2
+    with pytest.raises(ValueError, match="another account"):
+        group.assign_manager(manager)
 
 
 def test_admin_does_not_cross_account_boundary():

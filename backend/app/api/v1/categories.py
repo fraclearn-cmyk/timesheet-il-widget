@@ -3,13 +3,14 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.core.database import get_db
-from app.api.v1.dependencies import RequestContext, get_request_context
+from app.api.v1.dependencies import APIProblem, RequestContext, get_request_context
 from app.services.category_service import CategoryService
 from app.schemas.activity_category import (
     ActivityCategoryCreate,
     ActivityCategoryUpdate,
-    ActivityCategoryResponse
+    ActivityCategoryResponse,
 )
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter()
 
@@ -23,7 +24,10 @@ def create_category(
 ):
     """Create new activity category"""
     service = CategoryService(db)
-    category = service.create_category(str(context.account_id), data)
+    try:
+        category = service.create_category(str(context.account_id), data)
+    except IntegrityError as error:
+        raise APIProblem(409, "CONFLICT", "Category already exists.") from error
     return ActivityCategoryResponse.from_orm(category)
 
 
@@ -49,10 +53,10 @@ def get_category(
     """Get category by ID"""
     service = CategoryService(db)
     category = service.get_category(category_id, context.account_id)
-    
+
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
-    
+
     return ActivityCategoryResponse.from_orm(category)
 
 

@@ -36,6 +36,10 @@ class WidgetGroup(Base):
     work_start_time = Column(Time, nullable=False, default=time(9, 0))
     work_end_time = Column(Time, nullable=False, default=time(18, 0))
     manager_user_id = Column(Integer, nullable=True)
+    # Snapshot of the manager's observed amoCRM role at trusted assignment.
+    # It is compared with the live role on every privileged request; role IDs
+    # remain opaque and are never interpreted semantically.
+    manager_role_id = Column(Integer, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=utc_now)
     updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
@@ -44,3 +48,12 @@ class WidgetGroup(Base):
     members = relationship(
         "GroupMember", back_populates="group", cascade="all, delete-orphan"
     )
+
+    def assign_manager(self, manager) -> None:
+        """Assign a manager and capture the currently observed role snapshot."""
+        if manager.amocrm_account_id != self.account_id:
+            raise ValueError("manager belongs to another account")
+        if manager.amocrm_role_id is None:
+            raise ValueError("manager lacks an observed amoCRM role snapshot")
+        self.manager_user_id = manager.id
+        self.manager_role_id = manager.amocrm_role_id

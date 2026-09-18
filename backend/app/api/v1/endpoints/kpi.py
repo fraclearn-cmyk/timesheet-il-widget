@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.v1.dependencies import RequestContext, get_request_context
+from app.core.access_policy import AccessPolicy
 from app.core.rbac import RBACService, get_rbac_service
 from app.schemas.kpi import KPIMetrics, ChartData, DashboardSettingsUpdate
 from app.services.kpi_service import KPIService
@@ -19,9 +20,10 @@ async def get_my_kpi(
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
     rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Get my KPI metrics (all roles)"""
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
+    user = context.user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
@@ -38,10 +40,11 @@ async def get_user_kpi(
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
     rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Get user KPI (ROP/Admin only)"""
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-    if not user or rbac.is_employee(user):
+    policy = AccessPolicy(db, context)
+    if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
@@ -54,10 +57,12 @@ async def get_user_kpi(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
-    if not rbac.can_view_employee(user, target.department_id):
+    try:
+        policy.require_view_user(target)
+    except (LookupError, PermissionError) as error:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access this user"
-        )
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        ) from error
 
     service = KPIService(db)
     return service.calculate_user_kpi(target.id, target.amocrm_user_id)
@@ -73,13 +78,13 @@ async def get_department_kpi(
     context: RequestContext = Depends(get_request_context),
 ):
     """Get department KPI (ROP/Admin only)"""
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-    if not user or rbac.is_employee(user):
+    policy = AccessPolicy(db, context)
+    if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
 
-    if not rbac.can_view_department(user, dept_id):
+    if not policy.can_view_department(dept_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot access this department",
@@ -96,9 +101,10 @@ async def get_my_chart(
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
     rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Get my chart data"""
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
+    user = context.user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
@@ -118,10 +124,11 @@ async def get_user_chart(
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
     rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Get user chart data (ROP/Admin only)"""
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-    if not user or rbac.is_employee(user):
+    policy = AccessPolicy(db, context)
+    if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
@@ -134,10 +141,12 @@ async def get_user_chart(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
-    if not rbac.can_view_employee(user, target.department_id):
+    try:
+        policy.require_view_user(target)
+    except (LookupError, PermissionError) as error:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access this user"
-        )
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        ) from error
 
     service = KPIService(db)
     return service.get_chart_data(
@@ -156,13 +165,13 @@ async def get_department_chart(
     context: RequestContext = Depends(get_request_context),
 ):
     """Get department chart data (ROP/Admin only)"""
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-    if not user or rbac.is_employee(user):
+    policy = AccessPolicy(db, context)
+    if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
 
-    if not rbac.can_view_department(user, dept_id):
+    if not policy.can_view_department(dept_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot access this department",
@@ -180,9 +189,10 @@ async def get_dashboard_settings(
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
     rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Get dashboard settings"""
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
+    user = context.user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
@@ -196,7 +206,8 @@ async def get_dashboard_settings(
         return {
             "show_online": True,
             "show_late_arrivals": True,
-            "show_team_stats": not rbac.is_employee(user),
+            "show_team_stats": AccessPolicy(db, context).is_admin()
+            or AccessPolicy(db, context).is_manager(),
             "default_period": "week",
             "chart_type": "line",
         }
@@ -211,9 +222,10 @@ async def update_dashboard_settings(
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
     rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Update dashboard settings"""
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
+    user = context.user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"

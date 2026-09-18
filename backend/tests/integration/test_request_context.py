@@ -124,10 +124,10 @@ def _production_request():
     )
 
 
-def test_production_rop_uses_local_role_only_after_active_observed_rights(
+def test_production_context_uses_observed_rights_without_inventing_is_active(
     monkeypatch,
 ):
-    """ROP remains usable when amoCRM confirms active non-admin rights."""
+    """The observed contract has role_id/is_admin; is_active is not required."""
     from app.api.v1 import dependencies
 
     class FakeClient:
@@ -135,7 +135,7 @@ def test_production_rop_uses_local_role_only_after_active_observed_rights(
             return {"id": 20, "current_user_id": 10}
 
         async def list_users(self, account_url, access_token):
-            return [{"id": 10, "rights": {"is_active": True, "is_admin": False}}]
+            return [{"id": 10, "rights": {"role_id": 77, "is_admin": False}}]
 
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setattr(dependencies, "AmoCRMClient", lambda http: FakeClient())
@@ -144,11 +144,12 @@ def test_production_rop_uses_local_role_only_after_active_observed_rights(
     context = asyncio.run(dependencies.get_request_context(_production_request(), db))
 
     assert context.user.role is UserRole.ROP
+    assert context.user.amocrm_role_id == 77
     assert context.privileges_verified is True
 
 
-def test_production_privilege_downgrade_fails_closed_for_admin_and_rop(monkeypatch):
-    """A revoked/changed rights payload cannot retain a local privileged grant."""
+def test_production_admin_downgrade_fails_closed(monkeypatch):
+    """An admin's live amoCRM grant must remain is_admin=true."""
     from app.api.v1 import dependencies
 
     class FakeClient:
@@ -156,13 +157,12 @@ def test_production_privilege_downgrade_fails_closed_for_admin_and_rop(monkeypat
             return {"id": 20, "current_user_id": 10}
 
         async def list_users(self, account_url, access_token):
-            return [{"id": 10, "rights": {"is_active": False, "is_admin": False}}]
+            return [{"id": 10, "rights": {"role_id": 77, "is_admin": False}}]
 
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setattr(dependencies, "AmoCRMClient", lambda http: FakeClient())
-    for role in (UserRole.ROP, UserRole.ADMIN):
-        db = _production_context_db(role)
-        with pytest.raises(dependencies.APIProblem) as error:
-            asyncio.run(dependencies.get_request_context(_production_request(), db))
-        assert error.value.status_code == 403
-        assert error.value.detail == "ACCESS_DENIED"
+    db = _production_context_db(UserRole.ADMIN)
+    with pytest.raises(dependencies.APIProblem) as error:
+        asyncio.run(dependencies.get_request_context(_production_request(), db))
+    assert error.value.status_code == 403
+    assert error.value.detail == "ACCESS_DENIED"

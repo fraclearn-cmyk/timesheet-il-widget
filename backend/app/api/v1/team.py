@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, Header, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
@@ -9,12 +9,19 @@ from app.core.rbac import RBACService, get_rbac_service
 from app.services.team_service import TeamService
 from app.api.v1.dependencies import RequestContext, get_request_context
 from app.core.access_policy import AccessPolicy
+from app.schemas.team import (
+    ActivityTimelineResponse,
+    ActivityHistoryResponse,
+    ForceFinishRequest,
+    ForceFinishResponse,
+)
 
 router = APIRouter()
 
 
 class TeamMemberStatus(BaseModel):
     """Team member status response"""
+
     user_id: int
     user_name: str
     department: str | None
@@ -32,6 +39,7 @@ class TeamMemberStatus(BaseModel):
 
 class TeamStats(BaseModel):
     """Team statistics response"""
+
     total_members: int
     working: int
     on_break: int
@@ -61,13 +69,12 @@ def get_team_status(
     - Employee: forbidden
     """
     user = context.user
-    
+
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    
+
     service = TeamService(db)
     return service.get_team_status_with_rbac(
         accessible_dept_ids=None,
@@ -95,9 +102,7 @@ def get_team_stats(
         date_from,
         date_to,
         account_id=context.account_id,
-        visible_external_user_ids=AccessPolicy(
-            db, context
-        ).visible_external_user_ids(),
+        visible_external_user_ids=AccessPolicy(db, context).visible_external_user_ids(),
     )
 
 
@@ -112,24 +117,13 @@ def get_team_activity(
     service = TeamService(db)
     if not date:
         date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    
+
     return service.get_team_activity(
         date,
         department,
         account_id=context.account_id,
-        visible_external_user_ids=AccessPolicy(
-            db, context
-        ).visible_external_user_ids(),
+        visible_external_user_ids=AccessPolicy(db, context).visible_external_user_ids(),
     )
-
-
-# Import team schemas
-from app.schemas.team import (
-    ActivityTimelineResponse,
-    ActivityHistoryResponse,
-    ForceFinishRequest,
-    ForceFinishResponse
-)
 
 
 @router.get("/{target_user_id}/timeline", response_model=ActivityTimelineResponse)
@@ -147,16 +141,9 @@ def get_user_timeline(
     Timeline shows 15-minute intervals with activity counts.
     Only ROP/Admin can view.
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-    
-    if not user or rbac.is_employee(user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-    
-    # Check if user can view this employee
+    policy = AccessPolicy(db, context)
     from app.models.user import User
+
     target_user = (
         db.query(User)
         .filter(
@@ -165,18 +152,21 @@ def get_user_timeline(
         )
         .first()
     )
-    
-    if target_user and not rbac.can_view_employee(user, target_user.department_id):
+
+    try:
+        policy.require_view_user(target_user)
+    except (LookupError, PermissionError) as error:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot view this employee"
-        )
-    
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
+        ) from error
+
     service = TeamService(db)
     return service.get_user_timeline(target_user_id, date, context.account_id)
 
 
-@router.get("/{target_user_id}/timeline/history", response_model=ActivityHistoryResponse)
+@router.get(
+    "/{target_user_id}/timeline/history", response_model=ActivityHistoryResponse
+)
 def get_user_timeline_history(
     target_user_id: int,
     user_id: int = Header(..., alias="X-User-Id"),
@@ -189,16 +179,9 @@ def get_user_timeline_history(
     Get user CRM activity history for last 7 days.
     Only ROP/Admin can view.
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-    
-    if not user or rbac.is_employee(user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-    
-    # Check if user can view this employee
+    policy = AccessPolicy(db, context)
     from app.models.user import User
+
     target_user = (
         db.query(User)
         .filter(
@@ -207,13 +190,14 @@ def get_user_timeline_history(
         )
         .first()
     )
-    
-    if target_user and not rbac.can_view_employee(user, target_user.department_id):
+
+    try:
+        policy.require_view_user(target_user)
+    except (LookupError, PermissionError) as error:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot view this employee"
-        )
-    
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
+        ) from error
+
     service = TeamService(db)
     return service.get_user_timeline_history(target_user_id, context.account_id)
 
@@ -232,20 +216,19 @@ def force_finish_session(
     Force finish work session for employee.
     Only Admin can force finish.
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-    
+    user = context.user
+
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    
-    if not rbac.can_force_finish(user):
+
+    if not AccessPolicy(db, context).can_force_finish():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Admin can force finish sessions"
+            detail="Only Admin can force finish sessions",
         )
-    
+
     service = TeamService(db)
     return service.force_finish_session(
         target_user_id=target_user_id,

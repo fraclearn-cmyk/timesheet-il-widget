@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.services.settings_service import SettingsService
+from app.core.access_policy import AccessPolicy
 from app.schemas.widget_settings import WidgetSettingsResponse, WidgetSettingsUpdate
 from app.api.v1.dependencies import (
     APIProblem,
@@ -50,7 +51,7 @@ def update_settings(
 ):
     """Create or update widget settings"""
     require_account(context, account_id)
-    if context.user.role.value != "admin":
+    if not AccessPolicy(db, context).is_admin():
         raise APIProblem(403, "ACCESS_DENIED", "У вас нет доступа к этому разделу.")
     service = SettingsService(db)
     settings = service.create_or_update_settings(account_id, data)
@@ -65,7 +66,7 @@ def reset_settings(
 ):
     """Reset settings to defaults"""
     require_account(context, account_id)
-    if context.user.role.value != "admin":
+    if not AccessPolicy(db, context).is_admin():
         raise APIProblem(403, "ACCESS_DENIED", "У вас нет доступа к этому разделу.")
     service = SettingsService(db)
     settings = service.reset_settings(account_id)

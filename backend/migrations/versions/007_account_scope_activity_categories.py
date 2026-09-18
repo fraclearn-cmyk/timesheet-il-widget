@@ -50,5 +50,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if (
+        op.get_bind()
+        .execute(
+            sa.text(
+                "SELECT 1 FROM activity_categories WHERE account_id IS NOT NULL LIMIT 1"
+            )
+        )
+        .first()
+    ):
+        raise RuntimeError(
+            "007 downgrade would erase explicit activity category account ownership"
+        )
     op.drop_index("ix_activity_categories_account_id", table_name="activity_categories")
     op.drop_column("activity_categories", "account_id")

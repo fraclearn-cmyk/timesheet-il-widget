@@ -211,3 +211,45 @@ Fresh verification from `backend`:
 
 The disposable PostgreSQL container was removed after the migration run; no
 application database container or fixture database was reused.
+
+## Review round 3 corrections
+
+Production privilege decisions no longer treat the local `User.role` value as
+a ROP/manager grant and no longer require an invented `rights.is_active`
+field.  The current amoCRM payload is accepted using the observed
+`rights.is_admin` and opaque `rights.role_id` fields only.  A live admin grant
+requires `is_admin=true`.  Manager access requires all of: an active
+same-account `WidgetGroup` assignment, a non-null `manager_role_id` snapshot
+captured at trusted assignment/backfill, and equality between that snapshot and
+the current live `role_id` on every request.  A changed or missing live role
+fails closed.  No role-id value is interpreted semantically.  Existing
+privileged handlers now consume these policy capabilities rather than local
+ROP/admin enum checks; employees retain self-only visibility.
+
+Migration `008` adds `widget_groups.manager_role_id`, backfills only from the
+unique same-account manager identity's observed role snapshot, and provides a
+future `WidgetGroup.assign_manager()` path that requires an observed snapshot.
+Its downgrade refuses to erase non-null snapshots or duplicate cross-account
+category names.  Migration `007` now refuses to drop any explicit category
+ownership it cannot reconstruct.  PostgreSQL tests cover backfill, both
+lossy-downgrade guards, and the full `001 -> 008` cycle.
+
+Activity category creation now takes account ownership exclusively from the
+verified request context, persists `display_name`/description/order, exposes
+`account_id` in the response schema, and enforces `(account_id, name)` rather
+than global name uniqueness.  HTTP tests create the same name in two accounts
+and verify both first-category responses and ownership.
+
+Fresh round-3 verification:
+
+| Check | Result |
+|---|---|
+| Full `pytest -q --tb=short` | `177 passed, 8 skipped, 56 warnings` |
+| Disposable PostgreSQL migration suite | `8 passed, 2 warnings` (migration `008`) |
+| `python -m compileall -q app migrations` | exit 0 |
+| `python -m alembic heads` | exactly `008 (head)` |
+| Black check on touched recovery files | exit 0 |
+| Flake8 on touched recovery files (`E501,W503` ignored) | exit 0 |
+| `git diff --check` | exit 0 |
+
+The phase-3 disposable PostgreSQL container was removed after verification.

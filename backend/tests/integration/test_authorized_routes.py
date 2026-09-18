@@ -335,6 +335,8 @@ def test_id_free_team_collections_filter_manager_to_own_group_and_self(monkeypat
         amocrm_account_id=20,
         name="Manager",
         role=UserRole.ROP,
+        amocrm_role_id=77,
+        amocrm_rights={"role_id": 77, "is_admin": False},
     )
     foreign = User(
         id=4,
@@ -342,8 +344,12 @@ def test_id_free_team_collections_filter_manager_to_own_group_and_self(monkeypat
         amocrm_account_id=20,
         name="Foreign group",
     )
-    own_group = WidgetGroup(id=30, account_id=20, name="Own", manager_user_id=3)
-    other_group = WidgetGroup(id=31, account_id=20, name="Other", manager_user_id=4)
+    own_group = WidgetGroup(
+        id=30, account_id=20, name="Own", manager_user_id=3, manager_role_id=77
+    )
+    other_group = WidgetGroup(
+        id=31, account_id=20, name="Other", manager_user_id=4, manager_role_id=88
+    )
     db.add_all([manager, foreign, own_group, other_group])
     db.flush()
     db.add_all(
@@ -487,6 +493,7 @@ def test_id_free_excel_collections_filter_to_verified_account(monkeypatch):
     try:
         # Admin is required by the endpoint when no department filter is given.
         db.get(User, 1).role = UserRole.ADMIN
+        db.get(User, 1).amocrm_rights = {"is_admin": True}
         db.commit()
         department = client.post(
             "/api/v1/excel/department", json=payload, headers=headers
@@ -626,5 +633,32 @@ def test_category_account_owner_allows_first_event_and_denies_foreign_category(
         foreign_response = client.get("/api/v1/categories/103", headers=headers)
         assert foreign_response.status_code == 404
         assert foreign_response.json()["error"]["code"] == "NOT_FOUND"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_categories_are_account_scoped_and_set_display_name(monkeypatch):
+    client, app = _client(monkeypatch)
+    from app.core.database import get_db
+
+    db = app.dependency_overrides[get_db]()
+    db.add(User(id=3, amocrm_user_id=30, amocrm_account_id=21, name="Other account"))
+    db.commit()
+    payload = {"name": "shared", "display_name": "Shared", "color": "#fff"}
+    try:
+        own = client.post(
+            "/api/v1/categories?account_id=20",
+            json=payload,
+            headers={"X-User-Id": "10", "X-Account-Id": "20"},
+        )
+        foreign = client.post(
+            "/api/v1/categories?account_id=21",
+            json=payload,
+            headers={"X-User-Id": "30", "X-Account-Id": "21"},
+        )
+        assert own.status_code == 201
+        assert own.json()["display_name"] == "Shared"
+        assert foreign.status_code == 201
+        assert foreign.json()["account_id"] == 21
     finally:
         app.dependency_overrides.clear()
