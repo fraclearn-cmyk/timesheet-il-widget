@@ -66,6 +66,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
         "crm_events",
         "call_events",
         "work_comments",
+        "oauth_connections",
     ]
     for table_name in target_tables:
         actual = {c["name"]: c for c in inspect(engine).get_columns(table_name)}
@@ -77,7 +78,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
                 column.name,
             )
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "005"
+        assert conn.scalar(text("select version_num from alembic_version")) == "006"
     assert "amocrm_user_id" in {
         c["name"] for c in inspect(engine).get_columns("work_sessions")
     }
@@ -271,5 +272,5 @@ def test_downgrade_refuses_to_erase_membership_history(migrated_db):
     with pytest.raises(RuntimeError, match="membership history"):
         command.downgrade(config, "004")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "005"
+        assert conn.scalar(text("select version_num from alembic_version")) == "006"
         assert conn.scalar(text("select count(*) from group_members")) == 2

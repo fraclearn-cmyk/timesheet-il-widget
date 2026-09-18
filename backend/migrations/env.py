@@ -21,6 +21,7 @@ from app.models.group_member import GroupMember
 from app.models.crm_event import CrmEvent
 from app.models.call_event import CallEvent
 from app.models.activity_interval import ActivityInterval
+from app.models.oauth_connection import OAuthConnection
 
 # this is the Alembic Config object
 config = context.config

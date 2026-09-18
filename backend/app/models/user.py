@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     UniqueConstraint,
     ForeignKey,
+    JSON,
 )
 from sqlalchemy.orm import relationship
 from app.core.time_utils import utc_now
@@ -41,6 +42,9 @@ class User(Base):
 
     name = Column(String(255), nullable=False)
     email = Column(String(255), nullable=True)
+    avatar_url = Column(String(2048), nullable=True)
+    amocrm_rights = Column(JSON, nullable=True)
+    amocrm_role_id = Column(Integer, nullable=True)
 
     role = Column(
         SQLEnum(UserRole, values_callable=lambda cls: [e.value for e in cls]),
