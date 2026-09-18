@@ -6,10 +6,13 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
 from app.models.user import User
+from app.models.user import UserRole
 from app.models.work_session import WorkSession
 from app.models.activity_session import ActivitySession, EntityType
 from app.models.report import Report, ReportType, ReportFormat
 from app.models.department import Department
+from app.models.widget_group import WidgetGroup
+from app.models.group_member import GroupMember
 from datetime import datetime
 
 
@@ -109,6 +112,7 @@ def test_activity_work_session_path_rejects_foreign_session_before_handler(monke
     """Activity routes must scope work_session_id, not only the /sessions routes."""
     client, app = _client(monkeypatch)
     from app.core.database import get_db
+
     db = app.dependency_overrides[get_db]()
     db.add(
         WorkSession(
@@ -135,6 +139,7 @@ def test_activity_session_path_rejects_foreign_session_before_handler(monkeypatc
     """Activity session IDs inherit ownership from their work session."""
     client, app = _client(monkeypatch)
     from app.core.database import get_db
+
     db = app.dependency_overrides[get_db]()
     db.add(
         WorkSession(
@@ -170,6 +175,7 @@ def test_report_path_rejects_foreign_report_before_handler(monkeypatch):
     """Saved reports must be account-scoped by their own account column."""
     client, app = _client(monkeypatch)
     from app.core.database import get_db
+
     db = app.dependency_overrides[get_db]()
     db.add(
         Report(
@@ -200,6 +206,7 @@ def test_department_path_rejects_unowned_department_before_handler(monkeypatch):
     """Department IDs without an active user in this account are not addressable."""
     client, app = _client(monkeypatch)
     from app.core.database import get_db
+
     db = app.dependency_overrides[get_db]()
     db.add(
         Department(
@@ -244,6 +251,7 @@ def test_activity_history_limit_is_bounded(monkeypatch):
     """Legacy activity history must not accept an unbounded item request."""
     client, app = _client(monkeypatch)
     from app.core.database import get_db
+
     db = app.dependency_overrides[get_db]()
     db.add(
         WorkSession(
@@ -261,5 +269,362 @@ def test_activity_history_limit_is_bounded(monkeypatch):
             headers={"X-User-Id": "10", "X-Account-Id": "20"},
         )
         assert response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_id_free_team_collections_filter_to_employee_self_and_account(monkeypatch):
+    """A collection without IDs must still apply the verified user scope."""
+    client, app = _client(monkeypatch)
+    from app.core.database import get_db
+
+    db = app.dependency_overrides[get_db]()
+    now = datetime.utcnow()
+    db.add_all(
+        [
+            WorkSession(
+                id=80,
+                amocrm_user_id=10,
+                amocrm_account_id=20,
+                user_name="Self",
+                start_time=now,
+                total_work_time=5,
+            ),
+            WorkSession(
+                id=81,
+                amocrm_user_id=11,
+                amocrm_account_id=20,
+                user_name="Other",
+                start_time=now,
+                total_work_time=50,
+            ),
+            WorkSession(
+                id=82,
+                amocrm_user_id=99,
+                amocrm_account_id=21,
+                user_name="Foreign account",
+                start_time=now,
+                total_work_time=500,
+            ),
+        ]
+    )
+    db.commit()
+    headers = {"X-User-Id": "10", "X-Account-Id": "20"}
+    try:
+        stats = client.get("/api/v1/team/stats", headers=headers)
+        assert stats.status_code == 200
+        assert stats.json()["total_members"] == 1
+        assert stats.json()["total_work_time"] == 5
+
+        activity = client.get("/api/v1/team/activity", headers=headers)
+        assert activity.status_code == 200
+        assert [row["user_id"] for row in activity.json()] == [10]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_id_free_team_collections_filter_manager_to_own_group_and_self(monkeypatch):
+    """A manager sees self and active members of own group, never another group."""
+    client, app = _client(monkeypatch)
+    from app.core.database import get_db
+
+    db = app.dependency_overrides[get_db]()
+    manager = User(
+        id=3,
+        amocrm_user_id=12,
+        amocrm_account_id=20,
+        name="Manager",
+        role=UserRole.ROP,
+    )
+    foreign = User(
+        id=4,
+        amocrm_user_id=13,
+        amocrm_account_id=20,
+        name="Foreign group",
+    )
+    own_group = WidgetGroup(id=30, account_id=20, name="Own", manager_user_id=3)
+    other_group = WidgetGroup(id=31, account_id=20, name="Other", manager_user_id=4)
+    db.add_all([manager, foreign, own_group, other_group])
+    db.flush()
+    db.add_all(
+        [
+            GroupMember(account_id=20, group_id=30, user_id=2, is_active=True),
+            GroupMember(account_id=20, group_id=31, user_id=4, is_active=True),
+            WorkSession(
+                id=83,
+                amocrm_user_id=12,
+                amocrm_account_id=20,
+                user_name="Manager",
+                start_time=datetime.utcnow(),
+                total_work_time=7,
+            ),
+            WorkSession(
+                id=84,
+                amocrm_user_id=11,
+                amocrm_account_id=20,
+                user_name="Other",
+                start_time=datetime.utcnow(),
+                total_work_time=8,
+            ),
+            WorkSession(
+                id=85,
+                amocrm_user_id=13,
+                amocrm_account_id=20,
+                user_name="Foreign group",
+                start_time=datetime.utcnow(),
+                total_work_time=80,
+            ),
+        ]
+    )
+    db.commit()
+    try:
+        response = client.get(
+            "/api/v1/team/stats",
+            headers={"X-User-Id": "12", "X-Account-Id": "20"},
+        )
+        assert response.status_code == 200
+        assert response.json()["total_members"] == 2
+        assert response.json()["total_work_time"] == 15
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_account_report_without_user_filter_is_visibility_scoped(monkeypatch):
+    """Account-wide report queries must not turn omitted user_id into all users."""
+    client, app = _client(monkeypatch)
+    from app.core.database import get_db
+
+    db = app.dependency_overrides[get_db]()
+    day = datetime.utcnow().replace(hour=12, minute=0, second=0, microsecond=0)
+    db.add_all(
+        [
+            WorkSession(
+                id=90,
+                amocrm_user_id=10,
+                amocrm_account_id=20,
+                user_name="Self",
+                start_time=day,
+                total_work_time=5,
+            ),
+            WorkSession(
+                id=91,
+                amocrm_user_id=11,
+                amocrm_account_id=20,
+                user_name="Other",
+                start_time=day,
+                total_work_time=50,
+            ),
+        ]
+    )
+    db.commit()
+    try:
+        response = client.get(
+            f"/api/v1/reports/daily?account_id=20&date={day.date().isoformat()}",
+            headers={"X-User-Id": "10", "X-Account-Id": "20"},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total_users"] == 1
+        assert [row["user_id"] for row in payload["sessions"]] == [10]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_id_free_excel_collections_filter_to_verified_account(monkeypatch):
+    """Excel aggregate exports must not include rows from another account."""
+    client, app = _client(monkeypatch)
+    from app.core.database import get_db
+
+    db = app.dependency_overrides[get_db]()
+    day = datetime.utcnow()
+    department = Department(
+        id=92,
+        name="Shared legacy department",
+        work_start_time=datetime.strptime("09:00", "%H:%M").time(),
+        work_end_time=datetime.strptime("18:00", "%H:%M").time(),
+    )
+    db.get(User, 1).department_id = 92
+    db.add(
+        User(
+            id=99,
+            amocrm_user_id=99,
+            amocrm_account_id=21,
+            name="Foreign account",
+            department_id=92,
+        )
+    )
+    db.add_all(
+        [
+            WorkSession(
+                id=92,
+                amocrm_user_id=10,
+                amocrm_account_id=20,
+                user_name="Self",
+                start_time=day,
+                total_work_time=5,
+                is_late=True,
+                late_minutes=3,
+            ),
+            WorkSession(
+                id=93,
+                amocrm_user_id=99,
+                amocrm_account_id=21,
+                user_name="Foreign account",
+                start_time=day,
+                total_work_time=500,
+                is_late=True,
+                late_minutes=30,
+            ),
+        ]
+    )
+    db.add(department)
+    db.commit()
+    headers = {"X-User-Id": "10", "X-Account-Id": "20"}
+    payload = {
+        "date_from": day.date().isoformat(),
+        "date_to": day.date().isoformat(),
+    }
+    try:
+        # Admin is required by the endpoint when no department filter is given.
+        db.get(User, 1).role = UserRole.ADMIN
+        db.commit()
+        department = client.post(
+            "/api/v1/excel/department", json=payload, headers=headers
+        )
+        late = client.post("/api/v1/excel/late-arrivals", json=payload, headers=headers)
+        assert department.status_code == 200
+        assert late.status_code == 200
+
+        from openpyxl import load_workbook
+        from io import BytesIO
+
+        department_sheet = load_workbook(
+            BytesIO(department.content), read_only=True
+        ).active
+        late_sheet = load_workbook(BytesIO(late.content), read_only=True).active
+        assert all(
+            "Foreign account" not in str(cell.value)
+            for row in department_sheet.iter_rows()
+            for cell in row
+        )
+        assert all(
+            "Foreign account" not in str(cell.value)
+            for row in late_sheet.iter_rows()
+            for cell in row
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_user_id_semantics_are_route_specific_when_internal_and_external_collide(
+    monkeypatch,
+):
+    """Sessions use external IDs; KPI/Excel targets use internal IDs."""
+    client, app = _client(monkeypatch)
+    from app.core.database import get_db
+
+    db = app.dependency_overrides[get_db]()
+    # Internal id 10 belongs to a different user than external amoCRM id 10.
+    db.add(User(id=10, amocrm_user_id=100, amocrm_account_id=20, name="Collision"))
+    db.commit()
+    headers = {"X-User-Id": "10", "X-Account-Id": "20"}
+    try:
+        session = client.get("/api/v1/sessions/current/10", headers=headers)
+        assert session.status_code == 200
+        assert session.json() is None
+
+        kpi = client.get("/api/v1/kpi/user/10", headers=headers)
+        assert kpi.status_code == 404
+        assert kpi.json()["error"]["code"] == "NOT_FOUND"
+
+        excel = client.post(
+            "/api/v1/excel/employee/10",
+            json={"date_from": "2026-09-01", "date_to": "2026-09-18"},
+            headers=headers,
+        )
+        assert excel.status_code == 404
+        assert excel.json()["error"]["code"] == "NOT_FOUND"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_missing_context_returns_normalized_401(monkeypatch):
+    client, app = _client(monkeypatch)
+    try:
+        response = client.get("/api/v1/settings/20")
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "AMOCRM_TOKEN_EXPIRED"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_employee_forbidden_operation_returns_normalized_403(monkeypatch):
+    client, app = _client(monkeypatch)
+    try:
+        response = client.post(
+            "/api/v1/excel/department",
+            json={"date_from": "2026-09-01", "date_to": "2026-09-18"},
+            headers={"X-User-Id": "10", "X-Account-Id": "20"},
+        )
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "ACCESS_DENIED"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_category_account_owner_allows_first_event_and_denies_foreign_category(
+    monkeypatch,
+):
+    """Ownership comes from migration-007 account_id, not an existing event."""
+    client, app = _client(monkeypatch)
+    from app.core.database import get_db
+    from app.models.activity_category import ActivityCategory
+
+    db = app.dependency_overrides[get_db]()
+    db.add(
+        WorkSession(
+            id=100,
+            amocrm_user_id=10,
+            amocrm_account_id=20,
+            user_name="Self",
+            start_time=datetime.utcnow(),
+        )
+    )
+    db.add(
+        ActivitySession(
+            id=101,
+            work_session_id=100,
+            entity_type=EntityType.LEAD,
+            entity_id=1,
+            start_time=datetime.utcnow(),
+        )
+    )
+    own = ActivityCategory(
+        id=102,
+        account_id=20,
+        name="own",
+        display_name="Own",
+        color="#fff",
+    )
+    foreign = ActivityCategory(
+        id=103,
+        account_id=21,
+        name="foreign",
+        display_name="Foreign",
+        color="#000",
+    )
+    db.add_all([own, foreign])
+    db.commit()
+    headers = {"X-User-Id": "10", "X-Account-Id": "20"}
+    try:
+        first_event = client.post(
+            "/api/v1/activity/event?activity_session_id=101&event_type=card_opened&category_id=102",
+            headers=headers,
+        )
+        assert first_event.status_code == 201
+
+        foreign_response = client.get("/api/v1/categories/103", headers=headers)
+        assert foreign_response.status_code == 404
+        assert foreign_response.json()["error"]["code"] == "NOT_FOUND"
     finally:
         app.dependency_overrides.clear()

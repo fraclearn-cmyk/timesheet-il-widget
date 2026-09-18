@@ -13,11 +13,20 @@ class TeamService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_team_status(self, department: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_team_status(
+        self,
+        department: Optional[str] = None,
+        account_id: Optional[int] = None,
+        visible_external_user_ids: Optional[set[int]] = None,
+    ) -> List[Dict[str, Any]]:
         """Get current status of all team members"""
         query = self.db.query(WorkSession).filter(
             WorkSession.current_status != WorkStatus.FINISHED
         )
+        if account_id is not None:
+            query = query.filter(WorkSession.amocrm_account_id == account_id)
+        if visible_external_user_ids is not None:
+            query = query.filter(WorkSession.amocrm_user_id.in_(visible_external_user_ids))
 
         if department:
             query = query.filter(WorkSession.department == department)
@@ -32,6 +41,14 @@ class TeamService:
             WorkSession.user_name,
             WorkSession.department,
         ).filter(WorkSession.start_time >= today_start)
+        if account_id is not None:
+            all_users_query = all_users_query.filter(
+                WorkSession.amocrm_account_id == account_id
+            )
+        if visible_external_user_ids is not None:
+            all_users_query = all_users_query.filter(
+                WorkSession.amocrm_user_id.in_(visible_external_user_ids)
+            )
 
         if department:
             all_users_query = all_users_query.filter(
@@ -84,6 +101,8 @@ class TeamService:
         department: Optional[str] = None,
         date_from: Optional[datetime] = None,
         date_to: Optional[datetime] = None,
+        account_id: Optional[int] = None,
+        visible_external_user_ids: Optional[set[int]] = None,
     ) -> Dict[str, Any]:
         """Get team statistics"""
         if not date_from:
@@ -95,6 +114,10 @@ class TeamService:
         query = self.db.query(WorkSession).filter(
             and_(WorkSession.start_time >= date_from, WorkSession.start_time <= date_to)
         )
+        if account_id is not None:
+            query = query.filter(WorkSession.amocrm_account_id == account_id)
+        if visible_external_user_ids is not None:
+            query = query.filter(WorkSession.amocrm_user_id.in_(visible_external_user_ids))
 
         if department:
             query = query.filter(WorkSession.department == department)
@@ -127,7 +150,11 @@ class TeamService:
         }
 
     def get_team_activity(
-        self, date: datetime, department: Optional[str] = None
+        self,
+        date: datetime,
+        department: Optional[str] = None,
+        account_id: Optional[int] = None,
+        visible_external_user_ids: Optional[set[int]] = None,
     ) -> List[Dict[str, Any]]:
         """Get team activity for specific date"""
         date_start = date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -138,6 +165,10 @@ class TeamService:
                 WorkSession.start_time >= date_start, WorkSession.start_time < date_end
             )
         )
+        if account_id is not None:
+            query = query.filter(WorkSession.amocrm_account_id == account_id)
+        if visible_external_user_ids is not None:
+            query = query.filter(WorkSession.amocrm_user_id.in_(visible_external_user_ids))
 
         if department:
             query = query.filter(WorkSession.department == department)
@@ -169,6 +200,8 @@ class TeamService:
         status_filter: Optional[str] = None,
         online_only: bool = False,
         search: Optional[str] = None,
+        account_id: Optional[int] = None,
+        visible_internal_user_ids: Optional[set[int]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get team status with RBAC filtering.
@@ -179,6 +212,10 @@ class TeamService:
 
         # Base query for users
         query = self.db.query(User).filter(User.is_active == True)
+        if account_id is not None:
+            query = query.filter(User.amocrm_account_id == account_id)
+        if visible_internal_user_ids is not None:
+            query = query.filter(User.id.in_(visible_internal_user_ids))
 
         # RBAC filtering by department
         if accessible_dept_ids is not None:  # Not Admin
@@ -202,6 +239,10 @@ class TeamService:
             WorkSession.start_time >= today_start,
             WorkSession.current_status != WorkStatus.FINISHED,
         )
+        if account_id is not None:
+            sessions_query = sessions_query.filter(
+                WorkSession.amocrm_account_id == account_id
+            )
         sessions = {
             (s.amocrm_account_id, s.amocrm_user_id): s for s in sessions_query.all()
         }
@@ -285,7 +326,7 @@ class TeamService:
         return status_list
 
     def get_user_timeline(
-        self, user_id: int, date: Optional[str] = None
+        self, user_id: int, date: Optional[str] = None, account_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """Get user CRM activity timeline for specific date"""
         from app.models.crm_event import CrmEvent
@@ -301,7 +342,12 @@ class TeamService:
         # Get user
         from app.services.session_service import SessionService
 
-        user = SessionService(self.db)._legacy_user(user_id)
+        session_service = SessionService(self.db)
+        user = (
+            session_service._user(account_id, user_id)
+            if account_id is not None
+            else session_service._legacy_user(user_id)
+        )
         user_name = user.name if user else f"User {user_id}"
 
         # Get CRM activities
@@ -358,13 +404,20 @@ class TeamService:
             "total_events": len(activities),
         }
 
-    def get_user_timeline_history(self, user_id: int) -> Dict[str, Any]:
+    def get_user_timeline_history(
+        self, user_id: int, account_id: Optional[int] = None
+    ) -> Dict[str, Any]:
         """Get user CRM activity history for last 7 days"""
         from app.models.crm_event import CrmEvent
 
         from app.services.session_service import SessionService
 
-        user = SessionService(self.db)._legacy_user(user_id)
+        session_service = SessionService(self.db)
+        user = (
+            session_service._user(account_id, user_id)
+            if account_id is not None
+            else session_service._legacy_user(user_id)
+        )
         user_name = user.name if user else f"User {user_id}"
 
         days = []
@@ -404,12 +457,22 @@ class TeamService:
         return {"user_id": user_id, "user_name": user_name, "days": days}
 
     def force_finish_session(
-        self, target_user_id: int, admin_id: int, admin_name: str, reason: str
+        self,
+        target_user_id: int,
+        admin_id: int,
+        admin_name: str,
+        reason: str,
+        account_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Force finish work session for employee"""
         from app.services.session_service import SessionService
 
-        user = SessionService(self.db)._legacy_user(target_user_id)
+        session_service = SessionService(self.db)
+        user = (
+            session_service._user(account_id, target_user_id)
+            if account_id is not None
+            else session_service._legacy_user(target_user_id)
+        )
         # Find active session
         session = (
             self.db.query(WorkSession)

@@ -108,7 +108,9 @@ class KPIService:
             is_online=is_online,
         )
 
-    def calculate_department_kpi(self, department_id: int) -> KPIMetrics:
+    def calculate_department_kpi(
+        self, department_id: int, *, account_id: int | None = None
+    ) -> KPIMetrics:
         """Calculate KPI for a department"""
         now = datetime.now()
         today_start = datetime.combine(now.date(), datetime.min.time())
@@ -116,7 +118,10 @@ class KPIService:
         month_start = datetime(now.year, now.month, 1)
 
         # Get all users in department
-        users = self.db.query(User).filter(User.department_id == department_id).all()
+        user_query = self.db.query(User).filter(User.department_id == department_id)
+        if account_id is not None:
+            user_query = user_query.filter(User.amocrm_account_id == account_id)
+        users = user_query.all()
         user_ids = [(u.amocrm_account_id, u.amocrm_user_id) for u in users]
 
         if not user_ids:
@@ -261,13 +266,18 @@ class KPIService:
 
         return ChartData(labels=labels, datasets=datasets)
 
-    def get_department_chart_data(self, department_id: int, days: int = 7) -> ChartData:
+    def get_department_chart_data(
+        self, department_id: int, days: int = 7, *, account_id: int | None = None
+    ) -> ChartData:
         """Get chart data for department"""
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=days - 1)
 
         # Get users
-        users = self.db.query(User).filter(User.department_id == department_id).all()
+        user_query = self.db.query(User).filter(User.department_id == department_id)
+        if account_id is not None:
+            user_query = user_query.filter(User.amocrm_account_id == account_id)
+        users = user_query.all()
         user_ids = [(u.amocrm_account_id, u.amocrm_user_id) for u in users]
 
         if not user_ids:

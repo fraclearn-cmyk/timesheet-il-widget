@@ -27,6 +27,7 @@ class ExcelService:
         department_ids: Optional[List[int]] = None,
         late_only: bool = False,
         include_comments: bool = True,
+        account_id: Optional[int] = None,
     ) -> BytesIO:
         """Generate department report"""
         wb = Workbook()
@@ -71,11 +72,14 @@ class ExcelService:
             )
         )
 
+        if account_id is not None:
+            query = query.filter(WorkSession.amocrm_account_id == account_id)
+
         if department_ids:
             query = query.filter(User.department_id.in_(department_ids))
 
         if late_only:
-            query = query.filter(WorkSession.is_late == True)
+            query = query.filter(WorkSession.is_late.is_(True))
 
         sessions = query.order_by(
             Department.name, User.name, WorkSession.start_time
@@ -248,7 +252,11 @@ class ExcelService:
         return output
 
     def generate_late_arrivals_report(
-        self, date_from: date, date_to: date, department_ids: Optional[List[int]] = None
+        self,
+        date_from: date,
+        date_to: date,
+        department_ids: Optional[List[int]] = None,
+        account_id: Optional[int] = None,
     ) -> BytesIO:
         """Generate late arrivals report"""
         wb = Workbook()
@@ -280,13 +288,16 @@ class ExcelService:
             .join(User)
             .join(Department)
             .filter(
-                WorkSession.is_late == True,
+                WorkSession.is_late.is_(True),
                 WorkSession.start_time
                 >= datetime.combine(date_from, datetime.min.time()),
                 WorkSession.start_time
                 <= datetime.combine(date_to, datetime.max.time()),
             )
         )
+
+        if account_id is not None:
+            query = query.filter(WorkSession.amocrm_account_id == account_id)
 
         if department_ids:
             query = query.filter(User.department_id.in_(department_ids))

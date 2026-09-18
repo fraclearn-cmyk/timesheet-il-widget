@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.rbac import RBACService, get_rbac_service
+from app.api.v1.dependencies import RequestContext, get_request_context
 from app.models.department import Department
+from app.models.user import User
 from app.schemas.department import (
     DepartmentResponse,
     DepartmentCreate,
@@ -20,7 +22,8 @@ def get_departments(
     user_id: int = Header(..., alias="X-User-Id"),
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service)
+    rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Get list of departments.
@@ -28,7 +31,7 @@ def get_departments(
     - ROP: only allowed departments
     - Employee: forbidden
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
+    user = context.user
     
     if not user:
         raise HTTPException(
@@ -46,17 +49,24 @@ def get_departments(
     # Get accessible departments
     accessible_dept_ids = rbac.get_accessible_departments(user)
     
-    # Admin (None) - get all departments
+    scoped_departments = (
+        db.query(Department)
+        .join(User, User.department_id == Department.id)
+        .filter(
+            Department.is_active == True,
+            User.amocrm_account_id == context.account_id,
+            User.is_active == True,
+        )
+    )
+
+    # Admin (None) - get all departments in the verified account
     if accessible_dept_ids is None:
-        departments = db.query(Department).filter(
-            Department.is_active == True
-        ).all()
+        departments = scoped_departments.distinct().all()
     # ROP - get only allowed departments
     elif accessible_dept_ids:
-        departments = db.query(Department).filter(
-            Department.id.in_(accessible_dept_ids),
-            Department.is_active == True
-        ).all()
+        departments = scoped_departments.filter(
+            Department.id.in_(accessible_dept_ids)
+        ).distinct().all()
     else:
         departments = []
     

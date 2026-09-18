@@ -177,3 +177,43 @@ def test_failed_refresh_keeps_the_previous_encrypted_pair():
     db.refresh(connection)
     assert cipher.decrypt(connection.encrypted_access_token) == "old-access"
     assert cipher.decrypt(connection.encrypted_refresh_token) == "old-refresh"
+
+
+def test_partial_refresh_response_keeps_the_previous_encrypted_pair():
+    """A partial OAuth response must not rotate either side of the stored pair."""
+    db = sessionmaker(bind=create_engine("sqlite://"))()
+    Base.metadata.create_all(db.bind)
+    cipher = OAuthTokenCipher.from_secret(
+        "synthetic-test-key-with-at-least-32-characters"
+    )
+    connection = OAuthConnection(
+        account_id=78,
+        account_url="https://example.amocrm.ru",
+        encrypted_access_token=cipher.encrypt("old-access"),
+        encrypted_refresh_token=cipher.encrypt("old-refresh"),
+    )
+    db.add(connection)
+    db.commit()
+
+    responses = [
+        httpx.Response(200, json={"access_token": "new-access", "expires_in": 60})
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        response = responses.pop(0)
+        response.request = request
+        return response
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        client = AmoCRMAuthClient(
+            client_id="synthetic-client-id",
+            client_secret="synthetic-client-secret",
+            redirect_uri="https://example.invalid/callback",
+            http_client=http,
+        )
+        with pytest.raises(AmoCRMTokenExpired):
+            OAuthService(db, client, cipher).refresh(connection)
+
+    db.refresh(connection)
+    assert cipher.decrypt(connection.encrypted_access_token) == "old-access"
+    assert cipher.decrypt(connection.encrypted_refresh_token) == "old-refresh"

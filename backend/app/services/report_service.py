@@ -55,6 +55,7 @@ class ReportService:
         target_date: date,
         user_id: Optional[int] = None,
         department: Optional[str] = None,
+        visible_external_user_ids: Optional[set[int]] = None,
     ) -> DailySummary:
         """Получить дневной отчёт"""
 
@@ -66,6 +67,8 @@ class ReportService:
 
         if user_id:
             filters.append(WorkSession.amocrm_user_id == user_id)
+        elif visible_external_user_ids is not None:
+            filters.append(WorkSession.amocrm_user_id.in_(visible_external_user_ids))
         if department:
             filters.append(WorkSession.department == department)
 
@@ -122,6 +125,7 @@ class ReportService:
         week_start: date,
         user_id: Optional[int] = None,
         department: Optional[str] = None,
+        visible_external_user_ids: Optional[set[int]] = None,
     ) -> WeeklySummary:
         """Получить недельный отчёт"""
 
@@ -136,7 +140,12 @@ class ReportService:
         current_date = week_start
         while current_date <= week_end:
             daily = ReportService.get_daily_report(
-                db, account_id, current_date, user_id, department
+                db,
+                account_id,
+                current_date,
+                user_id,
+                department,
+                visible_external_user_ids,
             )
             daily_summaries.append(daily)
 
@@ -168,6 +177,7 @@ class ReportService:
         month: int,
         user_id: Optional[int] = None,
         department: Optional[str] = None,
+        visible_external_user_ids: Optional[set[int]] = None,
     ) -> MonthlySummary:
         """Получить месячный отчёт"""
 
@@ -193,7 +203,12 @@ class ReportService:
 
         while current_date <= month_end:
             weekly = ReportService.get_weekly_report(
-                db, account_id, current_date, user_id, department
+                db,
+                account_id,
+                current_date,
+                user_id,
+                department,
+                visible_external_user_ids,
             )
             weekly_summaries.append(weekly)
 
@@ -353,6 +368,7 @@ class ReportService:
         start_date: date,
         end_date: date,
         department: Optional[str] = None,
+        visible_external_user_ids: Optional[set[int]] = None,
     ) -> PeriodStatistics:
         """Получить статистику за период"""
 
@@ -364,6 +380,8 @@ class ReportService:
 
         if department:
             filters.append(WorkSession.department == department)
+        if visible_external_user_ids is not None:
+            filters.append(WorkSession.amocrm_user_id.in_(visible_external_user_ids))
 
         # Get all sessions
         sessions = db.query(WorkSession).filter(and_(*filters)).all()
@@ -506,6 +524,7 @@ class ReportService:
         skip: int = 0,
         limit: int = 100,
         report_type: Optional[ReportType] = None,
+        visible_internal_user_ids: Optional[set[int]] = None,
     ) -> List[Report]:
         """Получить список отчётов"""
 
@@ -513,6 +532,10 @@ class ReportService:
 
         if report_type:
             query = query.filter(Report.report_type == report_type)
+        if visible_internal_user_ids is not None:
+            if not visible_internal_user_ids:
+                return []
+            query = query.filter(Report.generated_by.in_(visible_internal_user_ids))
 
         return (
             query.order_by(Report.generated_at.desc()).offset(skip).limit(limit).all()

@@ -130,7 +130,8 @@ Additional RED/GREEN evidence:
 - OAuth tests now exercise code-exchange persistence encryption and a rejected refresh
   retaining the original encrypted pair.
 
-Fresh final test run for this correction: `156 passed, 4 skipped, 25 warnings`.
+The round-1 baseline was `156 passed, 4 skipped, 25 warnings`; the fresh
+round-2 verification below supersedes that stale count.
 
 ## Recovery review: complete protected-route identifier coverage
 
@@ -160,3 +161,53 @@ TDD evidence for this recovery: the new authorized-route tests first observed
 unowned Excel department body; after the central guard they return normalized
 `404`.  The pagination test first observed `200` for `limit=1001`, then
 returned FastAPI's bounded-parameter `422` after the minimal route change.
+
+## Review round 2 corrections
+
+The second review identified collection endpoints where omission of an ID
+could still widen the result set.  Team stats/activity, reports without a
+`user_id`, departments, and both ID-free Excel exports now apply the verified
+account and visibility set: employees see only themselves, ROP users see
+themselves plus active members of their own active group, and admins see
+active users in the current account.  The Excel service receives the verified
+account explicitly, including when no department filter is supplied.  A
+multi-account workbook test verifies that a foreign row is absent from both
+department and late-arrival exports.
+
+Production request context now performs a live amoCRM account/current-user
+read and evaluates the documented `rights.is_active` and `rights.is_admin`
+fields on every request.  The phase-0 evidence does not define a mapping from
+opaque amoCRM `role_id` to this application's ROP role, so `role_id` is not
+invented as a mapping: local ROP requires an observed active non-admin
+principal, local admin requires observed `is_admin=true`, and missing,
+revoked, or malformed rights fail closed with normalized 403.  The read-only
+probe using ignored `.env` credentials returned 401, so no live role mapping
+was asserted and no secret was printed.
+
+Migration `007` adds nullable `activity_categories.account_id` and backfills
+only categories whose historical events unambiguously identify one account;
+ambiguous and unreferenced legacy categories remain unowned and fail closed.
+Category creation can therefore authorize the first event through explicit
+account ownership.  PostgreSQL tests cover first-event ownership,
+cross-account denial, ambiguous backfill, downgrade safety, and the complete
+`001 -> 007` disposable cycle.
+
+Route-specific numeric semantics are explicit: sessions/team use amoCRM
+external IDs, while KPI and Excel employee paths use internal IDs.  Collision
+tests cover the same numeric value representing different identities.
+
+Fresh verification from `backend`:
+
+| Check | Result |
+|---|---|
+| Full `pytest -q --tb=short` | `173 passed, 5 skipped, 54 warnings` |
+| Disposable PostgreSQL migration suite | `5 passed, 2 warnings` (migration `007`) |
+| `python -m compileall -q app migrations` | exit 0 |
+| `python -m alembic heads` | exactly `007 (head)` |
+| Black check on touched recovery files | exit 0 |
+| Flake8 on touched recovery files (`E501,W503` ignored) | exit 0 |
+| `git diff --check` | exit 0 |
+| HTTP matrix evidence | normalized 401/403/404/409/429 tests green; OAuth partial refresh preserves old encrypted pair |
+
+The disposable PostgreSQL container was removed after the migration run; no
+application database container or fixture database was reused.

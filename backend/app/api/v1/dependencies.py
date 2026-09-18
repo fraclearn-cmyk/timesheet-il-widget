@@ -18,7 +18,6 @@ from app.models.oauth_connection import OAuthConnection
 from app.models.user import User, UserRole
 from app.models.work_session import WorkSession
 from app.models.activity_session import ActivitySession
-from app.models.activity_event import ActivityEvent
 from app.models.activity_category import ActivityCategory
 from app.models.department import Department
 from app.models.report import Report
@@ -71,6 +70,28 @@ def require_visible_external_user(
         .filter(
             User.amocrm_account_id == context.account_id,
             User.amocrm_user_id == amocrm_user_id,
+            User.is_active.is_(True),
+        )
+        .one_or_none()
+    )
+    try:
+        return AccessPolicy(db, context).require_view_user(target)
+    except (LookupError, PermissionError) as error:
+        raise not_found() from error
+
+
+def require_visible_internal_user(
+    db: Session, context: RequestContext, reference: int | str
+) -> User:
+    try:
+        value = int(reference)
+    except (TypeError, ValueError) as error:
+        raise not_found() from error
+    target = (
+        db.query(User)
+        .filter(
+            User.id == value,
+            User.amocrm_account_id == context.account_id,
             User.is_active.is_(True),
         )
         .one_or_none()
@@ -154,9 +175,10 @@ def require_visible_report(
     report = db.get(Report, _integer_reference(reference))
     if report is None or str(report.account_id) != str(context.account_id):
         raise not_found()
-    for owner_reference in (report.generated_by, report.user_id):
-        if owner_reference is not None:
-            require_visible_user_reference(db, context, owner_reference)
+    if report.generated_by is not None:
+        require_visible_internal_user(db, context, report.generated_by)
+    if report.user_id is not None:
+        require_visible_external_user(db, context, report.user_id)
     return report
 
 
@@ -193,40 +215,19 @@ def require_visible_group(
 def require_visible_category(
     db: Session, context: RequestContext, reference: int | str
 ) -> ActivityCategory:
-    """Categories have no account column in the legacy schema.
-
-    Visibility is therefore proven through an event attached to a visible work
-    session.  An unreferenced category is intentionally not addressable by an
-    account until the category schema gains an explicit account key.
-    """
-    category = db.get(ActivityCategory, _integer_reference(reference))
+    """Resolve a category by its explicit migration-007 account owner."""
+    category = (
+        db.query(ActivityCategory)
+        .filter(
+            ActivityCategory.id == _integer_reference(reference),
+            ActivityCategory.account_id == context.account_id,
+            ActivityCategory.is_active.is_(True),
+        )
+        .one_or_none()
+    )
     if category is None:
         raise not_found()
-    event_users = (
-        db.query(WorkSession.amocrm_user_id)
-        .join(ActivitySession, ActivitySession.work_session_id == WorkSession.id)
-        .join(ActivityEvent, ActivityEvent.activity_session_id == ActivitySession.id)
-        .filter(
-            ActivityEvent.category_id == category.id,
-            WorkSession.amocrm_account_id == context.account_id,
-        )
-        .distinct()
-        .all()
-    )
-    policy = AccessPolicy(db, context)
-    for (amocrm_user_id,) in event_users:
-        owner = (
-            db.query(User)
-            .filter(
-                User.amocrm_account_id == context.account_id,
-                User.amocrm_user_id == amocrm_user_id,
-                User.is_active.is_(True),
-            )
-            .one_or_none()
-        )
-        if owner is not None and policy.can_view_user(owner):
-            return category
-    raise not_found()
+    return category
 
 
 def _environment() -> str:
@@ -320,13 +321,19 @@ async def get_request_context(
     role_id = rights.get("role_id") if isinstance(rights, dict) else None
     user.amocrm_role_id = role_id if isinstance(role_id, int) else None
     db.commit()
-    # Phase-0 did not validate a rights-to-local-role mapping. Privileged production
-    # operations therefore fail closed rather than retaining a stale local grant.
-    if user.role != UserRole.EMPLOYEE:
+    # The local role is configured by this application and is never inferred
+    # from role_id (amoCRM documents that as an opaque role identifier).  The
+    # observed, documented rights fields only prove that the principal is
+    # active and that a local admin is still an amoCRM admin.  A local ROP is
+    # allowed when amoCRM confirms an active non-admin principal; revocation or
+    # an unknown rights shape fails closed.
+    if not isinstance(rights, dict) or rights.get("is_active") is not True:
         raise access_denied()
-    context = RequestContext(
-        account_id=account_id, user=user, privileges_verified=False
-    )
+    if user.role == UserRole.ADMIN and rights.get("is_admin") is not True:
+        raise access_denied()
+    if user.role == UserRole.ROP and rights.get("is_admin") is not False:
+        raise access_denied()
+    context = RequestContext(account_id=account_id, user=user, privileges_verified=True)
     _inject_legacy_compatibility_headers(request, context)
     return context
 
@@ -340,9 +347,19 @@ async def enforce_route_scope(
     account = values.get("account_id")
     if account is not None:
         require_account(context, account)
-    for name in ("target_user_id", "employee_id", "user_id"):
-        if name in values:
-            require_visible_user_reference(db, context, values[name])
+    route_path = request.url.path
+    if (
+        "employee_id" in values
+        or "/kpi/user/" in route_path
+        or "/kpi/chart/user/" in route_path
+    ):
+        for name in ("employee_id", "target_user_id"):
+            if name in values:
+                require_visible_internal_user(db, context, values[name])
+    else:
+        for name in ("target_user_id", "user_id"):
+            if name in values:
+                require_visible_external_user(db, context, values[name])
     for name in ("session_id", "work_session_id"):
         if name in values:
             require_visible_work_session(db, context, values[name])
@@ -358,7 +375,7 @@ async def enforce_route_scope(
     if "category_id" in values:
         require_visible_category(db, context, values["category_id"])
     if "generated_by" in values:
-        require_visible_user_reference(db, context, values["generated_by"])
+        require_visible_internal_user(db, context, values["generated_by"])
     # Body IDs are just as attacker-controlled as path/query IDs.  Starlette
     # caches request.json(), so FastAPI can still parse the same payload later.
     try:
@@ -368,9 +385,12 @@ async def enforce_route_scope(
     if isinstance(body, dict):
         if body.get("account_id") is not None:
             require_account(context, body["account_id"])
-        for name in ("user_id", "target_user_id", "employee_id", "generated_by"):
+        for name in ("user_id", "target_user_id"):
             if body.get(name) is not None:
-                require_visible_user_reference(db, context, body[name])
+                require_visible_external_user(db, context, body[name])
+        for name in ("employee_id", "generated_by"):
+            if body.get(name) is not None:
+                require_visible_internal_user(db, context, body[name])
         for name in ("work_session_id", "session_id"):
             if body.get(name) is not None:
                 require_visible_work_session(db, context, body[name])

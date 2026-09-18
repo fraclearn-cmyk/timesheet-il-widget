@@ -13,7 +13,7 @@ class CategoryService:
     def create_category(self, account_id: str, data: ActivityCategoryCreate) -> ActivityCategory:
         """Create new activity category"""
         category = ActivityCategory(
-            account_id=account_id,
+            account_id=int(account_id),
             name=data.name,
             color=data.color,
             icon=data.icon,
@@ -27,22 +27,30 @@ class CategoryService:
     def get_categories(self, account_id: str, active_only: bool = False) -> List[ActivityCategory]:
         """Get all categories for account"""
         query = self.db.query(ActivityCategory)\
-            .filter(ActivityCategory.account_id == account_id)
+            .filter(ActivityCategory.account_id == int(account_id))
         
         if active_only:
             query = query.filter(ActivityCategory.is_active == True)
         
         return query.order_by(ActivityCategory.name).all()
     
-    def get_category(self, category_id: int) -> Optional[ActivityCategory]:
+    def get_category(
+        self, category_id: int, account_id: Optional[int] = None
+    ) -> Optional[ActivityCategory]:
         """Get category by ID"""
-        return self.db.query(ActivityCategory)\
-            .filter(ActivityCategory.id == category_id)\
-            .first()
+        query = self.db.query(ActivityCategory).filter(ActivityCategory.id == category_id)
+        if account_id is not None:
+            query = query.filter(ActivityCategory.account_id == int(account_id))
+        return query.first()
     
-    def update_category(self, category_id: int, data: ActivityCategoryUpdate) -> ActivityCategory:
+    def update_category(
+        self,
+        category_id: int,
+        data: ActivityCategoryUpdate,
+        account_id: Optional[int] = None,
+    ) -> ActivityCategory:
         """Update category"""
-        category = self.get_category(category_id)
+        category = self.get_category(category_id, account_id)
         if not category:
             raise ValueError("Category not found")
         
@@ -59,9 +67,9 @@ class CategoryService:
         self.db.refresh(category)
         return category
     
-    def delete_category(self, category_id: int) -> bool:
+    def delete_category(self, category_id: int, account_id: Optional[int] = None) -> bool:
         """Delete category (soft delete by setting is_active=False)"""
-        category = self.get_category(category_id)
+        category = self.get_category(category_id, account_id)
         if not category:
             raise ValueError("Category not found")
         

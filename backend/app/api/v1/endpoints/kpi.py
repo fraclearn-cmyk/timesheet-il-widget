@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.api.v1.dependencies import RequestContext, get_request_context
 from app.core.rbac import RBACService, get_rbac_service
 from app.schemas.kpi import KPIMetrics, ChartData, DashboardSettingsUpdate
 from app.services.kpi_service import KPIService
@@ -69,6 +70,7 @@ async def get_department_kpi(
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
     rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Get department KPI (ROP/Admin only)"""
     user = rbac.get_user_by_amocrm_id(user_id, account_id)
@@ -84,7 +86,7 @@ async def get_department_kpi(
         )
 
     service = KPIService(db)
-    return service.calculate_department_kpi(dept_id)
+    return service.calculate_department_kpi(dept_id, account_id=context.account_id)
 
 
 @router.get("/chart/my", response_model=ChartData)
@@ -151,6 +153,7 @@ async def get_department_chart(
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
     rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Get department chart data (ROP/Admin only)"""
     user = rbac.get_user_by_amocrm_id(user_id, account_id)
@@ -166,7 +169,9 @@ async def get_department_chart(
         )
 
     service = KPIService(db)
-    return service.get_department_chart_data(dept_id, days)
+    return service.get_department_chart_data(
+        dept_id, days, account_id=context.account_id
+    )
 
 
 @router.get("/dashboard/settings")

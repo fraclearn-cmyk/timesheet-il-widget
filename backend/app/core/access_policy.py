@@ -69,6 +69,14 @@ class AccessPolicy:
             if self.can_view_user(user)
         ]
 
+    def visible_internal_user_ids(self) -> set[int]:
+        """Return internal IDs allowed in response-set queries."""
+        return {user.id for user in self.visible_users()}
+
+    def visible_external_user_ids(self) -> set[int]:
+        """Return amoCRM IDs allowed in response-set queries."""
+        return {user.amocrm_user_id for user in self.visible_users()}
+
     def require_view_user(self, target: User | None) -> User:
         if target is None or target.amocrm_account_id != self.context.account_id:
             raise LookupError("not found")

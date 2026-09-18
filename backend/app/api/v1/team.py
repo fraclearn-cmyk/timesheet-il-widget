@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.rbac import RBACService, get_rbac_service
 from app.services.team_service import TeamService
+from app.api.v1.dependencies import RequestContext, get_request_context
+from app.core.access_policy import AccessPolicy
 
 router = APIRouter()
 
@@ -49,7 +51,8 @@ def get_team_status(
     online_only: bool = Query(False),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service)
+    rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Get current status of team members with RBAC filtering.
@@ -57,7 +60,7 @@ def get_team_status(
     - ROP: only employees from allowed departments
     - Employee: forbidden
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
+    user = context.user
     
     if not user:
         raise HTTPException(
@@ -65,23 +68,15 @@ def get_team_status(
             detail="User not found"
         )
     
-    # Only ROP and Admin can view team
-    if rbac.is_employee(user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-    
-    # Get accessible departments
-    accessible_dept_ids = rbac.get_accessible_departments(user)
-    
     service = TeamService(db)
     return service.get_team_status_with_rbac(
-        accessible_dept_ids=accessible_dept_ids,
+        accessible_dept_ids=None,
         department_id=department_id,
         status_filter=status_filter,
         online_only=online_only,
-        search=search
+        search=search,
+        account_id=context.account_id,
+        visible_internal_user_ids=AccessPolicy(db, context).visible_internal_user_ids(),
     )
 
 
@@ -90,25 +85,42 @@ def get_team_stats(
     department: str | None = Query(None),
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Get team statistics"""
     service = TeamService(db)
-    return service.get_team_stats(department, date_from, date_to)
+    return service.get_team_stats(
+        department,
+        date_from,
+        date_to,
+        account_id=context.account_id,
+        visible_external_user_ids=AccessPolicy(
+            db, context
+        ).visible_external_user_ids(),
+    )
 
 
 @router.get("/activity", response_model=List[Dict[str, Any]])
 def get_team_activity(
     date: datetime | None = Query(None),
     department: str | None = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Get team activity for specific date"""
     service = TeamService(db)
     if not date:
         date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
-    return service.get_team_activity(date, department)
+    return service.get_team_activity(
+        date,
+        department,
+        account_id=context.account_id,
+        visible_external_user_ids=AccessPolicy(
+            db, context
+        ).visible_external_user_ids(),
+    )
 
 
 # Import team schemas
@@ -127,7 +139,8 @@ def get_user_timeline(
     user_id: int = Header(..., alias="X-User-Id"),
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service)
+    rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Get user CRM activity timeline for specific date.
@@ -144,7 +157,14 @@ def get_user_timeline(
     
     # Check if user can view this employee
     from app.models.user import User
-    target_user = db.query(User).filter(User.amocrm_user_id == target_user_id).first()
+    target_user = (
+        db.query(User)
+        .filter(
+            User.amocrm_user_id == target_user_id,
+            User.amocrm_account_id == context.account_id,
+        )
+        .first()
+    )
     
     if target_user and not rbac.can_view_employee(user, target_user.department_id):
         raise HTTPException(
@@ -153,7 +173,7 @@ def get_user_timeline(
         )
     
     service = TeamService(db)
-    return service.get_user_timeline(target_user_id, date)
+    return service.get_user_timeline(target_user_id, date, context.account_id)
 
 
 @router.get("/{target_user_id}/timeline/history", response_model=ActivityHistoryResponse)
@@ -162,7 +182,8 @@ def get_user_timeline_history(
     user_id: int = Header(..., alias="X-User-Id"),
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service)
+    rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Get user CRM activity history for last 7 days.
@@ -178,7 +199,14 @@ def get_user_timeline_history(
     
     # Check if user can view this employee
     from app.models.user import User
-    target_user = db.query(User).filter(User.amocrm_user_id == target_user_id).first()
+    target_user = (
+        db.query(User)
+        .filter(
+            User.amocrm_user_id == target_user_id,
+            User.amocrm_account_id == context.account_id,
+        )
+        .first()
+    )
     
     if target_user and not rbac.can_view_employee(user, target_user.department_id):
         raise HTTPException(
@@ -187,7 +215,7 @@ def get_user_timeline_history(
         )
     
     service = TeamService(db)
-    return service.get_user_timeline_history(target_user_id)
+    return service.get_user_timeline_history(target_user_id, context.account_id)
 
 
 @router.post("/{target_user_id}/force-finish", response_model=ForceFinishResponse)
@@ -197,7 +225,8 @@ def force_finish_session(
     user_id: int = Header(..., alias="X-User-Id"),
     account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service)
+    rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Force finish work session for employee.
@@ -222,5 +251,6 @@ def force_finish_session(
         target_user_id=target_user_id,
         admin_id=user.id,
         admin_name=user.name,
-        reason=request.reason
+        reason=request.reason,
+        account_id=context.account_id,
     )

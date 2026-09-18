@@ -8,6 +8,8 @@ from typing import List, Optional
 from datetime import date, datetime
 
 from app.core.database import get_db
+from app.core.access_policy import AccessPolicy
+from app.api.v1.dependencies import RequestContext, get_request_context
 from app.services.report_service import ReportService
 from app.models.report import ReportType, ReportFormat
 from app.schemas.report import (
@@ -33,7 +35,8 @@ def get_daily_report(
     date: date = Query(..., description="Дата отчёта"),
     user_id: Optional[int] = Query(None, description="ID пользователя (опционально)"),
     department: Optional[str] = Query(None, description="Отдел (опционально)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Получить дневной отчёт
@@ -48,7 +51,10 @@ def get_daily_report(
         account_id=account_id,
         target_date=date,
         user_id=user_id,
-        department=department
+        department=department,
+        visible_external_user_ids=AccessPolicy(
+            db, context
+        ).visible_external_user_ids(),
     )
 
 
@@ -58,7 +64,8 @@ def get_weekly_report(
     week_start: date = Query(..., description="Начало недели (понедельник)"),
     user_id: Optional[int] = Query(None, description="ID пользователя"),
     department: Optional[str] = Query(None, description="Отдел"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Получить недельный отчёт
@@ -70,7 +77,10 @@ def get_weekly_report(
         account_id=account_id,
         week_start=week_start,
         user_id=user_id,
-        department=department
+        department=department,
+        visible_external_user_ids=AccessPolicy(
+            db, context
+        ).visible_external_user_ids(),
     )
 
 
@@ -81,7 +91,8 @@ def get_monthly_report(
     month: int = Query(..., ge=1, le=12, description="Месяц (1-12)"),
     user_id: Optional[int] = Query(None, description="ID пользователя"),
     department: Optional[str] = Query(None, description="Отдел"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Получить месячный отчёт
@@ -95,7 +106,10 @@ def get_monthly_report(
         year=year,
         month=month,
         user_id=user_id,
-        department=department
+        department=department,
+        visible_external_user_ids=AccessPolicy(
+            db, context
+        ).visible_external_user_ids(),
     )
 
 
@@ -134,7 +148,8 @@ def get_period_statistics(
     start_date: date = Query(..., description="Начало периода"),
     end_date: date = Query(..., description="Конец периода"),
     department: Optional[str] = Query(None, description="Отдел"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Получить статистику за произвольный период
@@ -148,7 +163,10 @@ def get_period_statistics(
         account_id=account_id,
         start_date=start_date,
         end_date=end_date,
-        department=department
+        department=department,
+        visible_external_user_ids=AccessPolicy(
+            db, context
+        ).visible_external_user_ids(),
     )
 
 
@@ -157,7 +175,8 @@ def generate_report(
     request: ReportGenerateRequest,
     account_id: str = Query(..., description="ID аккаунта amoCRM"),
     generated_by: int = Query(..., description="ID пользователя, создающего отчёт"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Сгенерировать и сохранить отчёт
@@ -172,7 +191,10 @@ def generate_report(
             account_id=account_id,
             target_date=request.start_date,
             user_id=request.user_id,
-            department=request.department
+            department=request.department,
+            visible_external_user_ids=AccessPolicy(
+                db, context
+            ).visible_external_user_ids(),
         ).dict()
         title = f"Дневной отчёт {request.start_date}"
         
@@ -182,7 +204,10 @@ def generate_report(
             account_id=account_id,
             week_start=request.start_date,
             user_id=request.user_id,
-            department=request.department
+            department=request.department,
+            visible_external_user_ids=AccessPolicy(
+                db, context
+            ).visible_external_user_ids(),
         ).dict()
         title = f"Недельный отчёт {request.start_date}"
         
@@ -193,7 +218,10 @@ def generate_report(
             year=request.start_date.year,
             month=request.start_date.month,
             user_id=request.user_id,
-            department=request.department
+            department=request.department,
+            visible_external_user_ids=AccessPolicy(
+                db, context
+            ).visible_external_user_ids(),
         ).dict()
         title = f"Месячный отчёт {request.start_date.strftime('%B %Y')}"
         
@@ -205,7 +233,10 @@ def generate_report(
             account_id=account_id,
             user_id=request.user_id,
             start_date=request.start_date,
-            end_date=request.end_date
+            end_date=request.end_date,
+            visible_external_user_ids=AccessPolicy(
+                db, context
+            ).visible_external_user_ids(),
         ).dict()
         title = f"Отчёт сотрудника {request.start_date} - {request.end_date}"
         
@@ -215,7 +246,10 @@ def generate_report(
             account_id=account_id,
             start_date=request.start_date,
             end_date=request.end_date,
-            department=request.department
+            department=request.department,
+            visible_external_user_ids=AccessPolicy(
+                db, context
+            ).visible_external_user_ids(),
         ).dict()
         title = f"Отчёт {request.start_date} - {request.end_date}"
     
@@ -251,7 +285,8 @@ def get_reports_list(
     skip: int = Query(0, ge=0, description="Пропустить записей"),
     limit: int = Query(100, ge=1, le=1000, description="Лимит записей"),
     report_type: Optional[ReportType] = Query(None, description="Фильтр по типу"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Получить список сохранённых отчётов
@@ -265,11 +300,24 @@ def get_reports_list(
         account_id=account_id,
         skip=skip,
         limit=limit,
-        report_type=report_type
+        report_type=report_type,
+        visible_internal_user_ids=AccessPolicy(
+            db, context
+        ).visible_internal_user_ids(),
     )
     
     # Count total (simple approach, can be optimized)
-    total = len(ReportService.get_reports(db=db, account_id=account_id, skip=0, limit=1000))
+    total = len(
+        ReportService.get_reports(
+            db=db,
+            account_id=account_id,
+            skip=0,
+            limit=1000,
+            visible_internal_user_ids=AccessPolicy(
+                db, context
+            ).visible_internal_user_ids(),
+        )
+    )
     
     return ReportListResponse(
         total=total,

@@ -61,6 +61,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
         "widget_groups",
         "group_members",
         "work_sessions",
+        "activity_categories",
         "status_transitions",
         "activity_intervals",
         "crm_events",
@@ -78,7 +79,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
                 column.name,
             )
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "006"
+        assert conn.scalar(text("select version_num from alembic_version")) == "007"
     assert "amocrm_user_id" in {
         c["name"] for c in inspect(engine).get_columns("work_sessions")
     }
@@ -231,6 +232,72 @@ def test_legacy_data_is_preserved_without_inventing_confirmed_work(migrated_db):
     command.upgrade(config, "head")
 
 
+def test_category_scope_backfills_only_unambiguous_accounts(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "006")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name)
+                VALUES (7,700,100,'One'), (8,800,200,'Two')
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO work_sessions
+                (id,amocrm_user_id,amocrm_account_id,user_name,start_time,current_status,created_at,updated_at)
+                VALUES
+                (1,700,100,'One','2026-09-16 08:00:00','working',now(),now()),
+                (2,800,200,'Two','2026-09-16 08:00:00','working',now(),now())
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO activity_categories
+                (id,name,display_name,color,is_active,sort_order)
+                VALUES
+                (1,'one','One','#fff',true,0),
+                (2,'ambiguous','Ambiguous','#000',true,0),
+                (3,'unused','Unused','#111',true,0)
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO activity_sessions
+                (id,work_session_id,entity_type,entity_id,start_time,created_at,updated_at)
+                VALUES (1,1,'lead',1,'2026-09-16 08:00:00',now(),now()),
+                       (2,2,'lead',2,'2026-09-16 08:00:00',now(),now())
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO activity_events
+                (id,activity_session_id,event_type,timestamp,created_at,category_id)
+                VALUES (1,1,'card_opened',now(),now(),1),
+                       (2,1,'card_closed',now(),now(),2),
+                       (3,2,'card_closed',now(),now(),2)
+                """
+            )
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as conn:
+        rows = dict(
+            conn.execute(
+                text("SELECT id,account_id FROM activity_categories ORDER BY id")
+            ).all()
+        )
+    assert rows == {1: 100, 2: None, 3: None}
+
+
 def test_unattributable_legacy_session_aborts_upgrade_without_data_loss(migrated_db):
     config, engine = migrated_db
     command.upgrade(config, "004")
@@ -272,5 +339,5 @@ def test_downgrade_refuses_to_erase_membership_history(migrated_db):
     with pytest.raises(RuntimeError, match="membership history"):
         command.downgrade(config, "004")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "006"
+        assert conn.scalar(text("select version_num from alembic_version")) == "007"
         assert conn.scalar(text("select count(*) from group_members")) == 2
