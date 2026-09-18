@@ -269,7 +269,7 @@ def get_reports_list(
     )
     
     # Count total (simple approach, can be optimized)
-    total = len(ReportService.get_reports(db=db, account_id=account_id, skip=0, limit=10000))
+    total = len(ReportService.get_reports(db=db, account_id=account_id, skip=0, limit=1000))
     
     return ReportListResponse(
         total=total,

@@ -9,13 +9,20 @@ import httpx
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.access_policy import RequestContext
+from app.core.access_policy import AccessPolicy, RequestContext
 from app.core.config import settings
 from app.core.database import get_db
 from app.integrations.amocrm_client import AmoCRMClient, AmoCRMClientError
 from app.integrations.oauth import OAuthTokenCipher
 from app.models.oauth_connection import OAuthConnection
-from app.models.user import User
+from app.models.user import User, UserRole
+from app.models.work_session import WorkSession
+from app.models.activity_session import ActivitySession
+from app.models.activity_event import ActivityEvent
+from app.models.activity_category import ActivityCategory
+from app.models.department import Department
+from app.models.report import Report
+from app.models.widget_group import WidgetGroup
 
 
 class RequestContextUnauthorized(HTTPException):
@@ -25,6 +32,201 @@ class RequestContextUnauthorized(HTTPException):
             detail="AMOCRM_TOKEN_EXPIRED",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+class APIProblem(HTTPException):
+    """Stable public error contract without object-existence disclosure."""
+
+    def __init__(self, status_code: int, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(status_code=status_code, detail=code)
+
+
+def not_found() -> APIProblem:
+    return APIProblem(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "Данные не найдены.")
+
+
+def access_denied() -> APIProblem:
+    return APIProblem(
+        status.HTTP_403_FORBIDDEN, "ACCESS_DENIED", "У вас нет доступа к этому разделу."
+    )
+
+
+def require_account(context: RequestContext, account_id: int | str) -> int:
+    try:
+        requested = int(account_id)
+    except (TypeError, ValueError) as error:
+        raise not_found() from error
+    if requested != context.account_id:
+        raise not_found()
+    return requested
+
+
+def require_visible_external_user(
+    db: Session, context: RequestContext, amocrm_user_id: int
+) -> User:
+    target = (
+        db.query(User)
+        .filter(
+            User.amocrm_account_id == context.account_id,
+            User.amocrm_user_id == amocrm_user_id,
+            User.is_active.is_(True),
+        )
+        .one_or_none()
+    )
+    try:
+        return AccessPolicy(db, context).require_view_user(target)
+    except (LookupError, PermissionError) as error:
+        raise not_found() from error
+
+
+def require_visible_user_reference(
+    db: Session, context: RequestContext, reference: int | str
+) -> User:
+    try:
+        value = int(reference)
+    except (TypeError, ValueError) as error:
+        raise not_found() from error
+    targets = (
+        db.query(User)
+        .filter(
+            User.amocrm_account_id == context.account_id,
+            User.is_active.is_(True),
+            (User.id == value) | (User.amocrm_user_id == value),
+        )
+        .all()
+    )
+    # A numeric reference can match both an internal and an external ID.  Do
+    # not choose one implicitly; ambiguous identity is a closed authorization
+    # failure rather than an opportunity to invent an ID mapping.
+    target = targets[0] if len(targets) == 1 else None
+    try:
+        return AccessPolicy(db, context).require_view_user(target)
+    except (LookupError, PermissionError) as error:
+        raise not_found() from error
+
+
+def require_self_external_user(context: RequestContext, amocrm_user_id: int) -> User:
+    if context.user.amocrm_user_id != amocrm_user_id:
+        raise not_found()
+    return context.user
+
+
+def _integer_reference(reference: int | str) -> int:
+    try:
+        value = int(reference)
+    except (TypeError, ValueError) as error:
+        raise not_found() from error
+    if value <= 0:
+        raise not_found()
+    return value
+
+
+def require_visible_work_session(
+    db: Session, context: RequestContext, reference: int | str
+) -> WorkSession:
+    """Resolve a work session only after checking its account and user scope."""
+    session = db.get(WorkSession, _integer_reference(reference))
+    if session is None or session.amocrm_account_id != context.account_id:
+        raise not_found()
+    try:
+        require_visible_external_user(db, context, session.amocrm_user_id)
+    except APIProblem:
+        raise
+    return session
+
+
+def require_visible_activity_session(
+    db: Session, context: RequestContext, reference: int | str
+) -> ActivitySession:
+    """Activity sessions inherit visibility from their owning work session."""
+    activity = db.get(ActivitySession, _integer_reference(reference))
+    if activity is None:
+        raise not_found()
+    require_visible_work_session(db, context, activity.work_session_id)
+    return activity
+
+
+def require_visible_report(
+    db: Session, context: RequestContext, reference: int | str
+) -> Report:
+    report = db.get(Report, _integer_reference(reference))
+    if report is None or str(report.account_id) != str(context.account_id):
+        raise not_found()
+    for owner_reference in (report.generated_by, report.user_id):
+        if owner_reference is not None:
+            require_visible_user_reference(db, context, owner_reference)
+    return report
+
+
+def require_visible_department(
+    db: Session, context: RequestContext, reference: int | str
+) -> Department:
+    """Departments predate account_id; an active account user is the ownership proof."""
+    department_id = _integer_reference(reference)
+    department = (
+        db.query(Department)
+        .join(User, User.department_id == Department.id)
+        .filter(
+            Department.id == department_id,
+            Department.is_active.is_(True),
+            User.amocrm_account_id == context.account_id,
+            User.is_active.is_(True),
+        )
+        .first()
+    )
+    if department is None:
+        raise not_found()
+    return department
+
+
+def require_visible_group(
+    db: Session, context: RequestContext, reference: int | str
+) -> WidgetGroup:
+    group = db.get(WidgetGroup, _integer_reference(reference))
+    if group is None or group.account_id != context.account_id or not group.is_active:
+        raise not_found()
+    return group
+
+
+def require_visible_category(
+    db: Session, context: RequestContext, reference: int | str
+) -> ActivityCategory:
+    """Categories have no account column in the legacy schema.
+
+    Visibility is therefore proven through an event attached to a visible work
+    session.  An unreferenced category is intentionally not addressable by an
+    account until the category schema gains an explicit account key.
+    """
+    category = db.get(ActivityCategory, _integer_reference(reference))
+    if category is None:
+        raise not_found()
+    event_users = (
+        db.query(WorkSession.amocrm_user_id)
+        .join(ActivitySession, ActivitySession.work_session_id == WorkSession.id)
+        .join(ActivityEvent, ActivityEvent.activity_session_id == ActivitySession.id)
+        .filter(
+            ActivityEvent.category_id == category.id,
+            WorkSession.amocrm_account_id == context.account_id,
+        )
+        .distinct()
+        .all()
+    )
+    policy = AccessPolicy(db, context)
+    for (amocrm_user_id,) in event_users:
+        owner = (
+            db.query(User)
+            .filter(
+                User.amocrm_account_id == context.account_id,
+                User.amocrm_user_id == amocrm_user_id,
+                User.is_active.is_(True),
+            )
+            .one_or_none()
+        )
+        if owner is not None and policy.can_view_user(owner):
+            return category
+    raise not_found()
 
 
 def _environment() -> str:
@@ -85,7 +287,9 @@ async def get_request_context(
         raise RequestContextUnauthorized()
     try:
         async with httpx.AsyncClient() as http:
-            account = await AmoCRMClient(http).get_account(
+            client = AmoCRMClient(http)
+            account = await client.get_account(connection.account_url, access_token)
+            current_users = await client.list_users(
                 connection.account_url, access_token
             )
     except (AmoCRMClientError, httpx.HTTPError):
@@ -108,8 +312,83 @@ async def get_request_context(
     )
     if user is None:
         raise RequestContextUnauthorized()
-    context = RequestContext(account_id=account_id, user=user)
+    observed = next((item for item in current_users if item.get("id") == user_id), None)
+    if observed is None:
+        raise RequestContextUnauthorized()
+    rights = observed.get("rights")
+    user.amocrm_rights = dict(rights) if isinstance(rights, dict) else None
+    role_id = rights.get("role_id") if isinstance(rights, dict) else None
+    user.amocrm_role_id = role_id if isinstance(role_id, int) else None
+    db.commit()
+    # Phase-0 did not validate a rights-to-local-role mapping. Privileged production
+    # operations therefore fail closed rather than retaining a stale local grant.
+    if user.role != UserRole.EMPLOYEE:
+        raise access_denied()
+    context = RequestContext(
+        account_id=account_id, user=user, privileges_verified=False
+    )
     _inject_legacy_compatibility_headers(request, context)
+    return context
+
+
+async def enforce_route_scope(
+    request: Request, db: Session = Depends(get_db)
+) -> RequestContext:
+    """Bind legacy path/query identifiers to the verified account before handlers run."""
+    context = await get_request_context(request, db)
+    values = {**request.path_params, **dict(request.query_params)}
+    account = values.get("account_id")
+    if account is not None:
+        require_account(context, account)
+    for name in ("target_user_id", "employee_id", "user_id"):
+        if name in values:
+            require_visible_user_reference(db, context, values[name])
+    for name in ("session_id", "work_session_id"):
+        if name in values:
+            require_visible_work_session(db, context, values[name])
+    if "activity_session_id" in values:
+        require_visible_activity_session(db, context, values["activity_session_id"])
+    if "report_id" in values:
+        require_visible_report(db, context, values["report_id"])
+    for name in ("department_id", "dept_id"):
+        if name in values:
+            require_visible_department(db, context, values[name])
+    if "group_id" in values:
+        require_visible_group(db, context, values["group_id"])
+    if "category_id" in values:
+        require_visible_category(db, context, values["category_id"])
+    if "generated_by" in values:
+        require_visible_user_reference(db, context, values["generated_by"])
+    # Body IDs are just as attacker-controlled as path/query IDs.  Starlette
+    # caches request.json(), so FastAPI can still parse the same payload later.
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        body = None
+    if isinstance(body, dict):
+        if body.get("account_id") is not None:
+            require_account(context, body["account_id"])
+        for name in ("user_id", "target_user_id", "employee_id", "generated_by"):
+            if body.get(name) is not None:
+                require_visible_user_reference(db, context, body[name])
+        for name in ("work_session_id", "session_id"):
+            if body.get(name) is not None:
+                require_visible_work_session(db, context, body[name])
+        if body.get("activity_session_id") is not None:
+            require_visible_activity_session(db, context, body["activity_session_id"])
+        for name in ("department_id", "dept_id"):
+            if body.get(name) is not None:
+                require_visible_department(db, context, body[name])
+        if body.get("group_id") is not None:
+            require_visible_group(db, context, body["group_id"])
+        if body.get("category_id") is not None:
+            require_visible_category(db, context, body["category_id"])
+        department_ids = body.get("department_ids")
+        if department_ids is not None:
+            if not isinstance(department_ids, list) or len(department_ids) > 100:
+                raise APIProblem(422, "INVALID_REQUEST", "Некорректный список отделов.")
+            for department_id in department_ids:
+                require_visible_department(db, context, department_id)
     return context
 
 

@@ -15,6 +15,7 @@ from app.models.widget_group import WidgetGroup
 class RequestContext:
     account_id: int
     user: User
+    privileges_verified: bool = True
 
     def __post_init__(self) -> None:
         if self.user.amocrm_account_id != self.account_id:
@@ -30,9 +31,15 @@ class AccessPolicy:
             return False
         if target.id == self.context.user.id:
             return True
-        if self.context.user.role == UserRole.ADMIN:
+        if (
+            self.context.privileges_verified
+            and self.context.user.role == UserRole.ADMIN
+        ):
             return True
-        if self.context.user.role != UserRole.ROP:
+        if (
+            not self.context.privileges_verified
+            or self.context.user.role != UserRole.ROP
+        ):
             return False
         return (
             self._db.query(GroupMember.id)

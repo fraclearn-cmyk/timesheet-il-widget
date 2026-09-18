@@ -99,3 +99,64 @@ integration assertions.
   still need their route-by-route consolidation in the later API phases. The new
   global context gate prevents production use of caller-provided identity headers;
   `AccessPolicy` is the required account/group-scoped primitive for that work.
+
+## Review round 1 corrections
+
+The first review found that `AccessPolicy` was only a primitive and did not bind
+legacy route identifiers to the verified request context. This is corrected by
+`enforce_route_scope`, now installed on every connected protected router. It rejects
+foreign account query/path values, resolves user references in the current account
+through `AccessPolicy`, and validates session ownership before a handler runs.
+Settings and sessions also have explicit handler-level account/self checks, so they
+do not rely on compatibility headers. Session state conflicts are now HTTP 409 with
+`SESSION_CONFLICT`; the rate limiter returns the standard 429 body and Retry-After.
+
+For production credentials, the context now reads account and current-user data from
+amoCRM on every request and persists only observed rights evidence. Phase 0 did not
+validate a rights-to-local-role mapping, so a stored non-employee local role is denied
+in production rather than treated as a durable privilege. Test-only contexts retain
+explicit role fixtures for policy tests.
+
+Additional RED/GREEN evidence:
+
+- HTTP tests initially reproduced foreign settings access reaching the handler and a
+  foreign session mutation reaching service logic. Both now return normalized 404
+  before business execution.
+- A 429 middleware contract test initially found the old `{detail: ...}` body; it now
+  returns `RATE_LIMITED` plus `Retry-After`.
+- A pagination test initially failed because `AmoCRMClient` had no page/item limits.
+  It now enforces configurable `max_pages` and `max_items` in addition to loop
+  detection.
+- OAuth tests now exercise code-exchange persistence encryption and a rejected refresh
+  retaining the original encrypted pair.
+
+Fresh final test run for this correction: `156 passed, 4 skipped, 25 warnings`.
+
+## Recovery review: complete protected-route identifier coverage
+
+The route-by-route audit after the first correction found that the global
+dependency was installed on every connected router, but it did not yet inspect
+all identifiers consumed by those routers.  The following checks are now
+performed before the handler runs (and return the normalized `NOT_FOUND`
+response for foreign objects):
+
+- `work_session_id` and `activity_session_id` inherit account/user visibility
+  from the owning work session;
+- `report_id` is matched against the report account;
+- `department_id`/`dept_id` require an active user in the verified account;
+- `group_id` is matched against an active widget group in the account;
+- `category_id` is addressable only when an event in the verified account
+  proves its ownership; unreferenced legacy categories fail closed;
+- `generated_by`, body user/session/department IDs, and Excel department lists
+  are checked with the same policy as path/query identifiers.
+
+The identifier reference resolver now rejects ambiguous internal-vs-external
+numeric IDs rather than choosing an arbitrary mapping.  Activity history now
+has an explicit `1..1000` item bound, and report totals no longer issue an
+unbounded `limit=10000` query.
+
+TDD evidence for this recovery: the new authorized-route tests first observed
+`200` for foreign activity/report/department identifiers and `403` for an
+unowned Excel department body; after the central guard they return normalized
+`404`.  The pagination test first observed `200` for `limit=1001`, then
+returned FastAPI's bounded-parameter `422` after the minimal route change.

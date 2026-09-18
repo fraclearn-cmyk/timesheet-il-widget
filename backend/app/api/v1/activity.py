@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 
@@ -98,7 +98,7 @@ def get_current_activity(
 @router.get("/history/{work_session_id}", response_model=List[ActivitySessionResponse])
 def get_activity_history(
     work_session_id: int,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db)
 ):
     """Get activity history for work session"""

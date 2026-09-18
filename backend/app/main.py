@@ -3,7 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import time
-from app.api.v1.dependencies import get_request_context
+from app.api.v1.dependencies import enforce_route_scope, get_request_context
+from fastapi import HTTPException
+from app.api.v1.dependencies import APIProblem
 
 try:
     from app.core.config import settings
@@ -35,7 +37,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Check limit
         if len(self.requests.get(client_ip, [])) >= self.calls_per_minute:
             return JSONResponse(
-                status_code=429, content={"detail": "Too many requests"}
+                status_code=429,
+                headers={"Retry-After": "60"},
+                content={
+                    "error": {
+                        "code": "RATE_LIMITED",
+                        "message": "Слишком много запросов. Повторите попытку позже.",
+                        "request_id": request.headers.get("X-Request-Id", ""),
+                    }
+                },
             )
 
         # Add request
@@ -49,6 +59,33 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 # Create app
 app = FastAPI(title="Timesheet IL API", version="1.0.0", docs_url="/api/docs")
+
+
+@app.exception_handler(HTTPException)
+async def api_error_handler(request: Request, exc: HTTPException):
+    if isinstance(exc, APIProblem):
+        code, message = exc.code, exc.message
+    elif exc.status_code == 401:
+        code, message = "AMOCRM_TOKEN_EXPIRED", "Срок подключения amoCRM истёк."
+    elif exc.status_code == 403:
+        code, message = "ACCESS_DENIED", "У вас нет доступа к этому разделу."
+    elif exc.status_code == 404:
+        code, message = "NOT_FOUND", "Данные не найдены."
+    elif exc.status_code == 409:
+        code, message = "CONFLICT", "Операция конфликтует с текущим состоянием."
+    else:
+        code, message = "REQUEST_INVALID", "Запрос не может быть обработан."
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "request_id": request.headers.get("X-Request-Id", ""),
+            }
+        },
+    )
+
 
 # CORS - Production secure
 ALLOWED_ORIGINS = [
@@ -140,7 +177,7 @@ try:
     )
     from app.api.v1.endpoints import departments, excel, kpi
 
-    protected = [Depends(get_request_context)]
+    protected = [Depends(enforce_route_scope)]
     app.include_router(
         sessions.router,
         prefix="/api/v1/sessions",

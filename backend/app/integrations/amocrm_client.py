@@ -32,13 +32,17 @@ class AmoCRMClient:
         timeout_seconds: float = 10.0,
         max_retries: int = 2,
         backoff_seconds: float = 0.25,
+        max_pages: int = 100,
+        max_items: int = 10_000,
     ) -> None:
-        if max_retries < 0:
-            raise ValueError("max_retries must be non-negative")
+        if max_retries < 0 or max_pages < 1 or max_items < 1:
+            raise ValueError("retry, page and item limits must be positive")
         self._http = http_client
         self._timeout = timeout_seconds
         self._max_retries = max_retries
         self._backoff = backoff_seconds
+        self._max_pages = max_pages
+        self._max_items = max_items
 
     async def get_json(
         self, url: str, *, headers: Mapping[str, str] | None = None
@@ -89,6 +93,8 @@ class AmoCRMClient:
         users: list[Mapping[str, Any]] = []
         seen_urls: set[str] = set()
         while url not in seen_urls:
+            if len(seen_urls) >= self._max_pages:
+                raise AmoCRMClientError("amoCRM user pagination exceeded page budget")
             seen_urls.add(url)
             payload = await self.get_json(
                 url, headers={"Authorization": f"Bearer {access_token}"}
@@ -100,6 +106,8 @@ class AmoCRMClient:
             if not isinstance(page_users, list):
                 break
             users.extend(item for item in page_users if isinstance(item, Mapping))
+            if len(users) > self._max_items:
+                raise AmoCRMClientError("amoCRM user pagination exceeded item budget")
             links = payload.get("_links")
             next_link = links.get("next") if isinstance(links, Mapping) else None
             next_url = next_link.get("href") if isinstance(next_link, Mapping) else None
