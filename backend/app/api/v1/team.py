@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, Query, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.core.rbac import RBACService, get_rbac_service
 from app.services.team_service import TeamService
 from app.api.v1.dependencies import RequestContext, get_request_context
 from app.core.access_policy import AccessPolicy
@@ -52,14 +51,11 @@ class TeamStats(BaseModel):
 
 @router.get("/status", response_model=List[TeamMemberStatus])
 def get_team_status(
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     department_id: Optional[int] = Query(None),
     status_filter: Optional[str] = Query(None),
     online_only: bool = Query(False),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """
@@ -130,10 +126,7 @@ def get_team_activity(
 def get_user_timeline(
     target_user_id: int,
     date: Optional[str] = Query(None),
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """
@@ -169,10 +162,7 @@ def get_user_timeline(
 )
 def get_user_timeline_history(
     target_user_id: int,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """
@@ -206,10 +196,7 @@ def get_user_timeline_history(
 def force_finish_session(
     target_user_id: int,
     request: ForceFinishRequest,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """

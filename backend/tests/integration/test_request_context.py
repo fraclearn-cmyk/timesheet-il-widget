@@ -166,3 +166,65 @@ def test_production_admin_downgrade_fails_closed(monkeypatch):
         asyncio.run(dependencies.get_request_context(_production_request(), db))
     assert error.value.status_code == 403
     assert error.value.detail == "ACCESS_DENIED"
+
+
+def test_production_bearer_reaches_legacy_routes_without_identity_headers(monkeypatch):
+    """Bearer-only production requests must not depend on synthetic X-* headers."""
+    from app.api.v1 import dependencies
+    from app.core.database import get_db
+    from app.main import app
+    from app.models.widget_settings import WidgetSettings
+
+    class FakeClient:
+        async def get_account(self, account_url, access_token):
+            return {"id": 20, "current_user_id": 10}
+
+        async def list_users(self, account_url, access_token):
+            return [{"id": 10, "rights": {"role_id": 77, "is_admin": False}}]
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setattr(dependencies, "AmoCRMClient", lambda http: FakeClient())
+    db = _production_context_db(UserRole.EMPLOYEE)
+    db.add(WidgetSettings(account_id="20"))
+    db.commit()
+    app.dependency_overrides[get_db] = lambda: db
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer access-token"}
+    try:
+        responses = [
+            client.get("/api/v1/sessions/current/10", headers=headers),
+            client.get("/api/v1/team/status", headers=headers),
+            client.get("/api/v1/kpi/my", headers=headers),
+            client.get(
+                "/api/v1/reports/daily?account_id=20&date=2026-09-19",
+                headers=headers,
+            ),
+            client.get("/api/v1/settings/20", headers=headers),
+        ]
+        assert [response.status_code for response in responses] == [200] * 5
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_production_route_rejects_forged_identity_headers_even_with_bearer(monkeypatch):
+    """Client X-* values remain forbidden authentication transport in production."""
+    from app.core.database import get_db
+    from app.main import app
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    db = _production_context_db(UserRole.EMPLOYEE)
+    app.dependency_overrides[get_db] = lambda: db
+    client = TestClient(app)
+    try:
+        response = client.get(
+            "/api/v1/settings/20",
+            headers={
+                "Authorization": "Bearer access-token",
+                "X-User-Id": "10",
+                "X-Account-Id": "20",
+            },
+        )
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "AMOCRM_TOKEN_EXPIRED"
+    finally:
+        app.dependency_overrides.clear()

@@ -1,10 +1,9 @@
 """Department endpoints"""
 
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import RBACService, get_rbac_service
 from app.api.v1.dependencies import (
     RequestContext,
     get_request_context,
@@ -12,7 +11,6 @@ from app.api.v1.dependencies import (
 )
 from app.core.access_policy import AccessPolicy
 from app.models.department import Department
-from app.models.user import User
 from app.schemas.department import (
     DepartmentResponse,
     DepartmentCreate,
@@ -25,10 +23,7 @@ router = APIRouter()
 
 @router.get("/", response_model=List[DepartmentResponse])
 def get_departments(
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """
@@ -53,14 +48,9 @@ def get_departments(
     # Get accessible departments
     accessible_dept_ids = policy.accessible_department_ids()
 
-    scoped_departments = (
-        db.query(Department)
-        .join(User, User.department_id == Department.id)
-        .filter(
-            Department.is_active.is_(True),
-            User.amocrm_account_id == context.account_id,
-            User.is_active.is_(True),
-        )
+    scoped_departments = db.query(Department).filter(
+        Department.account_id == context.account_id,
+        Department.is_active.is_(True),
     )
 
     # Admin (None) - get all departments in the verified account
@@ -104,22 +94,12 @@ def get_department_schedule(
 )
 def create_department(
     department_data: DepartmentCreate,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """
     Create new department (Admin only).
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
     if not AccessPolicy(db, context).can_manage_departments():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required"
@@ -127,7 +107,12 @@ def create_department(
 
     # Check if department with this name already exists
     existing = (
-        db.query(Department).filter(Department.name == department_data.name).first()
+        db.query(Department)
+        .filter(
+            Department.account_id == context.account_id,
+            Department.name == department_data.name,
+        )
+        .first()
     )
 
     if existing:
@@ -136,7 +121,9 @@ def create_department(
             detail="Department with this name already exists",
         )
 
-    department = Department(**department_data.dict())
+    department = Department(
+        account_id=context.account_id, **department_data.model_dump()
+    )
     db.add(department)
     db.commit()
     db.refresh(department)
@@ -148,28 +135,25 @@ def create_department(
 def update_department_schedule(
     department_id: int,
     update_data: DepartmentUpdate,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """
     Update department schedule (Admin only).
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
     if not AccessPolicy(db, context).can_manage_departments():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required"
         )
 
-    department = db.query(Department).filter(Department.id == department_id).first()
+    department = (
+        db.query(Department)
+        .filter(
+            Department.id == department_id,
+            Department.account_id == context.account_id,
+        )
+        .first()
+    )
 
     if not department:
         raise HTTPException(

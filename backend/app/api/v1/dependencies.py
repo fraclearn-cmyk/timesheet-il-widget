@@ -191,18 +191,16 @@ def require_visible_report(
 def require_visible_department(
     db: Session, context: RequestContext, reference: int | str
 ) -> Department:
-    """Departments predate account_id; an active account user is the ownership proof."""
+    """Resolve a department through its explicit account owner."""
     department_id = _integer_reference(reference)
     department = (
         db.query(Department)
-        .join(User, User.department_id == Department.id)
         .filter(
             Department.id == department_id,
+            Department.account_id == context.account_id,
             Department.is_active.is_(True),
-            User.amocrm_account_id == context.account_id,
-            User.is_active.is_(True),
         )
-        .first()
+        .one_or_none()
     )
     if department is None or not AccessPolicy(db, context).can_view_department(
         department_id
@@ -340,15 +338,15 @@ async def get_request_context(
     if user.role == UserRole.ADMIN and rights.get("is_admin") is not True:
         raise access_denied()
     context = RequestContext(account_id=account_id, user=user, privileges_verified=True)
-    _inject_legacy_compatibility_headers(request, context)
     return context
 
 
 async def enforce_route_scope(
-    request: Request, db: Session = Depends(get_db)
+    request: Request,
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ) -> RequestContext:
     """Bind legacy path/query identifiers to the verified account before handlers run."""
-    context = await get_request_context(request, db)
     values = {**request.path_params, **dict(request.query_params)}
     account = values.get("account_id")
     if account is not None:
@@ -417,22 +415,3 @@ async def enforce_route_scope(
             for department_id in department_ids:
                 require_visible_department(db, context, department_id)
     return context
-
-
-def _inject_legacy_compatibility_headers(
-    request: Request, context: RequestContext
-) -> None:
-    """Feed legacy routes server-verified IDs without accepting client-supplied headers."""
-    protected_names = {b"x-user-id", b"x-account-id"}
-    headers = [
-        (name, value)
-        for name, value in request.scope["headers"]
-        if name.lower() not in protected_names
-    ]
-    headers.extend(
-        [
-            (b"x-user-id", str(context.user.amocrm_user_id).encode()),
-            (b"x-account-id", str(context.account_id).encode()),
-        ]
-    )
-    request.scope["headers"] = headers

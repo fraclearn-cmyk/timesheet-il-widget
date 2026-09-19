@@ -7,7 +7,7 @@ Date: 2026-09-19. Base: `d04cdc5` on `main`.
 This change adds a server-side OAuth/account context boundary, an async amoCRM
 transport, non-destructive user synchronization, enforced account/group access
 policy, and migrations `006` through `008`. `Plan.md` was deliberately not edited.
-The final round-4 verification below supersedes all historical baseline counts.
+The final round-5 verification below supersedes all historical baseline counts.
 
 - `AmoCRMClient` has a finite timeout/retry budget, retries only timeout,
   transport and 502/503/504 failures, observes `Retry-After` for 429, and does
@@ -256,7 +256,7 @@ Historical round-3 verification:
 
 The round-3 disposable PostgreSQL container was removed after verification.
 
-## Review round 4 corrections and final verification
+## Review round 4 corrections and verification
 
 Base: `7d9f6bd`. All five code findings were reproduced before their fixes.
 No schema/migration was changed, no external service was contacted, and no push
@@ -336,3 +336,70 @@ For production, a successful OAuth/live-context verification still requires vali
 credentials; no successful live claim is made here. Legacy departments retain their
 pre-account schema and require active-user ownership evidence, so unassigned
 departments remain unaddressable until ownership is established.
+
+## Review round 5 corrections and final verification
+
+Base: `66e232a`. All four findings were reproduced before implementation. No push,
+live amoCRM call, application-database access, or `Plan.md` edit was performed.
+
+- Department chart aggregation now receives the same verified internal-user set as
+  department KPI and Excel aggregation. A manager with current and stale group
+  assignments sharing one legacy department sees only the current group's member;
+  the regression changed the observed daily average from the unsafe `1.5` to `1.0`.
+- Production compatibility no longer mutates `request.scope["headers"]`. All remaining
+  legacy `Header(...)` identity parameters and RBAC re-lookups were removed from team,
+  KPI, Excel and department handlers. The router guard and handlers now share FastAPI's
+  real `get_request_context` dependency. A production-mode Bearer-only test, with no
+  `X-User-Id` or `X-Account-Id`, reaches representative sessions, team, KPI, reports
+  and settings routes. A request that supplies forged legacy headers still fails 401
+  even when it also supplies a valid Bearer token; the test adapter remains test-only.
+- Session start, break, resume and finish pass the verified account explicitly into
+  `SessionService`. Duplicate external user IDs in another account neither block nor
+  redirect any self mutation, and the foreign account's session remains unchanged.
+- Migration `009` adds nullable `departments.account_id`, backfills only departments
+  whose linked historical users identify exactly one account, and replaces global name
+  uniqueness with `(account_id, name)`. Ambiguous/unreferenced legacy departments stay
+  unowned and fail closed. New departments persist the verified owner immediately, so
+  the same account can create, read and update before assigning a user; another account
+  is denied that object and may create the same name. Downgrade refuses to discard
+  explicit ownership that cannot be reconstructed or duplicate cross-account names.
+
+RED/GREEN evidence:
+
+| Regression | Observed RED | Focused GREEN |
+|---|---|---|
+| Department chart group scope | average `1.5` included a stale-group member | route regression passed with `1.0` |
+| Production Bearer compatibility | KPI returned `422` without `X-*` headers | five representative Bearer-only routes returned `200` |
+| Duplicate-ID session mutations | start/break/resume/finish returned `409` | all four account-explicit mutations passed |
+| Department ownership | create response had no account owner and could not be immediately resolved | create/read/update, foreign denial and per-account name tests passed |
+
+Final commands from `backend` (Python: `..\.venv312\Scripts\python.exe`):
+
+| Check | Final result |
+|---|---|
+| Focused new authorization/production regressions | `8 passed` |
+| Route/policy/model regression set | `92 passed, 387 warnings` |
+| Full `pytest -q --tb=short` | `232 passed, 10 skipped, 387 warnings` |
+| `python -m compileall -q app migrations` | exit 0 |
+| `python -m alembic heads` | exactly `009 (head)` |
+| Black check on all 15 touched Python files | exit 0 |
+| Flake8 on all 15 touched Python files (`E501,W503` ignored) | exit 0 |
+| `git diff --check` | exit 0 |
+| Secret-pattern scan of the complete changed diff (values not printed) | 0 matches |
+
+The 10 skipped tests require a disposable PostgreSQL server: the prior eight plus the
+two migration-009 cases. A fresh PostgreSQL run was attempted, but the installed
+Windows Docker service was stopped and could not be opened by this process; launching
+Docker Desktop hidden started its processes/WSL distribution, while `docker info`
+continued to time out without returning a server version. No existing application
+database was used as a substitute. Consequently the real-PostgreSQL `001 -> 009 ->
+004 -> 009` cycle, ambiguous department backfill, account-scoped uniqueness and guarded
+downgrade remain pending infrastructure verification; the migration is not claimed as
+PostgreSQL-verified in this round.
+
+Round-5 files changed: request dependencies; team, KPI, Excel, department and session
+routes; access policy; department model/schema; KPI and session services; authorized
+route, request-context and migration tests; migration `009`; this report. Self-review
+checked every remaining legacy identity parameter, every `_legacy_user` production
+call site, department ownership predicates, manager visibility flow, migration
+backfill/downgrade queries, denied-write persistence and the complete diff.

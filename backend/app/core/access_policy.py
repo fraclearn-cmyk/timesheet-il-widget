@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.models.group_member import GroupMember
+from app.models.department import Department
 from app.models.user import User
 from app.models.widget_group import WidgetGroup
 
@@ -79,19 +80,21 @@ class AccessPolicy:
         )
 
     def can_view_department(self, department_id: int) -> bool:
+        owned = (
+            self._db.query(Department.id)
+            .filter(
+                Department.id == department_id,
+                Department.account_id == self.context.account_id,
+                Department.is_active.is_(True),
+            )
+            .first()
+        )
+        if owned is None:
+            return False
         if self.context.user.department_id == department_id:
             return True
         if self.is_admin():
-            return (
-                self._db.query(User.id)
-                .filter(
-                    User.amocrm_account_id == self.context.account_id,
-                    User.department_id == department_id,
-                    User.is_active.is_(True),
-                )
-                .first()
-                is not None
-            )
+            return True
         if not self.is_manager():
             return False
         return (

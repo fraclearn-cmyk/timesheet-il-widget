@@ -273,7 +273,12 @@ class KPIService:
         return ChartData(labels=labels, datasets=datasets)
 
     def get_department_chart_data(
-        self, department_id: int, days: int = 7, *, account_id: int | None = None
+        self,
+        department_id: int,
+        days: int = 7,
+        *,
+        account_id: int | None = None,
+        visible_internal_user_ids: set[int] | None = None,
     ) -> ChartData:
         """Get chart data for department"""
         end_date = datetime.now().date()
@@ -283,6 +288,8 @@ class KPIService:
         user_query = self.db.query(User).filter(User.department_id == department_id)
         if account_id is not None:
             user_query = user_query.filter(User.amocrm_account_id == account_id)
+        if visible_internal_user_ids is not None:
+            user_query = user_query.filter(User.id.in_(visible_internal_user_ids))
         users = user_query.all()
         user_ids = [(u.amocrm_account_id, u.amocrm_user_id) for u in users]
 

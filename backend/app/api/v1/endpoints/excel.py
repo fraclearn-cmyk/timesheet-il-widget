@@ -1,13 +1,12 @@
 """Excel export endpoints"""
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.v1.dependencies import RequestContext, get_request_context
 from app.core.access_policy import AccessPolicy
-from app.core.rbac import RBACService, get_rbac_service
 from app.schemas.excel import ExcelExportRequest
 from app.services.excel_service import ExcelService
 
@@ -17,10 +16,7 @@ router = APIRouter()
 @router.post("/department")
 async def export_department_report(
     request: ExcelExportRequest,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """
@@ -28,13 +24,6 @@ async def export_department_report(
     Only ROP and Admin can export.
     ROP can only export their accessible departments.
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
     policy = AccessPolicy(db, context)
     if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(
@@ -84,10 +73,7 @@ async def export_department_report(
 async def export_employee_report(
     employee_id: int,
     request: ExcelExportRequest,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """
@@ -95,13 +81,6 @@ async def export_employee_report(
     ROP and Admin can export.
     ROP can only export employees from accessible departments.
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
     policy = AccessPolicy(db, context)
     if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(
@@ -149,10 +128,7 @@ async def export_employee_report(
 @router.post("/late-arrivals")
 async def export_late_arrivals_report(
     request: ExcelExportRequest,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """
@@ -160,13 +136,6 @@ async def export_late_arrivals_report(
     Only ROP and Admin can export.
     ROP can only export their accessible departments.
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
     policy = AccessPolicy(db, context)
     if not (policy.is_admin() or policy.is_manager()):
         raise HTTPException(

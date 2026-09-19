@@ -56,6 +56,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
     config, engine = migrated_db
     command.upgrade(config, "head")
     target_tables = [
+        "departments",
         "users",
         "widget_settings",
         "widget_groups",
@@ -79,7 +80,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
                 column.name,
             )
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "008"
+        assert conn.scalar(text("select version_num from alembic_version")) == "009"
     assert "amocrm_user_id" in {
         c["name"] for c in inspect(engine).get_columns("work_sessions")
     }
@@ -316,7 +317,7 @@ def test_category_account_ownership_refuses_lossy_007_downgrade(migrated_db):
     ):
         command.downgrade(config, "006")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "008"
+        assert conn.scalar(text("select version_num from alembic_version")) == "009"
 
 
 def test_category_account_name_scope_allows_duplicate_names_per_account(migrated_db):
@@ -407,5 +408,57 @@ def test_downgrade_refuses_to_erase_membership_history(migrated_db):
     with pytest.raises(RuntimeError, match="membership history"):
         command.downgrade(config, "004")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "008"
+        assert conn.scalar(text("select version_num from alembic_version")) == "009"
         assert conn.scalar(text("select count(*) from group_members")) == 2
+
+
+def test_department_scope_backfills_only_unambiguous_accounts(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "008")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO departments
+                (id,name,work_start_time,work_end_time,is_active,created_at,updated_at,timezone)
+                VALUES (1,'One','09:00','18:00',true,now(),now(),'UTC'),
+                       (2,'Ambiguous','09:00','18:00',true,now(),now(),'UTC'),
+                       (3,'Unused','09:00','18:00',true,now(),now(),'UTC')
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO users
+                (id,amocrm_user_id,amocrm_account_id,name,department_id)
+                VALUES (7,700,100,'One',1), (8,800,100,'Two',2),
+                       (9,900,200,'Three',2)
+                """
+            )
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as conn:
+        rows = dict(conn.execute(text("SELECT id,account_id FROM departments")).all())
+    assert rows == {1: 100, 2: None, 3: None}
+
+
+def test_department_account_names_and_downgrade_are_data_safe(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO departments
+                (id,name,account_id,work_start_time,work_end_time,is_active,created_at,updated_at,timezone)
+                VALUES (1,'Shared',100,'09:00','18:00',true,now(),now(),'UTC'),
+                       (2,'Shared',200,'09:00','18:00',true,now(),now(),'UTC')
+                """
+            )
+        )
+    with pytest.raises(RuntimeError, match="department account ownership"):
+        command.downgrade(config, "008")
+    with engine.connect() as conn:
+        assert conn.scalar(text("select version_num from alembic_version")) == "009"
+        assert conn.scalar(text("select count(*) from departments")) == 2

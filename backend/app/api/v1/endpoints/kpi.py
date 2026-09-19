@@ -1,12 +1,11 @@
 """KPI and dashboard endpoints"""
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.v1.dependencies import RequestContext, get_request_context
 from app.core.access_policy import AccessPolicy
-from app.core.rbac import RBACService, get_rbac_service
 from app.schemas.kpi import KPIMetrics, ChartData, DashboardSettingsUpdate
 from app.services.kpi_service import KPIService
 from app.models.dashboard_settings import DashboardSettings
@@ -16,10 +15,7 @@ router = APIRouter()
 
 @router.get("/my", response_model=KPIMetrics)
 async def get_my_kpi(
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """Get my KPI metrics (all roles)"""
@@ -36,10 +32,7 @@ async def get_my_kpi(
 @router.get("/user/{target_user_id}", response_model=KPIMetrics)
 async def get_user_kpi(
     target_user_id: int,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """Get user KPI (ROP/Admin only)"""
@@ -71,10 +64,7 @@ async def get_user_kpi(
 @router.get("/department/{dept_id}", response_model=KPIMetrics)
 async def get_department_kpi(
     dept_id: int,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """Get department KPI (ROP/Admin only)"""
@@ -101,10 +91,7 @@ async def get_department_kpi(
 @router.get("/chart/my", response_model=ChartData)
 async def get_my_chart(
     days: int = Query(7, ge=1, le=30),
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """Get my chart data"""
@@ -124,10 +111,7 @@ async def get_my_chart(
 async def get_user_chart(
     target_user_id: int,
     days: int = Query(7, ge=1, le=30),
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """Get user chart data (ROP/Admin only)"""
@@ -162,10 +146,7 @@ async def get_user_chart(
 async def get_department_chart(
     dept_id: int,
     days: int = Query(7, ge=1, le=30),
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """Get department chart data (ROP/Admin only)"""
@@ -183,16 +164,16 @@ async def get_department_chart(
 
     service = KPIService(db)
     return service.get_department_chart_data(
-        dept_id, days, account_id=context.account_id
+        dept_id,
+        days,
+        account_id=context.account_id,
+        visible_internal_user_ids=policy.visible_internal_user_ids(),
     )
 
 
 @router.get("/dashboard/settings")
 async def get_dashboard_settings(
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """Get dashboard settings"""
@@ -222,10 +203,7 @@ async def get_dashboard_settings(
 @router.put("/dashboard/settings")
 async def update_dashboard_settings(
     updates: DashboardSettingsUpdate,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
     context: RequestContext = Depends(get_request_context),
 ):
     """Update dashboard settings"""

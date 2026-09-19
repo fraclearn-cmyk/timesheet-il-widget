@@ -33,7 +33,7 @@ def start_session(
     try:
         if isinstance(context, RequestContext):
             require_self_external_user(context, data.user_id)
-        session = service.start_session(data)
+        session = service.start_session(data, account_id=context.account_id)
         return WorkSessionResponse.model_validate(session)
     except ValueError as e:
         raise APIProblem(
@@ -52,7 +52,7 @@ def take_break(
     try:
         if isinstance(context, RequestContext):
             require_self_external_user(context, user_id)
-        session = service.take_break(user_id)
+        session = service.take_break(context.account_id, user_id)
         return WorkSessionResponse.model_validate(session)
     except ValueError as e:
         raise APIProblem(
@@ -71,7 +71,7 @@ def resume_work(
     try:
         if isinstance(context, RequestContext):
             require_self_external_user(context, user_id)
-        session = service.resume_work(user_id)
+        session = service.resume_work(context.account_id, user_id)
         return WorkSessionResponse.model_validate(session)
     except ValueError as e:
         raise APIProblem(
@@ -90,7 +90,7 @@ def finish_session(
     try:
         if isinstance(context, RequestContext):
             require_self_external_user(context, user_id)
-        session = service.finish_work(user_id)
+        session = service.finish_work(context.account_id, user_id)
         return WorkSessionResponse.model_validate(session)
     except ValueError as e:
         raise APIProblem(

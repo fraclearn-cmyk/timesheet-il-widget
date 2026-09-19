@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base
 from app.models.user import User
 from app.models.user import UserRole
-from app.models.work_session import WorkSession
+from app.models.work_session import WorkSession, WorkStatus
 from app.models.activity_session import ActivitySession, EntityType
 from app.models.report import Report, ReportType, ReportFormat
 from app.models.department import Department
@@ -448,6 +448,7 @@ def test_id_free_excel_collections_filter_to_verified_account(monkeypatch):
     day = datetime.utcnow()
     department = Department(
         id=92,
+        account_id=20,
         name="Shared legacy department",
         work_start_time=datetime.strptime("09:00", "%H:%M").time(),
         work_end_time=datetime.strptime("18:00", "%H:%M").time(),
@@ -714,6 +715,7 @@ def scoped_client(monkeypatch):
         db.add(
             Department(
                 id=dept_id,
+                account_id=20 if dept_id in {60, 61} else 21,
                 name=f"Department {dept_id}",
                 work_start_time=datetime.strptime("09:00", "%H:%M").time(),
                 work_end_time=datetime.strptime("18:00", "%H:%M").time(),
@@ -983,6 +985,23 @@ def test_department_kpi_filters_members_by_group_not_legacy_department(scoped_cl
     assert response.json()["total_employees"] == 1
 
 
+def test_department_chart_filters_members_by_current_manager_group(scoped_client):
+    """A shared department must not pull a stale-group member into chart averages."""
+    client, db = scoped_client
+    db.get(User, 2).department_id = 60
+    db.get(WorkSession, 100).total_work_time = 3600
+    db.get(WorkSession, 101).total_work_time = 7200
+    db.commit()
+
+    response = client.get(
+        "/api/v1/kpi/chart/department/60?days=7",
+        headers={"X-User-Id": "12", "X-Account-Id": "20"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["datasets"][0]["data"][-2:] == [1.0, 0]
+
+
 def test_manager_collections_exclude_members_of_stale_assignment(scoped_client):
     client, _ = scoped_client
     headers = {"X-User-Id": "12", "X-Account-Id": "20"}
@@ -1012,6 +1031,112 @@ def test_department_creation_requires_verified_admin(scoped_client, actor, expec
     assert (db.query(Department).filter_by(name="New department").count() == 1) is (
         expected == 201
     )
+
+
+def test_department_create_is_immediately_manageable_and_account_scoped(scoped_client):
+    """Creation must persist ownership instead of waiting for a user assignment."""
+    client, db = scoped_client
+    own_headers = {"X-User-Id": "13", "X-Account-Id": "20"}
+    foreign = db.get(User, 5)
+    foreign.amocrm_rights = {"is_admin": True}
+    db.commit()
+
+    created = client.post(
+        "/api/v1/departments/",
+        json={
+            "name": "Account scoped",
+            "work_start_time": "09:00:00",
+            "work_end_time": "18:00:00",
+        },
+        headers=own_headers,
+    )
+    assert created.status_code == 201
+    department_id = created.json()["id"]
+    assert created.json()["account_id"] == 20
+
+    read = client.get(
+        f"/api/v1/departments/{department_id}/schedule", headers=own_headers
+    )
+    updated = client.put(
+        f"/api/v1/departments/{department_id}/schedule",
+        json={"work_start_time": "08:00:00"},
+        headers=own_headers,
+    )
+    assert read.status_code == 200
+    assert updated.status_code == 200
+    assert updated.json()["work_start_time"] == "08:00:00"
+
+    foreign_headers = {"X-User-Id": "14", "X-Account-Id": "21"}
+    denied = client.get(
+        f"/api/v1/departments/{department_id}/schedule", headers=foreign_headers
+    )
+    duplicate_name = client.post(
+        "/api/v1/departments/",
+        json={
+            "name": "Account scoped",
+            "work_start_time": "09:00:00",
+            "work_end_time": "18:00:00",
+        },
+        headers=foreign_headers,
+    )
+    assert denied.status_code == 404
+    assert duplicate_name.status_code == 201
+    assert duplicate_name.json()["account_id"] == 21
+
+
+def test_session_start_resolves_self_within_verified_account(scoped_client):
+    """A duplicate external ID in another account must not block self start."""
+    client, db = scoped_client
+    db.add(User(id=6, amocrm_user_id=10, amocrm_account_id=21, name="Duplicate"))
+    db.query(WorkSession).filter(WorkSession.id == 100).delete()
+    db.commit()
+
+    response = client.post(
+        "/api/v1/sessions/start",
+        json={"user_id": 10, "user_name": "Self"},
+        headers={"X-User-Id": "10", "X-Account-Id": "20"},
+    )
+
+    assert response.status_code == 201
+    created = db.get(WorkSession, response.json()["id"])
+    assert created.amocrm_account_id == 20
+
+
+@pytest.mark.parametrize(
+    "operation,initial_status,expected_status",
+    [
+        ("break", "working", "break"),
+        ("resume", "break", "working"),
+        ("finish", "working", "finished"),
+    ],
+)
+def test_session_mutations_resolve_self_within_verified_account(
+    scoped_client, operation, initial_status, expected_status
+):
+    """Every self mutation must use the verified account with duplicate IDs."""
+    client, db = scoped_client
+    db.add(User(id=6, amocrm_user_id=10, amocrm_account_id=21, name="Duplicate"))
+    own = db.get(WorkSession, 100)
+    own.current_status = WorkStatus(initial_status)
+    foreign = WorkSession(
+        id=103,
+        amocrm_user_id=10,
+        amocrm_account_id=21,
+        user_name="Duplicate",
+        start_time=datetime(2026, 9, 18, 10),
+        current_status=WorkStatus(initial_status),
+    )
+    db.add(foreign)
+    db.commit()
+
+    response = client.post(
+        f"/api/v1/sessions/{operation}/10",
+        headers={"X-User-Id": "10", "X-Account-Id": "20"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["current_status"] == expected_status
+    assert db.get(WorkSession, 103).current_status.value == initial_status
 
 
 @pytest.mark.parametrize("path", ["department", "late-arrivals"])

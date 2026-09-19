@@ -129,26 +129,26 @@ class SessionService:
     def get_session_by_id(self, session_id):
         return self.db.get(WorkSession, session_id)
 
-    def start_session(self, data):
-        user = self._legacy_user(data.user_id)
+    def start_session(self, data, *, account_id):
+        user = self._user(account_id, data.user_id)
         return self.create_session(
             user.amocrm_account_id, user.amocrm_user_id, data.user_name
         )
 
-    def _change_current(self, amocrm_user_id, status):
-        work = self.get_current_session(amocrm_user_id)
+    def _change_current(self, account_id, amocrm_user_id, status):
+        work = self.get_current_session(account_id, amocrm_user_id)
         if work is None:
             raise ValueError("No current session")
         return self.update_session(work.id, status=status)
 
-    def take_break(self, amocrm_user_id):
-        return self._change_current(amocrm_user_id, WorkStatus.BREAK)
+    def take_break(self, account_id, amocrm_user_id):
+        return self._change_current(account_id, amocrm_user_id, WorkStatus.BREAK)
 
-    def resume_work(self, amocrm_user_id):
-        return self._change_current(amocrm_user_id, WorkStatus.WORKING)
+    def resume_work(self, account_id, amocrm_user_id):
+        return self._change_current(account_id, amocrm_user_id, WorkStatus.WORKING)
 
-    def finish_work(self, amocrm_user_id):
-        return self._change_current(amocrm_user_id, WorkStatus.FINISHED)
+    def finish_work(self, account_id, amocrm_user_id):
+        return self._change_current(account_id, amocrm_user_id, WorkStatus.FINISHED)
 
     def get_session_history(
         self,
