@@ -122,6 +122,16 @@ def test_widget_group_name_key_uses_trimmed_unicode_casefold(db):
     assert group.name_key == "strasse"
 
 
+def test_widget_group_name_key_fits_maximum_casefold_expansion(db):
+    source_name = "\u0390" * 255
+    group = WidgetGroup(account_id=7, name=source_name)
+    db.add(group)
+    db.commit()
+    assert len(group.name) == 255
+    assert len(group.name_key) == 765
+    assert WidgetGroup.__table__.c.name_key.type.length == 765
+
+
 def test_phase_3_settings_snapshot_defaults_are_persisted(db):
     settings = WidgetSettings(account_id=7)
     db.add(settings)

@@ -548,6 +548,61 @@ def test_010_backfills_defaults_and_preserves_group_membership_on_cycle(migrated
         assert conn.scalar(text("select count(*) from group_members where id=20")) == 1
 
 
+def test_010_preserves_maximum_unicode_casefold_expansion_and_account_scope(
+    migrated_db,
+):
+    config, engine = migrated_db
+    source_name = "\u0390" * 255
+    expected_key = source_name.casefold()
+    assert len(source_name) == 255
+    assert len(expected_key) == 765
+    command.upgrade(config, "009")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO widget_groups
+                (id,account_id,name,timezone,work_start_time,work_end_time,is_active,created_at,updated_at)
+                VALUES (10,100,:name,'UTC','09:00','18:00',true,now(),now()),
+                       (11,200,:name,'UTC','09:00','18:00',true,now(),now())
+                """
+            ),
+            {"name": source_name},
+        )
+
+    command.upgrade(config, "010")
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT account_id,name_key FROM widget_groups ORDER BY account_id"
+            )
+        ).all()
+        assert rows == [(100, expected_key), (200, expected_key)]
+        assert (
+            next(
+                column
+                for column in inspect(engine).get_columns("widget_groups")
+                if column["name"] == "name_key"
+            )["type"].length
+            == 765
+        )
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO widget_groups
+                    (id,account_id,name,name_key,timezone,work_start_time,work_end_time,
+                     allow_restart_session,is_active,created_at,updated_at)
+                    VALUES (12,100,'Duplicate',:name_key,'UTC','09:00','18:00',
+                            false,true,now(),now())
+                    """
+                ),
+                {"name_key": expected_key},
+            )
+
+
 def test_010_aborts_before_unique_constraint_when_normalized_names_collide(
     migrated_db,
 ):

@@ -109,7 +109,7 @@ def upgrade() -> None:
         ),
     )
     op.add_column(
-        "widget_groups", sa.Column("name_key", sa.String(255), nullable=True)
+        "widget_groups", sa.Column("name_key", sa.String(765), nullable=True)
     )
     op.add_column(
         "widget_groups",

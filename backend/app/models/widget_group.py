@@ -35,7 +35,7 @@ class WidgetGroup(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, nullable=False, index=True)
     name = Column(String(255), nullable=False)
-    name_key = Column(String(255), nullable=False)
+    name_key = Column(String(765), nullable=False)
     timezone = Column(String(64), nullable=False, default="UTC")
     work_start_time = Column(Time, nullable=False, default=time(9, 0))
     work_end_time = Column(Time, nullable=False, default=time(18, 0))
