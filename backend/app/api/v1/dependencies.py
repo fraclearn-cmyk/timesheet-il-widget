@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.access_policy import AccessPolicy, RequestContext
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.widget_auth import WidgetTokenInvalid, decode_widget_token
 from app.integrations.amocrm_client import AmoCRMClient, AmoCRMClientError
 from app.integrations.oauth import OAuthTokenCipher
 from app.models.oauth_connection import OAuthConnection
@@ -40,6 +41,14 @@ class APIProblem(HTTPException):
         self.code = code
         self.message = message
         super().__init__(status_code=status_code, detail=code)
+
+
+def widget_token_invalid() -> APIProblem:
+    return APIProblem(
+        status.HTTP_401_UNAUTHORIZED,
+        "AMO_WIDGET_TOKEN_INVALID",
+        "Токен виджета недействителен.",
+    )
 
 
 def not_found() -> APIProblem:
@@ -289,6 +298,9 @@ async def get_request_context(
     request: Request, db: Session = Depends(get_db)
 ) -> RequestContext:
     """Resolve identity from verified OAuth state, with a test-only legacy adapter."""
+    widget_token = request.headers.get("X-Auth-Token")
+    if widget_token is not None:
+        return await _get_widget_request_context(widget_token, db)
     legacy_user = request.headers.get("X-User-Id")
     legacy_account = request.headers.get("X-Account-Id")
     if legacy_user is not None or legacy_account is not None:
@@ -312,12 +324,9 @@ async def get_request_context(
     if connection is None:
         raise RequestContextUnauthorized()
     try:
-        async with httpx.AsyncClient() as http:
-            client = AmoCRMClient(http)
-            account = await client.get_account(connection.account_url, access_token)
-            current_users = await client.list_users(
-                connection.account_url, access_token
-            )
+        account, current_users = await _load_live_amocrm_state(
+            connection, access_token
+        )
     except (AmoCRMClientError, httpx.HTTPError):
         raise RequestContextUnauthorized()
     account_id, user_id = account.get("id"), account.get("current_user_id")
@@ -338,7 +347,78 @@ async def get_request_context(
     )
     if user is None:
         raise RequestContextUnauthorized()
-    observed = next((item for item in current_users if item.get("id") == user_id), None)
+    return _context_from_live_users(db, account_id, user, current_users)
+
+
+async def _get_widget_request_context(
+    widget_token: str, db: Session
+) -> RequestContext:
+    try:
+        claims = decode_widget_token(
+            widget_token,
+            secret=settings.AMOCRM_CLIENT_SECRET,
+            audience=settings.amocrm_widget_audience,
+            client_uuid=settings.AMOCRM_CLIENT_ID,
+        )
+        connection = (
+            db.query(OAuthConnection)
+            .filter(
+                OAuthConnection.account_id == claims.account_id,
+                OAuthConnection.is_active.is_(True),
+            )
+            .one_or_none()
+        )
+        if connection is None or claims.issuer != connection.account_url:
+            raise WidgetTokenInvalid("widget token is invalid")
+        user = (
+            db.query(User)
+            .filter(
+                User.amocrm_account_id == claims.account_id,
+                User.amocrm_user_id == claims.user_id,
+                User.is_active.is_(True),
+            )
+            .one_or_none()
+        )
+        if user is None:
+            raise WidgetTokenInvalid("widget token is invalid")
+        access_token = OAuthTokenCipher.from_secret(settings.SECRET_KEY).decrypt(
+            connection.encrypted_access_token
+        )
+        account, current_users = await _load_live_amocrm_state(
+            connection, access_token
+        )
+        if account.get("id") != claims.account_id:
+            raise WidgetTokenInvalid("widget token is invalid")
+        return _context_from_live_users(
+            db, claims.account_id, user, current_users
+        )
+    except (
+        WidgetTokenInvalid,
+        RequestContextUnauthorized,
+        ValueError,
+        AmoCRMClientError,
+        httpx.HTTPError,
+    ) as error:
+        raise widget_token_invalid() from error
+
+
+async def _load_live_amocrm_state(
+    connection: OAuthConnection, access_token: str
+):
+    async with httpx.AsyncClient() as http:
+        client = AmoCRMClient(http)
+        account = await client.get_account(connection.account_url, access_token)
+        current_users = await client.list_users(connection.account_url, access_token)
+    return account, current_users
+
+
+def _context_from_live_users(
+    db: Session, account_id: int, user: User, current_users
+) -> RequestContext:
+    observed = next(
+        (item for item in current_users if item.get("id") == user.amocrm_user_id),
+        None,
+    )
     if observed is None:
         raise RequestContextUnauthorized()
     rights = observed.get("rights")
@@ -356,8 +436,7 @@ async def get_request_context(
         raise access_denied()
     if user.role == UserRole.ADMIN and rights.get("is_admin") is not True:
         raise access_denied()
-    context = RequestContext(account_id=account_id, user=user, privileges_verified=True)
-    return context
+    return RequestContext(account_id=account_id, user=user, privileges_verified=True)
 
 
 async def enforce_route_scope(

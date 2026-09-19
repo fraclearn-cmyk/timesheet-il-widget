@@ -2,6 +2,26 @@ from pydantic_settings import BaseSettings
 from pydantic import field_validator
 from typing import List
 import secrets
+from urllib.parse import urlsplit
+
+
+def _https_origin(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("AMOCRM_REDIRECT_URI must be an absolute HTTPS URL") from error
+    if (
+        value.strip() != value
+        or parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("AMOCRM_REDIRECT_URI must be an absolute HTTPS URL")
+    host = parsed.hostname.lower()
+    authority = f"{host}:{port}" if port is not None else host
+    return f"https://{authority}"
 
 
 class Settings(BaseSettings):
@@ -33,6 +53,16 @@ class Settings(BaseSettings):
         if not v or len(v) < 10:
             raise ValueError("AMOCRM credentials must be at least 10 characters")
         return v
+
+    @field_validator("AMOCRM_REDIRECT_URI")
+    @classmethod
+    def validate_amocrm_redirect_uri(cls, v: str) -> str:
+        _https_origin(v)
+        return v
+
+    @property
+    def amocrm_widget_audience(self) -> str:
+        return _https_origin(self.AMOCRM_REDIRECT_URI)
     
     # Security
     SECRET_KEY: str
