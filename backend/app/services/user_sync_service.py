@@ -89,6 +89,14 @@ class UserSyncService:
                 if isinstance(role_id, int) and not isinstance(role_id, bool)
                 else None
             )
+            group_id = rights.get("group_id") if isinstance(rights, Mapping) else None
+            user.amocrm_group_id = (
+                group_id
+                if isinstance(group_id, int)
+                and not isinstance(group_id, bool)
+                and group_id > 0
+                else None
+            )
             user.is_active = (
                 not bool(payload.get("is_deleted", False))
                 and payload.get("is_active", True) is not False

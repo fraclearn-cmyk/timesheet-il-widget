@@ -80,7 +80,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
                 column.name,
             )
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "009"
+        assert conn.scalar(text("select version_num from alembic_version")) == "010"
     assert "amocrm_user_id" in {
         c["name"] for c in inspect(engine).get_columns("work_sessions")
     }
@@ -317,7 +317,7 @@ def test_category_account_ownership_refuses_lossy_007_downgrade(migrated_db):
     ):
         command.downgrade(config, "006")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "009"
+        assert conn.scalar(text("select version_num from alembic_version")) == "010"
 
 
 def test_category_account_name_scope_allows_duplicate_names_per_account(migrated_db):
@@ -408,7 +408,7 @@ def test_downgrade_refuses_to_erase_membership_history(migrated_db):
     with pytest.raises(RuntimeError, match="membership history"):
         command.downgrade(config, "004")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "009"
+        assert conn.scalar(text("select version_num from alembic_version")) == "010"
         assert conn.scalar(text("select count(*) from group_members")) == 2
 
 
@@ -460,5 +460,132 @@ def test_department_account_names_and_downgrade_are_data_safe(migrated_db):
     with pytest.raises(RuntimeError, match="department account ownership"):
         command.downgrade(config, "008")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "009"
+        assert conn.scalar(text("select version_num from alembic_version")) == "010"
         assert conn.scalar(text("select count(*) from departments")) == 2
+
+
+def test_010_backfills_defaults_and_preserves_group_membership_on_cycle(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "009")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name)
+                VALUES (7,700,100,'One')
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO widget_settings
+                (account_id,polling_interval,inactivity_timeout,enable_activity_tracking,
+                 enable_overlay_blocking,enable_auto_finish,created_at,updated_at)
+                VALUES (100,15,300,true,true,false,now(),now())
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO widget_groups
+                (id,account_id,name,timezone,work_start_time,work_end_time,is_active,created_at,updated_at)
+                VALUES (10,100,'  STRAẞE  ','UTC','09:00','18:00',true,now(),now())
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO group_members
+                (id,account_id,group_id,user_id,track_time,hide_widget,is_active,created_at,updated_at)
+                VALUES (20,100,10,7,false,false,true,now(),now())
+                """
+            )
+        )
+
+    command.upgrade(config, "010")
+    with engine.connect() as conn:
+        assert conn.scalar(text("select version_num from alembic_version")) == "010"
+        assert conn.execute(
+            text(
+                """
+                SELECT support_phone, allowed_statuses, default_allow_restart_session, revision
+                FROM widget_settings WHERE account_id=100
+                """
+            )
+        ).one() == (None, ["working", "break", "finished"], False, 1)
+        assert conn.execute(
+            text(
+                """
+                SELECT name_key, allow_restart_session
+                FROM widget_groups WHERE id=10
+                """
+            )
+        ).one() == ("strasse", False)
+        assert conn.scalar(text("select amocrm_group_id from users where id=7")) is None
+        assert conn.scalar(text("select count(*) from group_members where id=20")) == 1
+        with pytest.raises(IntegrityError):
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO widget_groups
+                    (account_id,name,name_key,timezone,work_start_time,work_end_time,
+                     allow_restart_session,is_active,created_at,updated_at)
+                    VALUES (100,'Duplicate','strasse','UTC','09:00','18:00',false,true,now(),now())
+                    """
+                )
+            )
+
+    command.downgrade(config, "009")
+    with engine.connect() as conn:
+        assert conn.scalar(text("select count(*) from widget_groups where id=10")) == 1
+        assert conn.scalar(text("select count(*) from group_members where id=20")) == 1
+    command.upgrade(config, "010")
+    with engine.connect() as conn:
+        assert conn.scalar(text("select name_key from widget_groups where id=10")) == "strasse"
+        assert conn.scalar(text("select count(*) from group_members where id=20")) == 1
+
+
+def test_010_aborts_before_unique_constraint_when_normalized_names_collide(
+    migrated_db,
+):
+    config, engine = migrated_db
+    command.upgrade(config, "009")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO widget_groups
+                (id,account_id,name,timezone,work_start_time,work_end_time,is_active,created_at,updated_at)
+                VALUES (10,100,' Sales ','UTC','09:00','18:00',true,now(),now()),
+                       (11,100,'sales','UTC','09:00','18:00',true,now(),now())
+                """
+            )
+        )
+    with pytest.raises(RuntimeError, match="normalized widget group names collide"):
+        command.upgrade(config, "010")
+    with engine.connect() as conn:
+        assert conn.scalar(text("select version_num from alembic_version")) == "009"
+        assert conn.scalar(text("select count(*) from widget_groups")) == 2
+
+
+def test_010_downgrade_refuses_non_default_phase_3_values(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "010")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO users
+                (id,amocrm_user_id,amocrm_account_id,name,amocrm_group_id)
+                VALUES (7,700,100,'One',71)
+                """
+            )
+        )
+    with pytest.raises(RuntimeError, match="phase-3 values"):
+        command.downgrade(config, "009")
+    with engine.connect() as conn:
+        assert conn.scalar(text("select version_num from alembic_version")) == "010"
+        assert conn.scalar(text("select amocrm_group_id from users where id=7")) == 71

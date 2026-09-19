@@ -45,6 +45,7 @@ class User(Base):
     avatar_url = Column(String(2048), nullable=True)
     amocrm_rights = Column(JSON, nullable=True)
     amocrm_role_id = Column(Integer, nullable=True)
+    amocrm_group_id = Column(Integer, nullable=True)
 
     role = Column(
         SQLEnum(UserRole, values_callable=lambda cls: [e.value for e in cls]),

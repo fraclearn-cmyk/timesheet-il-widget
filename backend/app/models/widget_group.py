@@ -11,7 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     ForeignKeyConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from app.core.database import Base
 
@@ -22,6 +22,9 @@ class WidgetGroup(Base):
     __tablename__ = "widget_groups"
     __table_args__ = (
         UniqueConstraint("account_id", "id", name="uq_widget_groups_account_id"),
+        UniqueConstraint(
+            "account_id", "name_key", name="uq_widget_groups_account_name_key"
+        ),
         ForeignKeyConstraint(
             ["account_id", "manager_user_id"],
             ["users.amocrm_account_id", "users.id"],
@@ -32,6 +35,7 @@ class WidgetGroup(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, nullable=False, index=True)
     name = Column(String(255), nullable=False)
+    name_key = Column(String(255), nullable=False)
     timezone = Column(String(64), nullable=False, default="UTC")
     work_start_time = Column(Time, nullable=False, default=time(9, 0))
     work_end_time = Column(Time, nullable=False, default=time(18, 0))
@@ -41,6 +45,7 @@ class WidgetGroup(Base):
     # remain opaque and are never interpreted semantically.
     manager_role_id = Column(Integer, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    allow_restart_session = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=utc_now)
     updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
 
@@ -48,6 +53,15 @@ class WidgetGroup(Base):
     members = relationship(
         "GroupMember", back_populates="group", cascade="all, delete-orphan"
     )
+
+    @validates("name")
+    def _derive_name_key(self, _key: str, value: str) -> str:
+        self.name_key = value.strip().casefold()
+        return value
+
+    @validates("name_key")
+    def _normalize_name_key(self, _key: str, value: str) -> str:
+        return value.strip().casefold()
 
     def assign_manager(self, manager) -> None:
         """Assign a manager and capture the currently observed role snapshot."""

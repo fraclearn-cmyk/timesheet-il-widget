@@ -31,6 +31,16 @@ class WidgetSettings(Base):
     # Additional settings as JSON
     settings = Column(JSON, nullable=True)
 
+    # Phase 3 settings snapshot
+    support_phone = Column(String(64), nullable=True)
+    allowed_statuses = Column(
+        JSON,
+        nullable=False,
+        default=lambda: ["working", "break", "finished"],
+    )
+    default_allow_restart_session = Column(Boolean, nullable=False, default=False)
+    revision = Column(Integer, nullable=False, default=1)
+
     # Metadata
     created_at = Column(DateTime, nullable=False, default=utc_now)
     updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)

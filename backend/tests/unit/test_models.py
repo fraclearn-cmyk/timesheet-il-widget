@@ -4,10 +4,11 @@ from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import Base
-from app.models import User, WorkStatus, CrmEvent
+from app.models import User, WorkStatus, CrmEvent, WidgetGroup, WidgetSettings
 from app.schemas.work_session import WorkSessionResponse
 from app.services.session_service import SessionService
 
@@ -90,6 +91,45 @@ def test_backend_registers_legacy_routes_without_import_failure():
     paths = {route.path for route in app.routes}
     assert "/api/v1/sessions/start" in paths
     assert "/api/v1/kpi/my" in paths
+
+
+def test_group_name_key_is_unique_per_account(db):
+    db.add_all(
+        [
+            WidgetGroup(account_id=7, name=" Sales ", name_key="sales"),
+            WidgetGroup(account_id=7, name="sales", name_key="sales"),
+        ]
+    )
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def test_same_group_name_key_is_allowed_in_different_accounts(db):
+    db.add_all(
+        [
+            WidgetGroup(account_id=7, name="Sales", name_key="sales"),
+            WidgetGroup(account_id=8, name="sales", name_key="sales"),
+        ]
+    )
+    db.commit()
+
+
+def test_widget_group_name_key_uses_trimmed_unicode_casefold(db):
+    group = WidgetGroup(account_id=7, name="  STRAẞE  ")
+    db.add(group)
+    db.commit()
+    assert group.name_key == "strasse"
+
+
+def test_phase_3_settings_snapshot_defaults_are_persisted(db):
+    settings = WidgetSettings(account_id=7)
+    db.add(settings)
+    db.commit()
+    assert settings.support_phone is None
+    assert settings.allowed_statuses == ["working", "break", "finished"]
+    assert settings.default_allow_restart_session is False
+    assert settings.revision == 1
 
 
 @pytest.mark.filterwarnings("error::DeprecationWarning:pydantic.main")
