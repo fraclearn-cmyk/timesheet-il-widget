@@ -134,6 +134,12 @@ def require_self_external_user(context: RequestContext, amocrm_user_id: int) -> 
     return context.user
 
 
+def require_self_internal_user(context: RequestContext, reference: int | str) -> User:
+    if _integer_reference(reference) != context.user.id:
+        raise not_found()
+    return context.user
+
+
 def _integer_reference(reference: int | str) -> int:
     try:
         value = int(reference)
@@ -198,7 +204,9 @@ def require_visible_department(
         )
         .first()
     )
-    if department is None:
+    if department is None or not AccessPolicy(db, context).can_view_department(
+        department_id
+    ):
         raise not_found()
     return department
 
@@ -373,7 +381,7 @@ async def enforce_route_scope(
     if "category_id" in values:
         require_visible_category(db, context, values["category_id"])
     if "generated_by" in values:
-        require_visible_internal_user(db, context, values["generated_by"])
+        require_self_internal_user(context, values["generated_by"])
     # Body IDs are just as attacker-controlled as path/query IDs.  Starlette
     # caches request.json(), so FastAPI can still parse the same payload later.
     try:
@@ -386,9 +394,10 @@ async def enforce_route_scope(
         for name in ("user_id", "target_user_id"):
             if body.get(name) is not None:
                 require_visible_external_user(db, context, body[name])
-        for name in ("employee_id", "generated_by"):
-            if body.get(name) is not None:
-                require_visible_internal_user(db, context, body[name])
+        if body.get("employee_id") is not None:
+            require_visible_internal_user(db, context, body["employee_id"])
+        if body.get("generated_by") is not None:
+            require_self_internal_user(context, body["generated_by"])
         for name in ("work_session_id", "session_id"):
             if body.get(name) is not None:
                 require_visible_work_session(db, context, body[name])

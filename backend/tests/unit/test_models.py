@@ -95,17 +95,21 @@ def test_backend_registers_legacy_routes_without_import_failure():
 @pytest.mark.filterwarnings("error::DeprecationWarning:pydantic.main")
 def test_legacy_session_routes_use_external_ids_and_persist_transitions(db):
     from app.api.v1 import sessions
+    from app.core.access_policy import RequestContext
     from app.schemas.work_session import WorkSessionCreate
 
+    context = RequestContext(account_id=100, user=db.get(User, 7))
     created = sessions.start_session(
-        WorkSessionCreate(user_id=700, user_name="One"), db
+        WorkSessionCreate(user_id=700, user_name="One"), db, context
     )
     assert created.user_id == 700
-    assert sessions.take_break(700, db).current_status is WorkStatus.BREAK
-    assert sessions.resume_work(700, db).current_status is WorkStatus.WORKING
-    assert sessions.get_current_session(700, db).id == created.id
-    assert sessions.finish_session(700, db).current_status is WorkStatus.FINISHED
-    assert sessions.get_session(created.id, db).id == created.id
+    assert sessions.take_break(700, db, context).current_status is WorkStatus.BREAK
+    assert sessions.resume_work(700, db, context).current_status is WorkStatus.WORKING
+    assert sessions.get_current_session(700, db, context).id == created.id
+    assert (
+        sessions.finish_session(700, db, context).current_status is WorkStatus.FINISHED
+    )
+    assert sessions.get_session(created.id, db, context).id == created.id
 
 
 def test_legacy_consumers_query_canonical_fields_and_correct_account(db):

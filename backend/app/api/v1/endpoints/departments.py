@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.rbac import RBACService, get_rbac_service
-from app.api.v1.dependencies import RequestContext, get_request_context
+from app.api.v1.dependencies import (
+    RequestContext,
+    get_request_context,
+    require_visible_department,
+)
 from app.core.access_policy import AccessPolicy
 from app.models.department import Department
 from app.models.user import User
@@ -78,33 +82,14 @@ def get_departments(
 @router.get("/{department_id}/schedule", response_model=DepartmentScheduleResponse)
 def get_department_schedule(
     department_id: int,
-    user_id: int = Header(..., alias="X-User-Id"),
-    account_id: int = Header(..., alias="X-Account-Id"),
     db: Session = Depends(get_db),
-    rbac: RBACService = Depends(get_rbac_service),
+    context: RequestContext = Depends(get_request_context),
 ):
     """
     Get department schedule.
     Used by widget to check if employee is late.
     """
-    user = rbac.get_user_by_amocrm_id(user_id, account_id)
-
-    if not user:
-        # If user not found, create with EMPLOYEE role
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
-    department = (
-        db.query(Department)
-        .filter(Department.id == department_id, Department.is_active.is_(True))
-        .first()
-    )
-
-    if not department:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Department not found"
-        )
+    department = require_visible_department(db, context, department_id)
 
     return DepartmentScheduleResponse(
         department_id=department.id,

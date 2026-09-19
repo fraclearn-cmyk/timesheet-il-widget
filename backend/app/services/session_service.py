@@ -151,9 +151,19 @@ class SessionService:
         return self._change_current(amocrm_user_id, WorkStatus.FINISHED)
 
     def get_session_history(
-        self, amocrm_user_id, date_from=None, date_to=None, limit=100
+        self,
+        amocrm_user_id,
+        date_from=None,
+        date_to=None,
+        limit=100,
+        *,
+        account_id=None
     ):
-        user = self._legacy_user(amocrm_user_id)
+        user = (
+            self._legacy_user(amocrm_user_id)
+            if account_id is None
+            else self._user(account_id, amocrm_user_id)
+        )
         query = self.db.query(WorkSession).filter(
             WorkSession.amocrm_account_id == user.amocrm_account_id,
             WorkSession.amocrm_user_id == user.amocrm_user_id,

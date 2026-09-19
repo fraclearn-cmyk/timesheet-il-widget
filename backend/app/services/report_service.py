@@ -235,9 +235,19 @@ class ReportService:
 
     @staticmethod
     def get_employee_report(
-        db: Session, account_id: str, user_id: int, start_date: date, end_date: date
-    ) -> EmployeeReport:
+        db: Session,
+        account_id: str,
+        user_id: int,
+        start_date: date,
+        end_date: date,
+        visible_external_user_ids: Optional[set[int]] = None,
+    ) -> Optional[EmployeeReport]:
         """Получить отчёт по сотруднику"""
+        if (
+            visible_external_user_ids is not None
+            and user_id not in visible_external_user_ids
+        ):
+            return None
 
         # Get user sessions
         sessions = (

@@ -26,7 +26,9 @@ class TeamService:
         if account_id is not None:
             query = query.filter(WorkSession.amocrm_account_id == account_id)
         if visible_external_user_ids is not None:
-            query = query.filter(WorkSession.amocrm_user_id.in_(visible_external_user_ids))
+            query = query.filter(
+                WorkSession.amocrm_user_id.in_(visible_external_user_ids)
+            )
 
         if department:
             query = query.filter(WorkSession.department == department)
@@ -117,7 +119,9 @@ class TeamService:
         if account_id is not None:
             query = query.filter(WorkSession.amocrm_account_id == account_id)
         if visible_external_user_ids is not None:
-            query = query.filter(WorkSession.amocrm_user_id.in_(visible_external_user_ids))
+            query = query.filter(
+                WorkSession.amocrm_user_id.in_(visible_external_user_ids)
+            )
 
         if department:
             query = query.filter(WorkSession.department == department)
@@ -168,7 +172,9 @@ class TeamService:
         if account_id is not None:
             query = query.filter(WorkSession.amocrm_account_id == account_id)
         if visible_external_user_ids is not None:
-            query = query.filter(WorkSession.amocrm_user_id.in_(visible_external_user_ids))
+            query = query.filter(
+                WorkSession.amocrm_user_id.in_(visible_external_user_ids)
+            )
 
         if department:
             query = query.filter(WorkSession.department == department)
@@ -211,7 +217,7 @@ class TeamService:
         from app.models.crm_event import CrmEvent
 
         # Base query for users
-        query = self.db.query(User).filter(User.is_active == True)
+        query = self.db.query(User).filter(User.is_active.is_(True))
         if account_id is not None:
             query = query.filter(User.amocrm_account_id == account_id)
         if visible_internal_user_ids is not None:
@@ -268,7 +274,9 @@ class TeamService:
             last_activity_time = (
                 last_crm_activity.occurred_at if last_crm_activity else None
             )
-            is_online = last_activity_time and last_activity_time >= five_min_ago
+            is_online = (
+                last_activity_time is not None and last_activity_time >= five_min_ago
+            )
 
             # Online filter
             if online_only and not is_online:

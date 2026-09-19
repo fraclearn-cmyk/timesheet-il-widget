@@ -15,6 +15,8 @@ from app.api.v1.dependencies import (
     RequestContext,
     get_request_context,
     require_self_external_user,
+    require_visible_external_user,
+    require_visible_work_session,
 )
 
 router = APIRouter()
@@ -103,10 +105,9 @@ def get_current_session(
     context: RequestContext = Depends(get_request_context),
 ):
     """Get user's current active session"""
-    if isinstance(context, RequestContext):
-        require_self_external_user(context, user_id)
+    require_visible_external_user(db, context, user_id)
     service = SessionService(db)
-    session = service.get_current_session(user_id)
+    session = service.get_current_session(context.account_id, user_id)
 
     if not session:
         return None
@@ -124,10 +125,11 @@ def get_session_history(
     context: RequestContext = Depends(get_request_context),
 ):
     """Get user's session history"""
-    if isinstance(context, RequestContext):
-        require_self_external_user(context, user_id)
+    require_visible_external_user(db, context, user_id)
     service = SessionService(db)
-    sessions = service.get_session_history(user_id, date_from, date_to, limit)
+    sessions = service.get_session_history(
+        user_id, date_from, date_to, limit, account_id=context.account_id
+    )
     return [WorkSessionResponse.model_validate(s) for s in sessions]
 
 
@@ -138,13 +140,6 @@ def get_session(
     context: RequestContext = Depends(get_request_context),
 ):
     """Get session by ID with details"""
-    service = SessionService(db)
-    session = service.get_session_by_id(session_id)
-
-    if not session:
-        raise APIProblem(404, "NOT_FOUND", "Данные не найдены.")
-
-    if isinstance(context, RequestContext):
-        require_self_external_user(context, session.amocrm_user_id)
+    session = require_visible_work_session(db, context, session_id)
 
     return WorkSessionWithDetails.model_validate(session)

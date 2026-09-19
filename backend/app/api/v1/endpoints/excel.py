@@ -68,6 +68,7 @@ async def export_department_report(
         late_only=request.late_only,
         include_comments=request.include_comments,
         account_id=context.account_id,
+        visible_internal_user_ids=policy.visible_internal_user_ids(),
     )
 
     filename = f"department_report_{request.date_from}_{request.date_to}.xlsx"
@@ -196,6 +197,7 @@ async def export_late_arrivals_report(
         date_to=request.date_to,
         department_ids=dept_ids,
         account_id=context.account_id,
+        visible_internal_user_ids=policy.visible_internal_user_ids(),
     )
 
     filename = f"late_arrivals_{request.date_from}_{request.date_to}.xlsx"

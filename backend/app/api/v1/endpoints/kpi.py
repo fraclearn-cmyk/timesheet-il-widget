@@ -91,7 +91,11 @@ async def get_department_kpi(
         )
 
     service = KPIService(db)
-    return service.calculate_department_kpi(dept_id, account_id=context.account_id)
+    return service.calculate_department_kpi(
+        dept_id,
+        account_id=context.account_id,
+        visible_internal_user_ids=policy.visible_internal_user_ids(),
+    )
 
 
 @router.get("/chart/my", response_model=ChartData)

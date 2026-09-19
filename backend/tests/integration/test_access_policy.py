@@ -108,6 +108,52 @@ def test_local_rop_without_snapshot_is_not_manager_authority():
     )
 
 
+def test_manager_live_role_only_grants_members_of_matching_group_snapshot():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine)() as db:
+        manager = User(
+            id=1,
+            amocrm_user_id=11,
+            amocrm_account_id=1,
+            name="Manager",
+            amocrm_role_id=78,
+            amocrm_rights={"role_id": 78, "is_admin": False},
+        )
+        stale_member = User(id=2, amocrm_user_id=12, amocrm_account_id=1, name="Stale")
+        live_member = User(id=3, amocrm_user_id=13, amocrm_account_id=1, name="Live")
+        db.add_all(
+            [
+                manager,
+                stale_member,
+                live_member,
+                WidgetGroup(
+                    id=10,
+                    account_id=1,
+                    name="Stale",
+                    manager_user_id=1,
+                    manager_role_id=77,
+                ),
+                WidgetGroup(
+                    id=20,
+                    account_id=1,
+                    name="Live",
+                    manager_user_id=1,
+                    manager_role_id=78,
+                ),
+                GroupMember(account_id=1, group_id=10, user_id=2),
+                GroupMember(account_id=1, group_id=20, user_id=3),
+            ]
+        )
+        db.commit()
+        policy = AccessPolicy(db, RequestContext(account_id=1, user=manager))
+        assert policy.is_manager()
+        assert policy.can_view_user(live_member)
+        assert not policy.can_view_user(stale_member)
+        assert policy.visible_internal_user_ids() == {1, 3}
+        assert policy.visible_external_user_ids() == {11, 13}
+
+
 def test_manager_assignment_captures_observed_snapshot_and_checks_account():
     manager = User(
         id=1,

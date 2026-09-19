@@ -28,6 +28,7 @@ class ExcelService:
         late_only: bool = False,
         include_comments: bool = True,
         account_id: Optional[int] = None,
+        visible_internal_user_ids: Optional[set[int]] = None,
     ) -> BytesIO:
         """Generate department report"""
         wb = Workbook()
@@ -74,6 +75,8 @@ class ExcelService:
 
         if account_id is not None:
             query = query.filter(WorkSession.amocrm_account_id == account_id)
+        if visible_internal_user_ids is not None:
+            query = query.filter(User.id.in_(visible_internal_user_ids))
 
         if department_ids:
             query = query.filter(User.department_id.in_(department_ids))
@@ -257,6 +260,7 @@ class ExcelService:
         date_to: date,
         department_ids: Optional[List[int]] = None,
         account_id: Optional[int] = None,
+        visible_internal_user_ids: Optional[set[int]] = None,
     ) -> BytesIO:
         """Generate late arrivals report"""
         wb = Workbook()
@@ -298,6 +302,8 @@ class ExcelService:
 
         if account_id is not None:
             query = query.filter(WorkSession.amocrm_account_id == account_id)
+        if visible_internal_user_ids is not None:
+            query = query.filter(User.id.in_(visible_internal_user_ids))
 
         if department_ids:
             query = query.filter(User.department_id.in_(department_ids))

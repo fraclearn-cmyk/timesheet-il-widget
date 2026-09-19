@@ -79,7 +79,7 @@ class KPIService:
             .filter(
                 WorkSession.amocrm_user_id == amocrm_user_id,
                 WorkSession.amocrm_account_id == user.amocrm_account_id,
-                WorkSession.end_time == None,
+                WorkSession.end_time.is_(None),
             )
             .first()
         )
@@ -109,7 +109,11 @@ class KPIService:
         )
 
     def calculate_department_kpi(
-        self, department_id: int, *, account_id: int | None = None
+        self,
+        department_id: int,
+        *,
+        account_id: int | None = None,
+        visible_internal_user_ids: set[int] | None = None,
     ) -> KPIMetrics:
         """Calculate KPI for a department"""
         now = datetime.now()
@@ -121,6 +125,8 @@ class KPIService:
         user_query = self.db.query(User).filter(User.department_id == department_id)
         if account_id is not None:
             user_query = user_query.filter(User.amocrm_account_id == account_id)
+        if visible_internal_user_ids is not None:
+            user_query = user_query.filter(User.id.in_(visible_internal_user_ids))
         users = user_query.all()
         user_ids = [(u.amocrm_account_id, u.amocrm_user_id) for u in users]
 
@@ -192,7 +198,7 @@ class KPIService:
                 tuple_(WorkSession.amocrm_account_id, WorkSession.amocrm_user_id).in_(
                     user_ids
                 ),
-                WorkSession.end_time == None,
+                WorkSession.end_time.is_(None),
                 WorkSession.updated_at >= now - timedelta(minutes=5),
             )
             .count()

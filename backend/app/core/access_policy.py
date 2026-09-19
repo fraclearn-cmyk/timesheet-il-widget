@@ -47,6 +47,7 @@ class AccessPolicy:
                 GroupMember.user_id == target.id,
                 GroupMember.is_active.is_(True),
                 WidgetGroup.manager_user_id == self.context.user.id,
+                WidgetGroup.manager_role_id == self.context.user.amocrm_role_id,
                 WidgetGroup.is_active.is_(True),
             )
             .first()
@@ -78,6 +79,8 @@ class AccessPolicy:
         )
 
     def can_view_department(self, department_id: int) -> bool:
+        if self.context.user.department_id == department_id:
+            return True
         if self.is_admin():
             return (
                 self._db.query(User.id)

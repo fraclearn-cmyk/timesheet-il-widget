@@ -1,12 +1,13 @@
 # Phase 2 implementation report
 
-Date: 2026-09-18. Base: `d04cdc5` on `main`.
+Date: 2026-09-19. Base: `d04cdc5` on `main`.
 
 ## Scope and result
 
 This change adds a server-side OAuth/account context boundary, an async amoCRM
-transport, non-destructive user synchronization, account-scoped access-policy
-primitives, and migration `006`. `Plan.md` was deliberately not edited.
+transport, non-destructive user synchronization, enforced account/group access
+policy, and migrations `006` through `008`. `Plan.md` was deliberately not edited.
+The final round-4 verification below supersedes all historical baseline counts.
 
 - `AmoCRMClient` has a finite timeout/retry budget, retries only timeout,
   transport and 502/503/504 failures, observes `Retry-After` for 429, and does
@@ -15,8 +16,11 @@ primitives, and migration `006`. `Plan.md` was deliberately not edited.
   material. Diagnostics mask values; a refresh writes neither replacement token
   unless amoCRM returned the full pair.
 - `oauth_connections` keeps account metadata and encrypted token pairs. Users
-  store observed avatar/rights/role evidence but local Admin/ROP/employee role
-  is not inferred from unvalidated amoCRM rights mapping.
+  store observed avatar/rights/role evidence. Admin access requires verified
+  `rights.is_admin=true`; manager access requires an active same-account assignment
+  whose own `manager_role_id` snapshot equals the current live `role_id`. Local
+  `User.role` never grants manager/admin privileges. No `rights.is_active` field
+  is assumed; local user/account active state and live user presence are checked.
 - User sync upserts known users and marks missing users inactive without deleting
   membership or work-history rows.
 - Protected routers require `get_request_context`. In production legacy
@@ -61,7 +65,7 @@ $env:TEST_POSTGRES_ADMIN_URL='postgresql://postgres@127.0.0.1:<ephemeral-port>/p
 `4 passed, 2 warnings`. The clean cycle exercised `001 → … → 006 → 004 → 006`.
 The disposable container was removed after verifying no fixture databases remained.
 
-## Final verification
+## Initial implementation verification (historical)
 
 | Check | Result |
 |---|---|
@@ -91,14 +95,14 @@ integration assertions.
 
 ## Limits for review
 
-- No live amoCRM request was made and no ignored `.env` credential was read. The
-  auth-code redirect and live rights-to-role mapping remain explicitly unverified.
+- Initial implementation used hermetic tests. A later read-only live probe returned
+  401, so the production redirect/live privilege flow remains unverified. Round 4
+  made no live request and read no `.env` or secret credential.
 - The phase-0 contract confirms only one observed users page. Pagination follows
   explicit `next` links but does not invent page-number behavior.
-- Legacy endpoint response schemas and business-specific 403/404/409 mappings
-  still need their route-by-route consolidation in the later API phases. The new
-  global context gate prevents production use of caller-provided identity headers;
-  `AccessPolicy` is the required account/group-scoped primitive for that work.
+- Connected protected routes enforce account/user/object scope and normalized
+  401/403/404/409/429 responses. Later API phases still own the full product
+  contract, report-period limits and unfinished saved-report download rendering.
 
 ## Review round 1 corrections
 
@@ -107,15 +111,15 @@ legacy route identifiers to the verified request context. This is corrected by
 `enforce_route_scope`, now installed on every connected protected router. It rejects
 foreign account query/path values, resolves user references in the current account
 through `AccessPolicy`, and validates session ownership before a handler runs.
-Settings and sessions also have explicit handler-level account/self checks, so they
-do not rely on compatibility headers. Session state conflicts are now HTTP 409 with
+Settings and sessions also have explicit handler-level account/policy checks, so they
+do not rely on compatibility headers. Session mutations remain self-only; reads use
+verified visibility. Session state conflicts are now HTTP 409 with
 `SESSION_CONFLICT`; the rate limiter returns the standard 429 body and Retry-After.
 
-For production credentials, the context now reads account and current-user data from
-amoCRM on every request and persists only observed rights evidence. Phase 0 did not
-validate a rights-to-local-role mapping, so a stored non-employee local role is denied
-in production rather than treated as a durable privilege. Test-only contexts retain
-explicit role fixtures for policy tests.
+For production credentials, the context reads account and current-user data from
+amoCRM on every request and persists observed rights evidence. The initial local-role
+restriction was replaced in round 3 by live admin evidence and per-assignment manager
+snapshots; neither production nor test contexts grant privileges from local ROP alone.
 
 Additional RED/GREEN evidence:
 
@@ -144,12 +148,14 @@ response for foreign objects):
 - `work_session_id` and `activity_session_id` inherit account/user visibility
   from the owning work session;
 - `report_id` is matched against the report account;
-- `department_id`/`dept_id` require an active user in the verified account;
+- `department_id`/`dept_id` require account ownership evidence and the principal's
+  own department or a department containing a currently visible group member;
 - `group_id` is matched against an active widget group in the account;
-- `category_id` is addressable only when an event in the verified account
-  proves its ownership; unreferenced legacy categories fail closed;
-- `generated_by`, body user/session/department IDs, and Excel department lists
-  are checked with the same policy as path/query identifiers.
+- `category_id` requires explicit category account ownership (migration `007`);
+  unowned legacy categories fail closed;
+- body user/session/department IDs and Excel department lists use the same scope
+  checks as path/query identifiers; `generated_by` must equal the verified actor's
+  internal ID and persistence always takes it from the context.
 
 The identifier reference resolver now rejects ambiguous internal-vs-external
 numeric IDs rather than choosing an arbitrary mapping.  Activity history now
@@ -174,14 +180,10 @@ account explicitly, including when no department filter is supplied.  A
 multi-account workbook test verifies that a foreign row is absent from both
 department and late-arrival exports.
 
-Production request context now performs a live amoCRM account/current-user
-read and evaluates the documented `rights.is_active` and `rights.is_admin`
-fields on every request.  The phase-0 evidence does not define a mapping from
-opaque amoCRM `role_id` to this application's ROP role, so `role_id` is not
-invented as a mapping: local ROP requires an observed active non-admin
-principal, local admin requires observed `is_admin=true`, and missing,
-revoked, or malformed rights fail closed with normalized 403.  The read-only
-probe using ignored `.env` credentials returned 401, so no live role mapping
+The round-2 rights implementation was superseded by round 3: live
+`rights.is_admin` and opaque `rights.role_id` are the observed fields; local ROP
+is not a grant, and `rights.is_active` is not part of the accepted contract.
+The read-only probe returned 401, so no successful live privilege verification
 was asserted and no secret was printed.
 
 Migration `007` adds nullable `activity_categories.account_id` and backfills
@@ -196,7 +198,7 @@ Route-specific numeric semantics are explicit: sessions/team use amoCRM
 external IDs, while KPI and Excel employee paths use internal IDs.  Collision
 tests cover the same numeric value representing different identities.
 
-Fresh verification from `backend`:
+Historical round-2 verification from `backend`:
 
 | Check | Result |
 |---|---|
@@ -240,7 +242,7 @@ verified request context, persists `display_name`/description/order, exposes
 than global name uniqueness.  HTTP tests create the same name in two accounts
 and verify both first-category responses and ownership.
 
-Fresh round-3 verification:
+Historical round-3 verification:
 
 | Check | Result |
 |---|---|
@@ -252,4 +254,85 @@ Fresh round-3 verification:
 | Flake8 on touched recovery files (`E501,W503` ignored) | exit 0 |
 | `git diff --check` | exit 0 |
 
-The phase-3 disposable PostgreSQL container was removed after verification.
+The round-3 disposable PostgreSQL container was removed after verification.
+
+## Review round 4 corrections and final verification
+
+Base: `7d9f6bd`. All five code findings were reproduced before their fixes.
+No schema/migration was changed, no external service was contacted, and no push
+or `Plan.md` edit was performed.
+
+- `can_view_user` now compares the live manager role with the target member's
+  own group snapshot. Two assignments with snapshots `77` and `78`, live role
+  `78`, permit only the `78` group's members. Policy ID sets and HTTP team/report
+  collections preserve that restriction.
+- Department schedule reads now require the employee's own department, a currently
+  authorized manager group's department, or verified account-admin access. The
+  common department resolver checks both ownership and visibility. All four
+  department routes were audited: list remains manager/admin only and scoped;
+  schedule is self/group/account scoped; create is verified-admin only; update
+  requires verified admin plus account ownership. KPI and both department Excel
+  exports additionally filter individual users, so a shared legacy department
+  cannot expand access to another widget group's members.
+- `generated_by` in query or JSON must match the verified actor's internal ID.
+  A manager/admin cannot attribute a report to a visible subordinate. Persistence
+  uses `context.user.id`, independently of the supplied compatibility parameter.
+- Session current/history/by-ID reads use verified user/session visibility and
+  explicit account context. Managers can read their current group's members;
+  employees remain self-only. Duplicate external IDs in another account no longer
+  break current/history reads. Mutation authorization remains self-only.
+- Employee report generation accepts and enforces the explicit visibility set.
+  Missing sessions return normalized 404. Real persistence tests also exposed
+  date/datetime values left in JSON by `.dict()`; generated payloads now use
+  `model_dump(mode="json")`. The team collection HTTP check exposed nullable
+  `is_online` for absent activity; it now returns `false` and satisfies its schema.
+
+RED/GREEN evidence:
+
+| Regression | Observed RED | Focused GREEN |
+|---|---|---|
+| Per-group role snapshot | stale group's member incorrectly visible | access policy: `6 passed` |
+| Department schedule matrix | employee/manager received `200` for foreign same-account department | department schedule/list/update matrix: `16 passed` |
+| Forged report provenance | after exposing/fixing JSON serialization, forged query/body returned `201` | author rejection/persistence: `7 passed` |
+| Session read policy | manager/admin received `404`; duplicate external ID raised `ValueError` | session read matrix: `8 passed` |
+| Employee report interface | unsupported `visible_external_user_ids` raised `TypeError` | generation and service filtering: `8 passed` |
+| Shared department aggregates | KPI counted 2 instead of 1; Excel contained foreign-group employee | KPI/Excel plus team collection: `4 passed` |
+
+The first full run also exposed test-only shared rate-limiter state and a legacy
+direct-call unit test omitting `RequestContext`. Fixtures now instantiate fresh
+middleware state per test, and the unit test passes a real context. Production
+authorization and rate limiting were not bypassed or disabled.
+
+Final commands from `backend` (Python: `..\.venv312\Scripts\python.exe`):
+
+| Check | Final result |
+|---|---|
+| `-m pytest -q --tb=short` | `224 passed, 8 skipped, 345 warnings` |
+| `-m pytest -q tests/integration/test_access_policy.py tests/integration/test_authorized_routes.py tests/integration/test_request_context.py tests/integration/test_oauth.py tests/integration/test_user_sync.py --tb=short --disable-warnings` | `85 passed, 333 warnings` |
+| `-m compileall -q app migrations` | exit 0 |
+| `-m alembic heads` | exactly `008 (head)` |
+| Black check on all 15 touched Python files, line length 88 | exit 0 |
+| Flake8 on all 15 touched Python files (`E501,W503` ignored) | exit 0 |
+| `git diff --check` | exit 0 |
+| Secret-pattern scan of changed diff (private keys/JWT/token/password/API-key literals; values not printed) | 0 matches |
+
+The eight skipped tests require disposable PostgreSQL. Round 4 did not rerun that
+suite because neither models nor migrations changed; the round-3 `8 passed` result
+above is historical evidence, not a new run. Warnings are existing datetime,
+Pydantic, SQLAlchemy and dependency deprecations exercised more often by the expanded
+HTTP matrix; no production warning suppression was added.
+
+Files changed in this round: access policy; dependencies; department, Excel, KPI,
+report and session routes; Excel, KPI, report, session and team services; access-policy
+and authorized-route integration tests; the existing model/route unit test; this report.
+Self-review checked the complete diff, account joins, per-group predicates, author
+source, denied-write persistence, real report serialization and workbook contents.
+
+Manual/reviewable scenarios: use the test adapter only under `ENVIRONMENT=test`,
+seed two manager assignments with snapshots `77`/`78`, then run the authorized-route
+tests above. They exercise normalized foreign-object denials, permitted self/group
+reads, author forgery, successful saved employee reports and shared-department exports.
+For production, a successful OAuth/live-context verification still requires valid
+credentials; no successful live claim is made here. Legacy departments retain their
+pre-account schema and require active-user ownership evidence, so unassigned
+departments remain unaddressable until ownership is established.
