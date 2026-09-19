@@ -29,6 +29,12 @@ from app.schemas.widget_settings import (
     WidgetSettingsUpdate,
     WidgetSettingsResponse,
 )
+from app.schemas.settings_snapshot import (
+    AccountSettings,
+    SettingsGroup,
+    SettingsSnapshotResponse,
+    SettingsUser,
+)
 
 __all__ = [
     # Work Session
@@ -55,4 +61,8 @@ __all__ = [
     "WidgetSettingsCreate",
     "WidgetSettingsUpdate",
     "WidgetSettingsResponse",
+    "AccountSettings",
+    "SettingsGroup",
+    "SettingsSnapshotResponse",
+    "SettingsUser",
 ]

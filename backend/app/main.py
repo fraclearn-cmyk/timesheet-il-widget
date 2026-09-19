@@ -177,6 +177,8 @@ try:
         activity,
         categories,
         settings as settings_router,
+        users as settings_users,
+        groups as settings_groups,
         reports,
     )
     from app.api.v1.endpoints import departments, excel, kpi
@@ -206,6 +208,18 @@ try:
     app.include_router(
         settings_router.router,
         prefix="/api/v1/settings",
+        tags=["settings"],
+        dependencies=protected,
+    )
+    app.include_router(
+        settings_users.router,
+        prefix="/api/v1/settings/users",
+        tags=["settings"],
+        dependencies=protected,
+    )
+    app.include_router(
+        settings_groups.router,
+        prefix="/api/v1/settings/groups",
         tags=["settings"],
         dependencies=protected,
     )

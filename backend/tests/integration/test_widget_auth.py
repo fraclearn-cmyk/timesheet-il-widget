@@ -156,7 +156,7 @@ def test_widget_token_rejects_untrusted_claims(
     token = signed_widget_token(mutation=mutation)
 
     response = client.get(
-        "/api/v1/settings/20", headers={"X-Auth-Token": token}
+        "/api/v1/settings/snapshot", headers={"X-Auth-Token": token}
     )
 
     assert response.status_code == 401
@@ -167,7 +167,7 @@ def test_widget_token_builds_verified_context(
     client, signed_widget_token, admin_user, db, live_amocrm
 ):
     response = client.get(
-        "/api/v1/settings/20",
+        "/api/v1/settings/snapshot",
         headers={
             "X-Auth-Token": signed_widget_token(
                 user_id=admin_user.amocrm_user_id
@@ -196,7 +196,7 @@ def test_widget_token_requires_active_server_state(
     db.commit()
 
     response = client.get(
-        "/api/v1/settings/20",
+        "/api/v1/settings/snapshot",
         headers={"X-Auth-Token": signed_widget_token()},
     )
 
@@ -208,7 +208,7 @@ def test_widget_token_never_falls_back_to_browser_identity_headers(
     client, signed_widget_token
 ):
     response = client.get(
-        "/api/v1/settings/20",
+        "/api/v1/settings/snapshot",
         headers={
             "X-Auth-Token": signed_widget_token(mutation="wrong_audience"),
             "X-User-Id": str(USER_ID),
@@ -220,22 +220,22 @@ def test_widget_token_never_falls_back_to_browser_identity_headers(
     assert response.json()["error"]["code"] == "AMO_WIDGET_TOKEN_INVALID"
 
 
-def test_widget_token_requires_audience_before_live_or_settings_service(
+def test_widget_token_requires_audience_before_live_or_snapshot_service(
     client, signed_widget_token, live_amocrm, monkeypatch
 ):
-    from app.services.settings_service import SettingsService
+    from app.services.settings_snapshot_service import SettingsSnapshotService
 
-    settings_calls: list[str] = []
-    original_get_settings = SettingsService.get_settings
+    settings_calls: list[int] = []
+    original_load = SettingsSnapshotService.load
 
-    def tracked_get_settings(service, account_id):
-        settings_calls.append(account_id)
-        return original_get_settings(service, account_id)
+    def tracked_load(service, context):
+        settings_calls.append(context.account_id)
+        return original_load(service, context)
 
-    monkeypatch.setattr(SettingsService, "get_settings", tracked_get_settings)
+    monkeypatch.setattr(SettingsSnapshotService, "load", tracked_load)
 
     response = client.get(
-        "/api/v1/settings/20",
+        "/api/v1/settings/snapshot",
         headers={"X-Auth-Token": signed_widget_token(mutation="missing_audience")},
     )
 
@@ -262,7 +262,7 @@ def test_widget_token_rejects_user_missing_from_live_amocrm(
     )
 
     response = client.get(
-        "/api/v1/settings/20",
+        "/api/v1/settings/snapshot",
         headers={"X-Auth-Token": signed_widget_token()},
     )
 
@@ -307,7 +307,7 @@ def test_decode_widget_token_rejects_missing_required_claims():
 def test_cors_allows_widget_token_from_single_label_tenant_origins(origin):
     with TestClient(app) as test_client:
         response = test_client.options(
-            "/api/v1/settings/20",
+            "/api/v1/settings/snapshot",
             headers={
                 "Origin": origin,
                 "Access-Control-Request-Method": "GET",
@@ -332,7 +332,7 @@ def test_cors_allows_widget_token_from_single_label_tenant_origins(origin):
 def test_cors_rejects_non_tenant_origins(origin):
     with TestClient(app) as test_client:
         response = test_client.options(
-            "/api/v1/settings/20",
+            "/api/v1/settings/snapshot",
             headers={
                 "Origin": origin,
                 "Access-Control-Request-Method": "GET",

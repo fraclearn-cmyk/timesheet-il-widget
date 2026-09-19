@@ -41,12 +41,15 @@ def _client(monkeypatch):
     return TestClient(app), app
 
 
-def test_settings_rejects_a_forged_account_path_without_existence_leak(monkeypatch):
-    """Using path account_id instead of RequestContext must fail this authorization test."""
+def test_settings_snapshot_rejects_a_forged_account_query_without_existence_leak(
+    monkeypatch,
+):
+    """A browser-supplied account cannot replace the verified RequestContext."""
     client, app = _client(monkeypatch)
     try:
         response = client.get(
-            "/api/v1/settings/21", headers={"X-User-Id": "10", "X-Account-Id": "20"}
+            "/api/v1/settings/snapshot?account_id=21",
+            headers={"X-User-Id": "10", "X-Account-Id": "20"},
         )
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "NOT_FOUND"
@@ -563,7 +566,7 @@ def test_user_id_semantics_are_route_specific_when_internal_and_external_collide
 def test_missing_context_returns_normalized_401(monkeypatch):
     client, app = _client(monkeypatch)
     try:
-        response = client.get("/api/v1/settings/20")
+        response = client.get("/api/v1/settings/snapshot")
         assert response.status_code == 401
         assert response.json()["error"]["code"] == "AMOCRM_TOKEN_EXPIRED"
     finally:

@@ -168,7 +168,7 @@ def test_production_admin_downgrade_fails_closed(monkeypatch):
     assert error.value.detail == "ACCESS_DENIED"
 
 
-def test_production_bearer_reaches_legacy_routes_without_identity_headers(monkeypatch):
+def test_production_bearer_reaches_protected_routes_without_identity_headers(monkeypatch):
     """Bearer-only production requests must not depend on synthetic X-* headers."""
     from app.api.v1 import dependencies
     from app.core.database import get_db
@@ -180,11 +180,11 @@ def test_production_bearer_reaches_legacy_routes_without_identity_headers(monkey
             return {"id": 20, "current_user_id": 10}
 
         async def list_users(self, account_url, access_token):
-            return [{"id": 10, "rights": {"role_id": 77, "is_admin": False}}]
+            return [{"id": 10, "rights": {"role_id": 77, "is_admin": True}}]
 
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setattr(dependencies, "AmoCRMClient", lambda http: FakeClient())
-    db = _production_context_db(UserRole.EMPLOYEE)
+    db = _production_context_db(UserRole.ADMIN)
     db.add(WidgetSettings(account_id="20"))
     db.commit()
     app.dependency_overrides[get_db] = lambda: db
@@ -199,7 +199,7 @@ def test_production_bearer_reaches_legacy_routes_without_identity_headers(monkey
                 "/api/v1/reports/daily?account_id=20&date=2026-09-19",
                 headers=headers,
             ),
-            client.get("/api/v1/settings/20", headers=headers),
+            client.get("/api/v1/settings/snapshot", headers=headers),
         ]
         assert [response.status_code for response in responses] == [200] * 5
     finally:
@@ -217,7 +217,7 @@ def test_production_route_rejects_forged_identity_headers_even_with_bearer(monke
     client = TestClient(app)
     try:
         response = client.get(
-            "/api/v1/settings/20",
+            "/api/v1/settings/snapshot",
             headers={
                 "Authorization": "Bearer access-token",
                 "X-User-Id": "10",
