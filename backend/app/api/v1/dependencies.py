@@ -175,6 +175,25 @@ def require_visible_activity_session(
     return activity
 
 
+def require_owned_work_session(
+    db: Session, context: RequestContext, reference: int | str
+) -> WorkSession:
+    """Resolve a work session only when the verified caller owns it."""
+    session = require_visible_work_session(db, context, reference)
+    if session.amocrm_user_id != context.user.amocrm_user_id:
+        raise not_found()
+    return session
+
+
+def require_owned_activity_session(
+    db: Session, context: RequestContext, reference: int | str
+) -> ActivitySession:
+    """Activity mutations inherit the verified caller's work-session ownership."""
+    activity = require_visible_activity_session(db, context, reference)
+    require_owned_work_session(db, context, activity.work_session_id)
+    return activity
+
+
 def require_visible_report(
     db: Session, context: RequestContext, reference: int | str
 ) -> Report:

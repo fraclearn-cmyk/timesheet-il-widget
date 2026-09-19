@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.user import UserRole
 from app.models.work_session import WorkSession, WorkStatus
 from app.models.activity_session import ActivitySession, EntityType
+from app.models.activity_event import ActivityEvent, EventType
 from app.models.report import Report, ReportType, ReportFormat
 from app.models.department import Department
 from app.models.widget_group import WidgetGroup
@@ -1137,6 +1138,200 @@ def test_session_mutations_resolve_self_within_verified_account(
     assert response.status_code == 200
     assert response.json()["current_status"] == expected_status
     assert db.get(WorkSession, 103).current_status.value == initial_status
+
+
+@pytest.fixture
+def activity_gate_client(monkeypatch):
+    """A manager and admin can view Self, but activity writes remain self-only."""
+    from app.core.database import get_db
+
+    client, app = _client(monkeypatch)
+    db = app.dependency_overrides[get_db]()
+    db.add_all(
+        [
+            User(
+                id=3,
+                amocrm_user_id=12,
+                amocrm_account_id=20,
+                name="Manager",
+                amocrm_role_id=78,
+                amocrm_rights={"role_id": 78, "is_admin": False},
+            ),
+            User(
+                id=4,
+                amocrm_user_id=13,
+                amocrm_account_id=20,
+                name="Admin",
+                amocrm_rights={"is_admin": True},
+            ),
+            User(
+                id=5,
+                amocrm_user_id=10,
+                amocrm_account_id=21,
+                name="Duplicate external ID",
+            ),
+            WidgetGroup(
+                id=40,
+                account_id=20,
+                name="Managed",
+                manager_user_id=3,
+                manager_role_id=78,
+            ),
+            GroupMember(account_id=20, group_id=40, user_id=1),
+            WorkSession(
+                id=110,
+                amocrm_user_id=10,
+                amocrm_account_id=20,
+                user_name="Self",
+                start_time=datetime(2026, 9, 19, 9),
+            ),
+            WorkSession(
+                id=111,
+                amocrm_user_id=10,
+                amocrm_account_id=21,
+                user_name="Duplicate external ID",
+                start_time=datetime(2026, 9, 19, 9),
+            ),
+            ActivitySession(
+                id=120,
+                work_session_id=110,
+                entity_type=EntityType.LEAD,
+                entity_id=1,
+                start_time=datetime(2026, 9, 19, 9),
+                is_active=1,
+            ),
+            ActivitySession(
+                id=121,
+                work_session_id=111,
+                entity_type=EntityType.LEAD,
+                entity_id=2,
+                start_time=datetime(2026, 9, 19, 9),
+                is_active=1,
+            ),
+            ActivityEvent(
+                activity_session_id=120,
+                event_type=EventType.CARD_OPENED,
+                timestamp=datetime(2026, 9, 19, 9),
+            ),
+            ActivityEvent(
+                activity_session_id=121,
+                event_type=EventType.CARD_OPENED,
+                timestamp=datetime(2026, 9, 19, 9),
+            ),
+        ]
+    )
+    db.commit()
+    try:
+        yield client, db
+    finally:
+        app.dependency_overrides.clear()
+        db.close()
+
+
+@pytest.mark.parametrize(
+    "path,activity_delta,event_delta",
+    [
+        (
+            "/api/v1/activity/start?work_session_id=110&entity_type=lead&entity_id=3",
+            1,
+            1,
+        ),
+        ("/api/v1/activity/stop/120", 0, 1),
+        (
+            "/api/v1/activity/switch?work_session_id=110&entity_type=lead&entity_id=3",
+            1,
+            2,
+        ),
+        (
+            "/api/v1/activity/event?activity_session_id=120&event_type=card_updated",
+            0,
+            1,
+        ),
+    ],
+)
+def test_activity_mutation_allows_verified_self_with_duplicate_external_id(
+    activity_gate_client, path, activity_delta, event_delta
+):
+    """Dropping the verified account scope could mutate the duplicate account's data."""
+    client, db = activity_gate_client
+    before_activities = db.query(ActivitySession).count()
+    before_events = db.query(ActivityEvent).count()
+    foreign_activity = db.get(ActivitySession, 121)
+    foreign_state = (foreign_activity.is_active, foreign_activity.end_time)
+
+    response = client.post(path, headers={"X-User-Id": "10", "X-Account-Id": "20"})
+
+    assert response.status_code in {200, 201}
+    db.expire_all()
+    assert db.query(ActivitySession).count() == before_activities + activity_delta
+    assert db.query(ActivityEvent).count() == before_events + event_delta
+    foreign_activity = db.get(ActivitySession, 121)
+    assert (foreign_activity.is_active, foreign_activity.end_time) == foreign_state
+
+
+@pytest.mark.parametrize("actor", [12, 13])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/activity/start?work_session_id=110&entity_type=lead&entity_id=3",
+        "/api/v1/activity/stop/120",
+        "/api/v1/activity/switch?work_session_id=110&entity_type=lead&entity_id=3",
+        "/api/v1/activity/event?activity_session_id=120&event_type=card_updated",
+    ],
+)
+def test_activity_mutation_rejects_visible_manager_and_admin_without_data_change(
+    activity_gate_client, actor, path
+):
+    """Changing a self check to visibility would let privileged users alter another user's activity."""
+    client, db = activity_gate_client
+    headers = {"X-User-Id": str(actor), "X-Account-Id": "20"}
+    assert (
+        client.get("/api/v1/activity/current/110", headers=headers).status_code == 200
+    )
+    before_activities = db.query(ActivitySession).count()
+    before_events = db.query(ActivityEvent).count()
+    target = db.get(ActivitySession, 120)
+    target_state = (target.is_active, target.end_time, target.last_activity_time)
+
+    response = client.post(path, headers=headers)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+    db.expire_all()
+    assert db.query(ActivitySession).count() == before_activities
+    assert db.query(ActivityEvent).count() == before_events
+    target = db.get(ActivitySession, 120)
+    assert (
+        target.is_active,
+        target.end_time,
+        target.last_activity_time,
+    ) == target_state
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/activity/start?work_session_id=111&entity_type=lead&entity_id=3",
+        "/api/v1/activity/stop/121",
+        "/api/v1/activity/switch?work_session_id=111&entity_type=lead&entity_id=3",
+        "/api/v1/activity/event?activity_session_id=121&event_type=card_updated",
+    ],
+)
+def test_activity_mutation_rejects_foreign_account_identifiers_without_data_change(
+    activity_gate_client, path
+):
+    """Resolving a duplicate external ID outside the request account must fail closed."""
+    client, db = activity_gate_client
+    before_activities = db.query(ActivitySession).count()
+    before_events = db.query(ActivityEvent).count()
+
+    response = client.post(path, headers={"X-User-Id": "10", "X-Account-Id": "20"})
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+    db.expire_all()
+    assert db.query(ActivitySession).count() == before_activities
+    assert db.query(ActivityEvent).count() == before_events
 
 
 @pytest.mark.parametrize("path", ["department", "late-arrivals"])

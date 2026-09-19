@@ -6,8 +6,17 @@ from app.core.database import get_db
 from app.services.activity_service import ActivityService
 from app.models.activity_session import EntityType
 from app.models.activity_event import EventType
-from app.schemas.activity_session import ActivitySessionResponse, ActivitySessionWithEvents
+from app.schemas.activity_session import (
+    ActivitySessionResponse,
+    ActivitySessionWithEvents,
+)
 from app.schemas.activity_event import ActivityEventResponse
+from app.api.v1.dependencies import (
+    RequestContext,
+    get_request_context,
+    require_owned_activity_session,
+    require_owned_work_session,
+)
 
 router = APIRouter()
 
@@ -18,12 +27,16 @@ def start_activity(
     entity_type: EntityType,
     entity_id: int,
     entity_name: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Start new activity session (открыть карточку)"""
+    require_owned_work_session(db, context, work_session_id)
     service = ActivityService(db)
     try:
-        session = service.start_activity(work_session_id, entity_type, entity_id, entity_name)
+        session = service.start_activity(
+            work_session_id, entity_type, entity_id, entity_name
+        )
         return ActivitySessionResponse.from_orm(session)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -32,9 +45,11 @@ def start_activity(
 @router.post("/stop/{activity_session_id}", response_model=ActivitySessionResponse)
 def stop_activity(
     activity_session_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Stop activity session (закрыть карточку)"""
+    require_owned_activity_session(db, context, activity_session_id)
     service = ActivityService(db)
     try:
         session = service.stop_activity(activity_session_id)
@@ -49,12 +64,16 @@ def switch_activity(
     entity_type: EntityType,
     entity_id: int,
     entity_name: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Switch to another entity (переключиться на другую карточку)"""
+    require_owned_work_session(db, context, work_session_id)
     service = ActivityService(db)
     try:
-        session = service.switch_activity(work_session_id, entity_type, entity_id, entity_name)
+        session = service.switch_activity(
+            work_session_id, entity_type, entity_id, entity_name
+        )
         return ActivitySessionResponse.from_orm(session)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -67,9 +86,11 @@ def track_event(
     description: Optional[str] = None,
     event_data: Optional[Dict[str, Any]] = None,
     category_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Track event in activity session (зафиксировать событие)"""
+    require_owned_activity_session(db, context, activity_session_id)
     service = ActivityService(db)
     try:
         event = service.track_event(
@@ -80,18 +101,17 @@ def track_event(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/current/{work_session_id}", response_model=Optional[ActivitySessionWithEvents])
-def get_current_activity(
-    work_session_id: int,
-    db: Session = Depends(get_db)
-):
+@router.get(
+    "/current/{work_session_id}", response_model=Optional[ActivitySessionWithEvents]
+)
+def get_current_activity(work_session_id: int, db: Session = Depends(get_db)):
     """Get current active activity session"""
     service = ActivityService(db)
     session = service.get_current_activity(work_session_id)
-    
+
     if not session:
         return None
-    
+
     return ActivitySessionWithEvents.from_orm(session)
 
 
@@ -99,7 +119,7 @@ def get_current_activity(
 def get_activity_history(
     work_session_id: int,
     limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Get activity history for work session"""
     service = ActivityService(db)
@@ -108,10 +128,7 @@ def get_activity_history(
 
 
 @router.get("/events/{activity_session_id}", response_model=List[ActivityEventResponse])
-def get_activity_events(
-    activity_session_id: int,
-    db: Session = Depends(get_db)
-):
+def get_activity_events(activity_session_id: int, db: Session = Depends(get_db)):
     """Get all events for activity session"""
     service = ActivityService(db)
     events = service.get_events(activity_session_id)
@@ -119,10 +136,7 @@ def get_activity_events(
 
 
 @router.get("/stats/{work_session_id}", response_model=Dict[str, Any])
-def get_activity_stats(
-    work_session_id: int,
-    db: Session = Depends(get_db)
-):
+def get_activity_stats(work_session_id: int, db: Session = Depends(get_db)):
     """Get activity statistics for work session"""
     service = ActivityService(db)
     return service.get_activity_stats(work_session_id)

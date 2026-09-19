@@ -1,12 +1,12 @@
 # Phase 2 implementation report
 
-Date: 2026-09-19. Base: `d04cdc5` on `main`.
+Date: 2026-09-19. Base: `d04cdc5` on `main`. Current migration head: `009`.
 
 ## Scope and result
 
 This change adds a server-side OAuth/account context boundary, an async amoCRM
 transport, non-destructive user synchronization, enforced account/group access
-policy, and migrations `006` through `008`. `Plan.md` was deliberately not edited.
+policy, and migrations `006` through `009`. `Plan.md` was deliberately not edited.
 The final round-5 verification below supersedes all historical baseline counts.
 
 - `AmoCRMClient` has a finite timeout/retry budget, retries only timeout,
@@ -23,9 +23,8 @@ The final round-5 verification below supersedes all historical baseline counts.
   is assumed; local user/account active state and live user presence are checked.
 - User sync upserts known users and marks missing users inactive without deleting
   membership or work-history rows.
-- Protected routers require `get_request_context`. In production legacy
-  `X-User-Id`/`X-Account-Id` are rejected; after OAuth verification only
-  server-derived compatibility values are injected for old handlers. The legacy
+- Protected routers consume the direct trusted `get_request_context` dependency.
+  In production legacy `X-User-Id`/`X-Account-Id` are rejected; the legacy
   adapter is enabled solely when `ENVIRONMENT=test`.
 - `GET /api/v1/me` returns only the verified account/user context. `AccessPolicy`
   constrains employee self access, active-group manager access and active,
