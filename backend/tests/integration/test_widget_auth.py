@@ -97,6 +97,8 @@ def signed_widget_token():
             payload["iss"] = "https://other.amocrm.ru"
         elif mutation == "wrong_client":
             payload["client_uuid"] = "synthetic-other-client"
+        elif mutation == "missing_audience":
+            payload.pop("aud")
         elif mutation == "forged_signature":
             secret = "synthetic-forged-secret"
         elif mutation is not None:
@@ -218,6 +220,31 @@ def test_widget_token_never_falls_back_to_browser_identity_headers(
     assert response.json()["error"]["code"] == "AMO_WIDGET_TOKEN_INVALID"
 
 
+def test_widget_token_requires_audience_before_live_or_settings_service(
+    client, signed_widget_token, live_amocrm, monkeypatch
+):
+    from app.services.settings_service import SettingsService
+
+    settings_calls: list[str] = []
+    original_get_settings = SettingsService.get_settings
+
+    def tracked_get_settings(service, account_id):
+        settings_calls.append(account_id)
+        return original_get_settings(service, account_id)
+
+    monkeypatch.setattr(SettingsService, "get_settings", tracked_get_settings)
+
+    response = client.get(
+        "/api/v1/settings/20",
+        headers={"X-Auth-Token": signed_widget_token(mutation="missing_audience")},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AMO_WIDGET_TOKEN_INVALID"
+    assert live_amocrm == []
+    assert settings_calls == []
+
+
 def test_widget_token_rejects_user_missing_from_live_amocrm(
     client, signed_widget_token, monkeypatch
 ):
@@ -267,3 +294,51 @@ def test_decode_widget_token_rejects_missing_required_claims():
             audience=WIDGET_AUDIENCE,
             client_uuid=settings.AMOCRM_CLIENT_ID,
         )
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://tenant.amocrm.ru",
+        "https://tenant.amocrm.com",
+        "https://tenant.kommo.com",
+    ],
+)
+def test_cors_allows_widget_token_from_single_label_tenant_origins(origin):
+    with TestClient(app) as test_client:
+        response = test_client.options(
+            "/api/v1/settings/20",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "X-Auth-Token",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == origin
+    assert "x-auth-token" in response.headers["Access-Control-Allow-Headers"].lower()
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://tenant.amocrm.ru",
+        "https://amocrm.ru",
+        "https://nested.tenant.amocrm.ru",
+        "https://tenant.amocrm.ru.attacker.invalid",
+    ],
+)
+def test_cors_rejects_non_tenant_origins(origin):
+    with TestClient(app) as test_client:
+        response = test_client.options(
+            "/api/v1/settings/20",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "X-Auth-Token",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Access-Control-Allow-Origin" not in response.headers

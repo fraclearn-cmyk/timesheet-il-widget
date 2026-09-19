@@ -90,13 +90,11 @@ async def api_error_handler(request: Request, exc: HTTPException):
 
 
 # CORS - Production secure
-ALLOWED_ORIGINS = [
-    "https://*.amocrm.ru",
-    "https://*.amocrm.com",
-]
-
-if hasattr(settings, "ALLOWED_ORIGINS") and settings.ALLOWED_ORIGINS:
-    ALLOWED_ORIGINS.extend(settings.ALLOWED_ORIGINS)
+AMOCRM_TENANT_ORIGIN_REGEX = (
+    r"^https://[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\."
+    r"(?:amocrm\.ru|amocrm\.com|kommo\.com)$"
+)
+ALLOWED_ORIGINS = list(getattr(settings, "ALLOWED_ORIGINS", []))
 
 if hasattr(settings, "DEBUG") and settings.DEBUG:
     ALLOWED_ORIGINS.extend(["http://localhost:3000", "http://localhost:8000"])
@@ -104,9 +102,10 @@ if hasattr(settings, "DEBUG") and settings.DEBUG:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=AMOCRM_TENANT_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Auth-Token"],
     max_age=600,
 )
 

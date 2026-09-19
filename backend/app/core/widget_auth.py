@@ -72,6 +72,7 @@ def decode_widget_token(
                 "require_iat": True,
                 "require_nbf": True,
                 "require_jti": True,
+                "require_aud": True,
             },
         )
         if payload.get("client_uuid") != client_uuid:
