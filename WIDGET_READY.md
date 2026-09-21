@@ -1,8 +1,12 @@
-# ✅ ВИДЖЕТ ГОТОВ К УСТАНОВКЕ В amoCRM!
+# ✅ ИСТОРИЧЕСКИЙ СТАТУС: ВИДЖЕТ ГОТОВ К УСТАНОВКЕ В amoCRM
+
+> Это зафиксированный результат от 30 июля 2026: не загружайте упомянутый ниже
+> архив. Для текущей сборки используйте `build_widget.ps1`, который публикует
+> `widget.zip`.
 
 **Дата:** 30 июля 2026, 10:40  
 **Статус:** ✅ READY TO DEPLOY  
-**Архив:** `widget.zip` (10.37 KB)
+**Архив:** `timesheet_il_widget.zip` (10.37 KB)
 
 ---
 
@@ -26,7 +30,7 @@
 - Support Link: https://example.com/support
 
 ✅ **ZIP архив создан**
-- Файл: `widget.zip`
+- Файл: `timesheet_il_widget.zip`
 - Размер: 10.37 KB
 - Все файлы упакованы корректно
 
@@ -114,7 +118,7 @@ docker-compose restart backend
 2. Нажмите "Добавить виджет" или "Загрузить свой виджет"
 
 ### Шаг 3: Загрузите архив
-1. Выберите файл `widget.zip` (в текущей папке)
+1. Выберите файл `timesheet_il_widget.zip` (в текущей папке)
 2. Нажмите "Загрузить"
 3. Дождитесь проверки (~30 секунд)
 
@@ -144,7 +148,7 @@ docker-compose restart backend
 В вашей папке созданы следующие файлы:
 
 ### Основные:
-- ✅ **widget.zip** - готовый виджет для установки
+- ✅ **timesheet_il_widget.zip** - готовый виджет для установки
 - ✅ **widget/images/logo.png** - логотип виджета (заглушка)
 - ✅ **widget/images/icon.png** - иконка виджета (заглушка)
 
@@ -262,7 +266,7 @@ docker-compose exec db psql -U postgres -d timesheet_db -c "SELECT COUNT(*) FROM
 .\build_widget.ps1 -ApiUrl "https://your-url.com/api/v1"
 
 # Проверка архива
-Expand-Archive -Path widget.zip -DestinationPath temp_check
+Expand-Archive -Path timesheet_il_widget.zip -DestinationPath temp_check
 ls temp_check
 ```
 
@@ -283,7 +287,7 @@ ls temp_check
 2. **Настройте ngrok** или production сервер
 3. **Пересоберите виджет** с правильным API URL
 4. **Настройте CORS** в backend/app/main.py
-5. **Загрузите в amoCRM** файл widget.zip
+5. **Загрузите в amoCRM** файл timesheet_il_widget.zip
 6. **Протестируйте** все функции
 
 ---
