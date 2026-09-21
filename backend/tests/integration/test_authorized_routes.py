@@ -91,6 +91,42 @@ def test_rate_limit_uses_the_standard_429_error_body():
     assert response.json()["error"]["code"] == "RATE_LIMITED"
 
 
+def test_rate_limited_widget_response_exposes_retry_after_only_to_allowed_origin(
+    monkeypatch,
+):
+    """The browser must see a real 429 and its retry delay, not a CORS failure."""
+    client, app = _client(monkeypatch)
+    allowed = "https://tenant.amocrm.ru"
+    hostile = "https://tenant.amocrm.ru.attacker.invalid"
+    try:
+        normal = client.get("/health", headers={"Origin": allowed})
+        assert normal.status_code == 200
+        assert normal.headers["Access-Control-Allow-Origin"] == allowed
+        for _ in range(59):
+            assert client.get("/health").status_code == 200
+
+        response = client.get(
+            "/health", headers={"Origin": allowed, "X-Request-Id": "rate-test"}
+        )
+        assert response.status_code == 429
+        assert response.headers["Access-Control-Allow-Origin"] == allowed
+        assert "retry-after" in response.headers["Access-Control-Expose-Headers"].lower()
+        assert response.headers["Retry-After"] == "60"
+        assert response.json() == {
+            "error": {
+                "code": "RATE_LIMITED",
+                "message": "Слишком много запросов. Повторите попытку позже.",
+                "request_id": "rate-test",
+            }
+        }
+
+        denied = client.get("/health", headers={"Origin": hostile})
+        assert denied.status_code == 429
+        assert "Access-Control-Allow-Origin" not in denied.headers
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_duplicate_session_returns_normalized_conflict(monkeypatch):
     """Mapping a session state conflict to 400 would hide a retryable conflict from clients."""
     client, app = _client(monkeypatch)

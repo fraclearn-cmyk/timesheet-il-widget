@@ -99,6 +99,10 @@ ALLOWED_ORIGINS = list(getattr(settings, "ALLOWED_ORIGINS", []))
 if hasattr(settings, "DEBUG") and settings.DEBUG:
     ALLOWED_ORIGINS.extend(["http://localhost:3000", "http://localhost:8000"])
 
+# Rate limiting sits inside CORS so its 429 response is readable by the widget.
+if not getattr(settings, "DEBUG", False):
+    app.add_middleware(RateLimitMiddleware, calls_per_minute=60)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -106,12 +110,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Auth-Token"],
+    expose_headers=["Retry-After"],
     max_age=600,
 )
-
-# Rate limiting
-if not getattr(settings, "DEBUG", False):
-    app.add_middleware(RateLimitMiddleware, calls_per_minute=60)
 
 
 @app.middleware("http")
