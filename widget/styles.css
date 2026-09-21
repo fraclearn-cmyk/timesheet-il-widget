@@ -282,12 +282,12 @@
 }
 
 /* Button Disabled State */
-button:disabled {
+.timesheet-widget button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
-button:disabled:hover {
+.timesheet-widget button:disabled:hover {
     transform: none !important;
     box-shadow: none !important;
 }

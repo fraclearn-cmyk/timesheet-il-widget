@@ -17,6 +17,7 @@
     }
   },
   "locations": [
+    "settings",
     "advanced_settings"
   ],
   "settings": {

@@ -335,12 +335,17 @@
     var body = error && (error.error || (error.responseJSON && error.responseJSON.error)) || error || {};
     this.errors = body.field ? [body] : [];
     var status = Number(error && error.status);
-    var retry = Math.max(0, Math.min(3600, Number(error && error.retryAfter) || 0));
+    var retryValue = error && error.retryAfter;
+    var retryText = String(retryValue);
+    var retrySeconds = /^\d+$/.test(retryText) ? Number(retryText) :
+      retryValue == null ? 0 : Math.ceil((Date.parse(retryText) - Date.now()) / 1000);
+    var retry = Math.max(0, Math.min(3600, retrySeconds || 0));
     this.message = status === 401 ? 'Авторизация истекла. Переподключите виджет.' :
       status === 403 ? 'Нет доступа к настройкам.' :
         status === 404 ? 'Данные изменились. Обновите настройки и повторите попытку.' :
-          status === 429 ? 'Слишком много запросов. Повторите через ' + retry + ' секунд.' :
-            body.message || 'Не удалось сохранить настройки.';
+          status === 409 ? 'Конфликт настроек. Проверьте отмеченные поля и обновите данные при необходимости.' :
+            status === 429 ? 'Слишком много запросов. Повторите ' + (retry ? 'через ' + retry + ' секунд.' : 'позже.') :
+              'Не удалось сохранить настройки.';
     var message = this.root.querySelector('.timesheet-settings__message');
     if (message) message.textContent = this.message;
     this.markErrors();
@@ -391,5 +396,6 @@
   SettingsController.prototype.destroy = function () { this.destroyed = true; this.root.replaceChildren(); };
 
   global.SettingsController = SettingsController;
+  if (typeof define === 'function' && define.amd) define(function () { return SettingsController; });
   if (typeof module !== 'undefined' && module.exports) module.exports = SettingsController;
 })(typeof window !== 'undefined' ? window : globalThis);

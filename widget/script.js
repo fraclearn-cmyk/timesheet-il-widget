@@ -1,4 +1,34 @@
-define(['jquery'], function($) {
+define(['jquery', './settings/settings'], function($, SettingsController) {
+    function apiUrl(widget) {
+        var settings = widget.get_settings();
+        return settings && settings.api_url ? String(settings.api_url).replace(/\/+$/, '') : null;
+    }
+
+    function toPromise(request) {
+        return Promise.resolve(request).catch(function(error) {
+            if (error && typeof error.getResponseHeader === 'function') {
+                error.retryAfter = error.getResponseHeader('Retry-After');
+            }
+            throw error;
+        });
+    }
+
+    function createSettingsTransport(widget) {
+        return {
+            load: function() {
+                return toPromise(widget.$authorizedAjax({
+                    url: apiUrl(widget) + '/settings/snapshot', method: 'GET', dataType: 'json'
+                }));
+            },
+            save: function(payload) {
+                return toPromise(widget.$authorizedAjax({
+                    url: apiUrl(widget) + '/settings/snapshot', method: 'PUT',
+                    contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload)
+                }));
+            }
+        };
+    }
+
     // Polyfill for String.prototype.padStart (IE11 compatibility)
     if (!String.prototype.padStart) {
         String.prototype.padStart = function padStart(targetLength, padString) {
@@ -33,12 +63,26 @@ define(['jquery'], function($) {
         this.updateTimer = null;
         this.sessionStart = null;
         this.overlayShown = false;
+        this.settingsController = null;
+        this.settingsMount = null;
+        this.settingsStyle = null;
+
+        function removeSettings() {
+            if (widget.settingsController) widget.settingsController.destroy();
+            if (widget.settingsMount) widget.settingsMount.remove();
+            if (widget.settingsStyle) widget.settingsStyle.remove();
+            widget.settingsController = null;
+            widget.settingsMount = null;
+            widget.settingsStyle = null;
+        }
         
         this.callbacks = {
             render: function() {
                 return true;
             },
             init: function() {
+                var area = typeof widget.system === 'function' && widget.system().area;
+                if (area === 'settings' || area === 'advanced_settings') return true;
                 console.log('Timesheet Widget v3.0.2 initializing...');
                 
                 // Get current user info from amoCRM
@@ -118,13 +162,38 @@ define(['jquery'], function($) {
                 return true;
             },
             advancedSettings: function() {
-                console.log('Advanced settings opened');
+                removeSettings();
+                var holder = document.getElementById('list_page_holder');
+                if (!holder) return false;
+                var mount = document.createElement('div');
+                mount.className = 'timesheet-settings__host';
+                holder.appendChild(mount);
+                widget.settingsMount = mount;
+                var url = apiUrl(widget);
+                if (!url) {
+                    mount.textContent = 'Укажите URL API в настройках установки виджета.';
+                    return true;
+                }
+                var settings = widget.get_settings();
+                if (settings.path) {
+                    var style = document.createElement('link');
+                    style.rel = 'stylesheet';
+                    style.href = String(settings.path).replace(/\/?$/, '/') + 'settings/settings.css?v=' +
+                        encodeURIComponent(settings.version || '');
+                    document.head.appendChild(style);
+                    widget.settingsStyle = style;
+                }
+                widget.settingsController = SettingsController.mount(mount, createSettingsTransport(widget));
+                widget.settingsController.ready.catch(function() {});
                 return true;
             },
             onSave: function() {
-                return true;
+                var controller = widget.settingsController;
+                if (!controller) return true;
+                return controller.snapshot ? controller.save() : controller.ready.then(function() { return controller.save(); });
             },
             destroy: function() {
+                removeSettings();
                 if (widget.updateTimer) {
                     clearInterval(widget.updateTimer);
                 }

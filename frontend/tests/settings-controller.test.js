@@ -194,7 +194,7 @@ test('failed save keeps draft and displays field error', async () => {
   await assert.rejects(controller.save());
   assert.equal(controller.serialize().groups[0].name, 'Копия');
   assert.equal(root.querySelector('[data-group-ref="id:10"] [data-field="name"]').getAttribute('aria-invalid'), 'true');
-  assert.match(root.textContent, /Повтор/);
+  assert.match(root.textContent, /Проверьте отмеченные поля/);
 });
 
 test('loading rejection shows denied state and no editable form', async () => {
@@ -235,6 +235,45 @@ test('rate limit leaves draft in place and bounds retry message', async () => {
   await assert.rejects(controller.save());
   assert.equal(controller.serialize().settings.support_phone, '+375 29 000-00-00');
   assert.match(root.textContent, /30 секунд/);
+});
+
+test('save error statuses show safe Russian messages without replacing draft', async () => {
+  for (const [status, expected] of [
+    [401, /Переподключите виджет/],
+    [403, /Нет доступа к настройкам/],
+    [404, /Обновите настройки/],
+    [409, /Проверьте отмеченные поля/],
+  ]) {
+    const { root, controller } = setup(snapshot(), {
+      save: async () => { throw { status, responseJSON: { error: { field: 'settings.support_phone', message: 'internal SQL detail' } } }; },
+    });
+    await controller.ready;
+    controller.setSupportPhone('draft');
+    await assert.rejects(controller.save());
+    assert.equal(controller.serialize().settings.support_phone, 'draft');
+    assert.match(root.textContent, expected);
+    assert.doesNotMatch(root.textContent, /internal SQL detail/);
+    assert.equal(root.querySelector('[data-field="support_phone"]').getAttribute('aria-invalid'), 'true');
+  }
+});
+
+test('rate limit clamps untrusted Retry-After and handles absent delay', async () => {
+  for (const [retryAfter, expected] of [['999999999', /3600 секунд/], ['not-a-number', /позже/]]) {
+    const { root, controller } = setup(snapshot(), { save: async () => { throw { status: 429, retryAfter }; } });
+    await controller.ready;
+    controller.setSupportPhone('draft');
+    await assert.rejects(controller.save());
+    assert.equal(controller.serialize().settings.support_phone, 'draft');
+    assert.match(root.textContent, expected);
+  }
+});
+
+test('rate limit accepts an HTTP-date Retry-After and bounds it to one hour', async () => {
+  const retryAfter = new Date(Date.now() + 24 * 60 * 60 * 1000).toUTCString();
+  const { root, controller } = setup(snapshot(), { save: async () => { throw { status: 429, retryAfter }; } });
+  await controller.ready;
+  await assert.rejects(controller.save());
+  assert.match(root.textContent, /3600 секунд/);
 });
 
 test('avatar uses only safe URL schemes', async () => {
