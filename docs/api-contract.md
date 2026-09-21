@@ -2,7 +2,8 @@
 
 Статус: целевой JSON-контракт, зафиксированный в фазе 0. Он задаёт границу следующих
 фаз, но не означает, что legacy endpoint-ы уже соответствуют ему. Identity создаётся
-только из server-side OAuth context; параметры account/user из widget browser не являются
+из проверенного server-side OAuth context и, для widget-запросов, проверенного
+одноразового JWT amoCRM; параметры account/user из widget browser не являются
 доказательством личности.
 
 Все ошибки имеют форму:
@@ -22,6 +23,28 @@
 Live refresh grant подтверждён как JSON response HTTP 200 с полями `access_token`,
 `refresh_token`, `expires_in`, `server_time`, `token_type`. При rotation backend должен
 атомарно сохранить обе token-пары до использования нового access token.
+
+## Авторизация запросов виджета
+
+На `GET/PUT /api/v1/settings/snapshot` виджет вызывает Web SDK
+`this.$authorizedAjax({url, method, ...})`. По [официальной механике Web SDK](https://www.amocrm.ru/developers/content/web_sdk/mechanics)
+amoCRM сама добавляет `X-Auth-Token`; backend разрешает CORS для доверенного origin
+аккаунта. Виджет не копирует заголовок вручную и не передаёт браузерный OAuth
+`access_token`/`refresh_token`. По [описанию одноразового токена](https://www.amocrm.ru/developers/content/oauth/disposable-tokens)
+это JWT с подписью HS256 на секретном ключе интеграции: проверяются `iss`, `aud`,
+`jti`, `iat`, `nbf`, `exp`, `account_id`, `user_id`, `client_uuid`; issuer должен быть
+доверенным tenant origin, audience — настроенным адресом backend, UUID интеграции —
+ожидаемым. Затем backend сверяет аккаунт с OAuth connection, актуального пользователя
+и его права на каждом привилегированном запросе. Отсутствие/некорректность токена
+не заменяется `AMOCRM.constant(...)`, browser ID или сохранённой ролью.
+
+`GET /api/v1/settings/snapshot` возвращает `revision`, `settings`, полный список
+`groups` и `users`. `PUT` атомарно принимает те же четыре верхнеуровневых поля:
+`revision` защищает от устаревшей записи; новая группа задаётся `client_key`,
+существующая — `id`; пользователь ссылается на неё через `client:<key>` либо
+`id:<id>`. Ответ `PUT` — новый канонический snapshot, который UI принимает без
+догадок о созданных ID. `track_time` и `hide_widget` независимы. Сервер повторно
+проверяет права, полноту списка пользователей, tenant scope и инварианты группы.
 
 ## Контекст
 

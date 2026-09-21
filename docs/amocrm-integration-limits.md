@@ -46,8 +46,12 @@ console output. В этом документе «неизвестно» не з�
 
 ## Подтверждено локально и mock-контрактом
 
-- `widget/manifest.json` использует единственную location `advanced_settings`. Она
-  соответствует собственной странице расширенных настроек Web SDK.
+- `widget/manifest.json` использует только `settings` и `advanced_settings`: стандартное
+  окно установки сохраняет `api_url`, собственная страница показывает редактор.
+  Рабочие locations намеренно не включены до безопасной реализации фазы 4.
+- Локальный DOM smoke проверяет общий путь `advancedSettings` → редактор →
+  `this.$authorizedAjax` → канонический `PUT` snapshot → `destroy`, но не доказывает,
+  что live amoCRM дождётся асинхронного `onSave` до закрытия своего окна.
 - В виджете читаются `AMOCRM.constant('account').id` и
   `AMOCRM.constant('user').{id,name}`. Эти значения доступны UI, но текущий fallback
   подставляет demo account/user и поэтому не пригоден для серверной аутентификации.
@@ -74,6 +78,27 @@ console output. В этом документе «неизвестно» не з�
 
 ## Не подтверждено после controlled live spike
 
+В тестовом аккаунте ещё не проверены загрузка нового ZIP, доставка одноразового
+`X-Auth-Token`, реальный CORS, точная последовательность native `settings`/`onSave`,
+ожидание асинхронного `onSave`, повторная загрузка и отсутствие редактора в рабочей
+области. Это обязательный live gate; локальный jsdom smoke его не заменяет.
+
+Сборка включает только 16 перечисленных runtime-файлов (`settings/*` в корне ZIP,
+не `frontend/settings/*`), проверяет точные paths и отсутствие credential-like
+текста. `-ApiUrl` меняет только staged строку `api_url_placeholder` в i18n; amoCRM
+может не отображать её в native `text`-поле, поэтому URL нужно явно ввести и
+сохранить в настройке `api_url`. Это не OAuth credential. Исходники сборка не меняет.
+
+Для persistent БД с ранней локально применённой ревизией `010` существует отдельный
+deployment gate: stamp `010` сам по себе недостаточен, поскольку старый вариант мог
+не создать `users.hide_widget`. Перед развёртыванием снять резервную копию и
+проверить колонку через `information_schema.columns` для `table_name='users'` и
+`column_name='hide_widget'`. Если её нет, **не запускать** текущий backend и не
+повторять изменённую ревизию `010` поверх stamped БД: нужен отдельный проверенный
+forward repair migration (или восстановление чистой тестовой БД из согласованного
+дампа), с переносом текущего флага из исторических membership данных. Текущий
+свежий PostgreSQL migration cycle не проверяет такой already-stamped путь.
+
 | Тема | Что нельзя утверждать до live spike | Безопасный fallback |
 |---|---|---|
 | OAuth redirect/scopes | Одноразовый authorization code уже очищен; redirect delivery и configured scopes в этом запуске не воспроизводились | Не принимать browser ID как identity; хранить и обновлять server-side token only |
@@ -87,6 +112,11 @@ console output. В этом документе «неизвестно» не з�
 
 - [Web SDK: расширенные настройки](https://www.amocrm.ru/developers/content/web_sdk/settings)
   описывает `advanced_settings` и callback `advancedSettings`.
+- [Web SDK: механика работы](https://www.amocrm.ru/developers/content/web_sdk/mechanics)
+  описывает `$authorizedAjax` и добавляемый amoCRM заголовок `X-Auth-Token`.
+- [Одноразовые токены интеграций](https://www.amocrm.ru/developers/content/oauth/disposable-tokens)
+  описывает HS256, secret интеграции и claims `iss`, `aud`, `jti`, `iat`, `nbf`,
+  `exp`, `account_id`, `user_id`, `client_uuid`.
 - [Структура виджета](https://www.amocrm.ru/developers/content/integrations/structure)
   описывает контекстные переменные `#ACCOUNT_ID#` и `#USER_ID#`; это не server-side
   удостоверение личности.

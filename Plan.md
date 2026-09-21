@@ -48,7 +48,7 @@
 | 0 | Контракт и технический spike amoCRM | Выполнена с подтверждёнными ограничениями | 2026-09-16 | `pytest -q`: 110 passed; live OAuth/account/users/rights/refresh и 7 типов событий проверены; calls/UI-iframe ограничены |
 | 1 | Единая модель данных и миграции | Выполнена | 2026-09-18 | `pytest -q`: 143 passed; 29 точечных unit-тестов прошли при независимом review; PostgreSQL upgrade/downgrade: 4 passed; одна голова `005` |
 | 2 | OAuth, синхронизация пользователей и права | Выполнена | 2026-09-19 | `pytest`: 248 passed, 10 skipped; PostgreSQL migrations: 10 passed; независимый entry-gate review: PASS; одна голова `009` |
-| 3 | Настройки amoMarket: пользователи и группы | Не начата | — | — |
+| 3 | Настройки amoMarket: пользователи и группы | В работе | 2026-09-21 | Локально: backend `369 passed`, Node `39 passed`, PostgreSQL migrations `15 passed`, package tests `6 passed`, `010 (head)`, ZIP `16` файлов; live amoCRM и already-stamped `010` не закрыты |
 | 4 | Рабочие статусы и блокирующий интерфейс | Не начата | — | — |
 | 5 | Источник событий amoCRM и активность | Не начата | — | — |
 | 6 | API мониторинга и окно активности | Не начата | — | — |
@@ -63,7 +63,7 @@
 | Проверить доступность API событий аналитики amoCRM и звонков | Live OAuth/refresh подтверждены; создан controlled `[TEST CODEX]` набор; наблюдались 7 типов/11 событий и реальные field shapes; `/api/v4/calls` вернул 405 | Выполнено с ограничениями | Полный каталог, реальные звонки, общая latency/pagination и iframe-поведение не подтверждены; используется явный `unavailable` fallback |
 | Выровнять существующие модели, сервисы и API | Модели, схемы и подключённые маршруты используют verified request context, account scope и policy-фильтрацию | Выполнено | Нет |
 | Ввести отдельные группы виджета и уникальность группы сотрудника | Добавлены `WidgetGroup`/`GroupMember`; PostgreSQL запрещает второе активное членство в пределах аккаунта и сохраняет историю неактивных членств | Выполнено | Нет; чистый и заполненный цикл миграций проверен на PostgreSQL |
-| Реализовать настройки «Учитывать» и «Скрыть» | OAuth, синхронизация и права готовы; UI/API сохранения настроек остаются фазой 3 | Подготовлено | Нет блокера для начала фазы 3 |
+| Реализовать настройки «Учитывать» и «Скрыть» | `frontend/settings/*`, `widget/script.js`, `backend/app/api/v1/settings.py`, `settings_snapshot_service.py`; локальный DOM smoke и API-тесты прошли | Локально выполнено, live gate открыт | Проверить реальный `onSave`/`$authorizedAjax` в amoCRM и схему persistent БД со старой `010` |
 | Реализовать статусы и overlay | Не выполнено | Не начато | Нужен стабильный контракт сессий |
 | Получать полный перечень событий аналитики и звонки | Не выполнено | Не начато | Ограничения amoCRM требуют spike |
 | Реализовать интервалы с порогом 5 минут | Единая модель и правила источников готовы: подтверждённый интервал создаётся только во время `Работаю`; порог и сбор событий остаются фазой 5 | Частично выполнено по плану | Зависит от источника событий фазы 5 |
@@ -153,13 +153,13 @@
 
 **Задачи:**
 
-- [ ] Переписать `widget/manifest.json` под фактически поддерживаемые поля settings/advanced settings и права amoCRM.
-- [ ] Разделить callbacks `settings`, `advancedSettings`, `onSave` и рабочий `init`; рабочий `init` не рендерит редактор настроек.
-- [ ] Создать `frontend/settings/settings.html`, `settings.js`, `settings.css` или адаптировать существующую admin-панель без вкладок оплаты и выданных доступов.
-- [ ] Реализовать вкладку «Пользователи»: список amoCRM, поиск, amoCRM-группировка, `Учитывать рабочее время`, `Скрыть виджет`, группа сотрудника и сохранение.
-- [ ] Реализовать вкладку «Настройки»: телефон поддержки, статусы, редактор групп, руководитель, часовой пояс, начало/конец дня, разрешение повторного запуска.
-- [ ] Запретить сохранение включённого сотрудника без группы; не позволять назначить сотрудника в две группы.
-- [ ] Обеспечить идемпотентное сохранение и восстановление данных после перезагрузки.
+- [x] Переписать `widget/manifest.json` под фактически поддерживаемые поля settings/advanced settings и права amoCRM.
+- [x] Разделить callbacks `settings`, `advancedSettings`, `onSave` и рабочий `init`; рабочий `init` не рендерит редактор настроек.
+- [x] Создать `frontend/settings/settings.html`, `settings.js`, `settings.css` или адаптировать существующую admin-панель без вкладок оплаты и выданных доступов.
+- [x] Реализовать вкладку «Пользователи»: список amoCRM, поиск, amoCRM-группировка, `Учитывать рабочее время`, `Скрыть виджет`, группа сотрудника и сохранение.
+- [x] Реализовать вкладку «Настройки»: телефон поддержки, статусы, редактор групп, руководитель, часовой пояс, начало/конец дня, разрешение повторного запуска.
+- [x] Запретить сохранение включённого сотрудника без группы; не позволять назначить сотрудника в две группы.
+- [x] Обеспечить идемпотентное сохранение и восстановление данных после перезагрузки.
 
 **Файлы:**
 
@@ -483,9 +483,36 @@ flowchart TD
 - Неоднозначные старые category/department данные намеренно остаются без владельца и fail closed, пока администратор не выполнит безопасное назначение.
 - В тестах остаются legacy/dependency warnings; они видимы и не скрыты фильтрами.
 
+### Отчёт по фазе 3 (локальная готовность, не приёмка live amoCRM)
+
+#### Что сделано
+
+- Реализованы account-scoped snapshot API, редактор двух вкладок, независимые `track_time`/`hide_widget`, группы, валидация и канонический ответ после сохранения.
+- `settings`, `advancedSettings`, `onSave` и рабочий `init` разделены; manifest содержит только `settings`/`advanced_settings`. `frontend/admin.html` остаётся прототипом.
+- Сборка не меняет исходники, включает ровно 16 runtime-файлов с `settings/*` и проверяется отдельным валидатором. API URL подставляется только в staged i18n-строку; native `api_url` нужно ввести вручную, это не browser OAuth token.
+- Локальный DOM smoke проверяет создание группы, назначение пользователя, авторизованный `PUT`, принятие канонического snapshot и отсутствие редактора в рабочей области.
+
+#### Созданные и изменённые файлы
+
+- Backend фазы: `backend/migrations/versions/010_widget_settings_snapshot.py`, модели/схемы/сервис snapshot, `backend/app/api/v1/settings.py`, auth/CORS и API/migration тесты.
+- Frontend фазы: `widget/manifest.json`, `widget/script.js`, `frontend/settings/settings.html`, `settings.js`, `settings.css`, `frontend/tests/settings-controller.test.js`, `widget-lifecycle.test.js`.
+- Gate и документация: `build_widget.ps1`, `validate_widget_zip.py`, `test_widget_package.py`, `frontend/tests/settings-smoke.test.js`, `package.json`, `docs/api-contract.md`, `docs/amocrm-integration-limits.md`, `Plan.md`.
+
+#### Что можно проверить
+
+- Из `backend/`: `..\.venv312\Scripts\python.exe -m pytest -q --disable-warnings` с disposable `TEST_POSTGRES_ADMIN_URL` — `369 passed`; отдельно `tests/integration/test_migrations.py -q` — `15 passed`, `alembic heads` — одна `010 (head)`.
+- Из корня: `npm run test:settings` — `39 passed`; `.\.venv312\Scripts\python.exe -m unittest -q test_widget_package` — `6 passed`; `powershell -ExecutionPolicy Bypass -File .\build_widget.ps1 -ApiUrl "https://storage-turkey-multitask.ngrok-free.dev/api/v1"`, затем `.\.venv312\Scripts\python.exe .\validate_widget_zip.py .\timesheet_il_widget.zip` — `16` точных runtime-файлов; `git diff --check` — exit 0.
+- Ответственному за тестовый amoCRM: загрузить ZIP, сохранить `api_url`, открыть расширенные настройки и проверить две вкладки; создать группу, назначить пользователя, отдельно переключить `track_time` и `hide_widget`, нажать единственную синюю кнопку и native Save, перезагрузить страницу, проверить восстановленные значения. Затем открыть рабочую область и убедиться в отсутствии редактора; под employee/manager убедиться в отказе доступа. Проверить сеть: `X-Auth-Token`, CORS и один `PUT` на сохранение без ручной передачи OAuth token.
+
+#### Блокеры и остаточные риски
+
+- Live amoCRM не проверен: jsdom не доказывает порядок native callbacks, ожидание асинхронного `onSave` перед закрытием окна и реальные `X-Auth-Token`/CORS. Поэтому фаза остаётся `В работе`.
+- Persistent БД, уже stamped ранней локальной `010`, может не иметь `users.hide_widget`. До deployment необходим backup и schema preflight; при отсутствующей колонке развертывание остановить до отдельной проверенной forward repair migration. Свежий PostgreSQL cycle этого пути не доказывает.
+- Отложенные minor: параметризация downgrade-guard по всем новым колонкам, выбор historical membership при equal-timestamp ID tie, уже неконсистентная inactive group + inactive membership. Они не скрыты локальным зелёным gate.
+
 ## Текущий отчёт по фазам
 
-Фазы 0–2 завершены. Проверены live OAuth/amoCRM contracts, единая account-scoped модель, шифрованные OAuth connections, синхронизация пользователей, server-side request context и политика доступа. Миграции до `009` прошли реальный PostgreSQL cycle; следующая по порядку — фаза 3: настройки amoMarket, пользователи и группы.
+Фазы 0–2 завершены; фаза 3 локально реализована и прошла backend/frontend/package/свежий PostgreSQL gate, но остаётся `В работе` до live amoCRM smoke и preflight/repair уже stamped `010` БД. Рабочий интерфейс остаётся задачей фазы 4.
 
 ## Журнал изменений плана
 
@@ -497,3 +524,4 @@ flowchart TD
 | 2026-09-16 | Фаза 0 завершена с подтверждёнными ограничениями; 110 тестов и controlled live spike | Подтверждены OAuth и реальные event shapes; calls, полный каталог и iframe оставлены как явные `unavailable`/observed-only ограничения |
 | 2026-09-18 | Фаза 1 завершена; единая модель, migration `005`, 143 теста и независимый review | Устранён рассинхрон идентификаторов/полей, проверены ограничения модели и воспроизводимый цикл миграций PostgreSQL |
 | 2026-09-19 | Фаза 2 завершена; OAuth/request context, user sync, RBAC, migrations `006`–`009` и self-only mutations | 248 backend tests, 10 real-PostgreSQL migration tests и независимый security entry-gate review подтвердили критерии |
+| 2026-09-21 | Фаза 3 локально реализована, но оставлена `В работе` | 369 backend, 39 Node, 15 PostgreSQL migration, 6 package tests и точный ZIP прошли; live amoCRM и preflight старой `010` остаются обязательными |

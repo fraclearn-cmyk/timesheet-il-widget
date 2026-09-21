@@ -1,157 +1,94 @@
-# Widget Builder for amoCRM Timesheet IL
-# Version: 3.0.2
-# Creates ZIP package with UTF-8 encoding (no BOM)
-
+# Build a fixed, runtime-only amoCRM widget package. Sources are never edited.
 param(
-    [string]$ApiUrl = "http://localhost:8000/api/v1",
-    [string]$CssUrl = ""
+    [string]$ApiUrl = "http://localhost:8000/api/v1"
 )
 
-function Set-UTF8Content {
-    param(
-        [string]$Path,
-        [string]$Value
-    )
-    $utf8NoBOM = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($Path, $Value, $utf8NoBOM)
-}
-
-function Remove-UTF8BOM {
-    param([string]$FilePath)
-    $content = [System.IO.File]::ReadAllBytes($FilePath)
-    if ($content.Length -ge 3 -and $content[0] -eq 0xEF -and $content[1] -eq 0xBB -and $content[2] -eq 0xBF) {
-        [System.IO.File]::WriteAllBytes($FilePath, $content[3..($content.Length - 1)])
-    }
-}
-
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "  amoCRM Widget Builder" -ForegroundColor Cyan
-Write-Host "  Timesheet IL v3.0.2" -ForegroundColor Cyan
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host ""
-
-# Step 1: Check files
-Write-Host "Step 1: Checking required files..." -ForegroundColor Cyan
-
-$requiredFiles = @(
-    "widget/manifest.json",
-    "widget/script.js",
-    "widget/styles.css",
-    "widget/i18n/ru.json",
-    "widget/i18n/en.json"
+$ErrorActionPreference = 'Stop'
+$root = [System.IO.Path]::GetFullPath($PSScriptRoot)
+$runtime = @(
+    'manifest.json', 'script.js', 'styles.css',
+    'settings/settings.html', 'settings/settings.js', 'settings/settings.css',
+    'i18n/ru.json', 'i18n/en.json',
+    'images/icon.png', 'images/logo.png', 'images/logo_main.png',
+    'images/logo_medium.png', 'images/logo_min.png', 'images/logo_small.png',
+    'images/tour_en.png', 'images/tour_ru.png'
 )
+$stage = Join-Path $root ('.widget-stage-' + [guid]::NewGuid().ToString('N'))
+$archiveTemp = Join-Path $root ('.widget-package-' + [guid]::NewGuid().ToString('N') + '.zip')
+$archiveFinal = Join-Path $root 'timesheet_il_widget.zip'
+$utf8 = New-Object System.Text.UTF8Encoding($false, $true)
 
-$allExist = $true
-foreach ($file in $requiredFiles) {
-    if (Test-Path $file) {
-        Write-Host "  ✓ $file" -ForegroundColor Green
-    }
-    else {
-        Write-Host "  ✗ $file (MISSING)" -ForegroundColor Red
-        $allExist = $false
-    }
+if (-not [uri]::IsWellFormedUriString($ApiUrl, [UriKind]::Absolute)) {
+    throw 'ApiUrl must be an absolute URL.'
 }
-
-if (-not $allExist) {
-    Write-Host ""
-    Write-Host "ERROR: Required files missing!" -ForegroundColor Red
-    exit 1
+$apiUri = [uri]$ApiUrl
+if ($apiUri.Scheme -ne 'https' -and -not ($apiUri.Scheme -eq 'http' -and $apiUri.Host -eq 'localhost')) {
+    throw 'ApiUrl must use HTTPS (HTTP localhost is allowed for development).'
 }
-
-# Step 2: Check images/logo.png
-Write-Host ""
-Write-Host "Step 2: Checking images..." -ForegroundColor Cyan
-
-if (Test-Path "widget/images/logo.png") {
-    Write-Host "  ✓ logo.png" -ForegroundColor Green
+if ($apiUri.UserInfo -or $apiUri.Query -or $apiUri.Fragment) {
+    throw 'ApiUrl must not contain credentials, query, or fragment.'
 }
-else {
-    Write-Host "  ✗ logo.png (REQUIRED)" -ForegroundColor Red
-    exit 1
-}
+$ApiUrl = $ApiUrl.TrimEnd('/')
 
-# Step 3: Remove BOM and prepare files
-Write-Host ""
-Write-Host "Step 3: Preparing files (removing BOM)..." -ForegroundColor Cyan
-
-$textFiles = @(
-    "widget/manifest.json",
-    "widget/script.js",
-    "widget/styles.css",
-    "widget/i18n/ru.json",
-    "widget/i18n/en.json"
-)
-
-foreach ($file in $textFiles) {
-    if (Test-Path $file) {
-        $content = [System.IO.File]::ReadAllBytes($file)
-        if ($content.Length -ge 3 -and $content[0] -eq 0xEF -and $content[1] -eq 0xBB -and $content[2] -eq 0xBF) {
-            [System.IO.File]::WriteAllBytes($file, $content[3..($content.Length - 1)])
-            Write-Host "  ✓ Removed BOM from: $file" -ForegroundColor Green
+try {
+    New-Item -ItemType Directory -Path $stage | Out-Null
+    foreach ($name in $runtime) {
+        $relative = $name.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        if ($name.StartsWith('settings/')) {
+            $source = Join-Path (Join-Path $root 'frontend') $relative
+        } else {
+            $source = Join-Path (Join-Path $root 'widget') $relative
+        }
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "Missing runtime source: $name"
+        }
+        $target = Join-Path $stage $relative
+        $parent = Split-Path -Parent $target
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        if ($name -match '\.(json|js|css|html)$') {
+            $content = [System.IO.File]::ReadAllText($source, $utf8).TrimStart([char]0xFEFF)
+            if ($name -eq 'i18n/ru.json' -or $name -eq 'i18n/en.json') {
+                $content = $content.Replace('http://your-server.com/api/v1', $ApiUrl)
+            }
+            [System.IO.File]::WriteAllText($target, $content, $utf8)
+        } else {
+            Copy-Item -LiteralPath $source -Destination $target
         }
     }
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $writer = [System.IO.Compression.ZipFile]::Open($archiveTemp, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($name in $runtime) {
+            $relative = $name.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $writer, (Join-Path $stage $relative), $name)
+        }
+    } finally {
+        $writer.Dispose()
+    }
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($archiveTemp)
+    try {
+        $actual = @($archive.Entries | ForEach-Object { $_.FullName })
+        if ($actual.Count -ne $runtime.Count -or (Compare-Object $actual $runtime)) {
+            throw 'Build produced unexpected or missing ZIP entries.'
+        }
+    } finally {
+        $archive.Dispose()
+    }
+    Move-Item -LiteralPath $archiveTemp -Destination $archiveFinal -Force
+    Write-Host "Built $archiveFinal ($($runtime.Count) runtime files)."
+    Write-Host 'The API URL is staged in i18n text only; enter and save it in the native amoCRM field.'
+} finally {
+    $verifiedStage = [System.IO.Path]::GetFullPath($stage)
+    if ($verifiedStage.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -and
+        (Test-Path -LiteralPath $verifiedStage)) {
+        Remove-Item -LiteralPath $verifiedStage -Recurse -Force
+    }
+    $verifiedTemp = [System.IO.Path]::GetFullPath($archiveTemp)
+    if ($verifiedTemp.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -and
+        (Test-Path -LiteralPath $verifiedTemp)) {
+        Remove-Item -LiteralPath $verifiedTemp -Force
+    }
 }
-
-# Step 4: Create ZIP
-Write-Host ""
-Write-Host "Step 4: Creating ZIP archive..." -ForegroundColor Cyan
-
-$zipPath = "timesheet_il_widget.zip"
-
-if (Test-Path $zipPath) {
-    Remove-Item $zipPath -Force
-    Write-Host "  ✓ Old archive removed" -ForegroundColor Yellow
-}
-
-$tempDir = "temp_widget_build"
-if (Test-Path $tempDir) {
-    Remove-Item $tempDir -Recurse -Force
-}
-New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-
-# Copy only required files (exclude demo.html)
-Copy-Item "widget/manifest.json" "$tempDir/" -Force
-Copy-Item "widget/script.js" "$tempDir/" -Force
-Copy-Item "widget/styles.css" "$tempDir/" -Force
-Copy-Item "widget/i18n" "$tempDir/" -Recurse -Force
-
-if (Test-Path "widget/images") {
-    Copy-Item "widget/images" "$tempDir/" -Recurse -Force
-}
-
-Write-Host "  ✓ Files copied to temp directory" -ForegroundColor Green
-
-# Create archive with correct structure (files in root, not in subfolder)
-$currentDir = Get-Location
-Set-Location $tempDir
-
-# Create the archive from within the temp directory
-Compress-Archive -Path * -DestinationPath "../$zipPath" -Force
-Write-Host "  ✓ Archive created: $zipPath" -ForegroundColor Green
-
-# Return to original directory
-Set-Location $currentDir
-
-# Cleanup
-Remove-Item $tempDir -Recurse -Force
-
-$zipSize = (Get-Item $zipPath).Length
-$zipSizeKB = [math]::Round($zipSize / 1KB, 2)
-
-Write-Host ""
-Write-Host "==========================================" -ForegroundColor Green
-Write-Host "  WIDGET BUILD SUCCESSFUL" -ForegroundColor Green
-Write-Host "==========================================" -ForegroundColor Green
-Write-Host ""
-Write-Host "Archive: $zipPath" -ForegroundColor Cyan
-Write-Host "Size: $zipSizeKB KB" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Files packaged:" -ForegroundColor Green
-Write-Host "  - manifest.json" -ForegroundColor White
-Write-Host "  - script.js" -ForegroundColor White
-Write-Host "  - styles.css" -ForegroundColor White
-Write-Host "  - i18n files (ru.json, en.json)" -ForegroundColor White
-Write-Host "  - images/logo.png" -ForegroundColor White
-Write-Host ""
-Write-Host "Next: Run validate_widget_zip.py to verify package" -ForegroundColor Cyan
-Write-Host ""
