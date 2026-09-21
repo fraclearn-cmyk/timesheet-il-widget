@@ -991,8 +991,15 @@ def test_department_kpi_filters_members_by_group_not_legacy_department(scoped_cl
 
 def test_department_chart_filters_members_by_current_manager_group(scoped_client):
     """A shared department must not pull a stale-group member into chart averages."""
+    from datetime import timedelta
+
     client, db = scoped_client
+    yesterday = (datetime.now() - timedelta(days=1)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    )
     db.get(User, 2).department_id = 60
+    db.get(WorkSession, 100).start_time = yesterday
+    db.get(WorkSession, 101).start_time = yesterday
     db.get(WorkSession, 100).total_work_time = 3600
     db.get(WorkSession, 101).total_work_time = 7200
     db.commit()

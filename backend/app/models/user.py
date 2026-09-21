@@ -56,6 +56,7 @@ class User(Base):
     department = relationship("Department")
 
     # Settings
+    hide_widget = Column(Boolean, nullable=False, default=False, server_default="false")
     allow_restart_session = Column(
         Boolean, default=False
     )  # Разрешение повторного запуска в тот же день

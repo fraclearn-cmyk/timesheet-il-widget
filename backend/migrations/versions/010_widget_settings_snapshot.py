@@ -69,7 +69,9 @@ def _reject_non_default_phase_3_values() -> None:
     ).first():
         raise RuntimeError("010 downgrade would erase non-default phase-3 values")
     if connection.execute(
-        sa.text("SELECT 1 FROM users WHERE amocrm_group_id IS NOT NULL LIMIT 1")
+        sa.text(
+            "SELECT 1 FROM users WHERE amocrm_group_id IS NOT NULL OR hide_widget LIMIT 1"
+        )
     ).first():
         raise RuntimeError("010 downgrade would erase non-default phase-3 values")
 
@@ -90,7 +92,7 @@ def upgrade() -> None:
             "allowed_statuses",
             sa.JSON(),
             nullable=False,
-            server_default=sa.text("'[\"working\", \"break\", \"finished\"]'::json"),
+            server_default=sa.text('\'["working", "break", "finished"]\'::json'),
         ),
     )
     op.add_column(
@@ -108,9 +110,7 @@ def upgrade() -> None:
             "revision", sa.Integer(), nullable=False, server_default=sa.text("1")
         ),
     )
-    op.add_column(
-        "widget_groups", sa.Column("name_key", sa.String(765), nullable=True)
-    )
+    op.add_column("widget_groups", sa.Column("name_key", sa.String(765), nullable=True))
     op.add_column(
         "widget_groups",
         sa.Column(
@@ -121,6 +121,26 @@ def upgrade() -> None:
         ),
     )
     op.add_column("users", sa.Column("amocrm_group_id", sa.Integer(), nullable=True))
+    op.add_column(
+        "users",
+        sa.Column(
+            "hide_widget", sa.Boolean(), nullable=False, server_default=sa.false()
+        ),
+    )
+    # Match the read snapshot's selection: active membership first, then latest
+    # history. Keep the old member flag as its historical snapshot.
+    op.execute(
+        sa.text(
+            """
+        UPDATE users AS u SET hide_widget = COALESCE((
+            SELECT m.hide_widget FROM group_members AS m
+            WHERE m.account_id = u.amocrm_account_id AND m.user_id = u.id
+            ORDER BY m.is_active DESC, COALESCE(m.updated_at, m.created_at) DESC, m.id DESC
+            LIMIT 1
+        ), false)
+    """
+        )
+    )
 
     _backfill_group_name_keys()
     op.alter_column("widget_groups", "name_key", nullable=False)
@@ -137,6 +157,7 @@ def downgrade() -> None:
         "uq_widget_groups_account_name_key", "widget_groups", type_="unique"
     )
     op.drop_column("users", "amocrm_group_id")
+    op.drop_column("users", "hide_widget")
     op.drop_column("widget_groups", "allow_restart_session")
     op.drop_column("widget_groups", "name_key")
     op.drop_column("widget_settings", "revision")

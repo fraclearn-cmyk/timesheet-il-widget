@@ -508,22 +508,28 @@ def test_010_backfills_defaults_and_preserves_group_membership_on_cycle(migrated
     command.upgrade(config, "010")
     with engine.connect() as conn:
         assert conn.scalar(text("select version_num from alembic_version")) == "010"
-        assert conn.execute(
-            text(
-                """
+        assert (
+            conn.execute(
+                text(
+                    """
                 SELECT support_phone, allowed_statuses, default_allow_restart_session, revision
                 FROM widget_settings WHERE account_id=100
                 """
-            )
-        ).one() == (None, ["working", "break", "finished"], False, 1)
-        assert conn.execute(
-            text(
-                """
+                )
+            ).one()
+            == (None, ["working", "break", "finished"], False, 1)
+        )
+        assert (
+            conn.execute(
+                text(
+                    """
                 SELECT name_key, allow_restart_session
                 FROM widget_groups WHERE id=10
                 """
-            )
-        ).one() == ("strasse", False)
+                )
+            ).one()
+            == ("strasse", False)
+        )
         assert conn.scalar(text("select amocrm_group_id from users where id=7")) is None
         assert conn.scalar(text("select count(*) from group_members where id=20")) == 1
         with pytest.raises(IntegrityError):
@@ -544,7 +550,10 @@ def test_010_backfills_defaults_and_preserves_group_membership_on_cycle(migrated
         assert conn.scalar(text("select count(*) from group_members where id=20")) == 1
     command.upgrade(config, "010")
     with engine.connect() as conn:
-        assert conn.scalar(text("select name_key from widget_groups where id=10")) == "strasse"
+        assert (
+            conn.scalar(text("select name_key from widget_groups where id=10"))
+            == "strasse"
+        )
         assert conn.scalar(text("select count(*) from group_members where id=20")) == 1
 
 
@@ -573,9 +582,7 @@ def test_010_preserves_maximum_unicode_casefold_expansion_and_account_scope(
     command.upgrade(config, "010")
     with engine.connect() as conn:
         rows = conn.execute(
-            text(
-                "SELECT account_id,name_key FROM widget_groups ORDER BY account_id"
-            )
+            text("SELECT account_id,name_key FROM widget_groups ORDER BY account_id")
         ).all()
         assert rows == [(100, expected_key), (200, expected_key)]
         assert (
@@ -624,6 +631,54 @@ def test_010_aborts_before_unique_constraint_when_normalized_names_collide(
     with engine.connect() as conn:
         assert conn.scalar(text("select version_num from alembic_version")) == "009"
         assert conn.scalar(text("select count(*) from widget_groups")) == 2
+
+
+def test_010_backfills_current_hide_widget_and_refuses_loss(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "009")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+            INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name)
+            VALUES (7,700,100,'Active'), (8,800,100,'Historical'), (9,900,100,'Unassigned')
+        """
+            )
+        )
+        conn.execute(
+            text(
+                """
+            INSERT INTO widget_groups
+            (id,account_id,name,timezone,work_start_time,work_end_time,is_active,created_at,updated_at)
+            VALUES (10,100,'Sales','UTC','09:00','18:00',true,now(),now())
+        """
+            )
+        )
+        conn.execute(
+            text(
+                """
+            INSERT INTO group_members
+            (id,account_id,group_id,user_id,track_time,hide_widget,is_active,created_at,updated_at)
+            VALUES (20,100,10,7,true,true,true,now(),now()),
+                   (21,100,10,7,true,false,false,now(),now()),
+                   (22,100,10,8,true,true,false,now(),now())
+        """
+            )
+        )
+    command.upgrade(config, "010")
+    with engine.connect() as conn:
+        assert conn.execute(
+            text("SELECT id,hide_widget FROM users ORDER BY id")
+        ).all() == [
+            (7, True),
+            (8, True),
+            (9, False),
+        ]
+    with pytest.raises(RuntimeError, match="phase-3 values"):
+        command.downgrade(config, "009")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "010"
+        assert conn.scalar(text("SELECT count(*) FROM group_members")) == 3
 
 
 def test_010_downgrade_refuses_non_default_phase_3_values(migrated_db):
