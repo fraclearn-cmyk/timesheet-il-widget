@@ -287,3 +287,90 @@ test('concurrent save calls share one in-flight snapshot save', async () => {
   await Promise.all([first, second]);
   assert.equal(controller.serialize().revision, 4);
 });
+
+test('pending save locks editing until the canonical response arrives', async () => {
+  let resolveSave;
+  let sent;
+  const canonical = snapshot();
+  canonical.revision = 4;
+  canonical.settings.support_phone = 'before';
+  const { root, controller } = setup(snapshot(), { save: (payload) => {
+    sent = payload;
+    return new Promise((resolve) => { resolveSave = resolve; });
+  } });
+  await controller.ready;
+  controller.setSupportPhone('before');
+  const pending = controller.save();
+  assert.equal(root.querySelector('[data-field="support_phone"]').disabled, true);
+  assert.equal(root.querySelector('[data-user-id="101"] [data-field="hide_widget"]').disabled, true);
+  assert.equal(root.querySelector('.timesheet-settings__add-group').disabled, true);
+  assert.equal(root.querySelector('.timesheet-settings__save').disabled, true);
+  assert.throws(() => controller.setSupportPhone('after'), /saving/i);
+  assert.throws(() => controller.setUser(101, { hide_widget: true }), /saving/i);
+  assert.equal(sent.settings.support_phone, 'before');
+  resolveSave(canonical);
+  await pending;
+  assert.equal(controller.serialize().settings.support_phone, 'before');
+  assert.equal(root.querySelector('[data-field="support_phone"]').disabled, false);
+});
+
+test('failed pending save unlocks draft controls', async () => {
+  let rejectSave;
+  const { root, controller } = setup(snapshot(), { save: () => new Promise((_, reject) => { rejectSave = reject; }) });
+  await controller.ready;
+  controller.setSupportPhone('draft');
+  const pending = controller.save();
+  assert.equal(root.querySelector('[data-field="support_phone"]').disabled, true);
+  rejectSave({ status: 429, retryAfter: '5' });
+  await assert.rejects(pending);
+  assert.equal(root.querySelector('[data-field="support_phone"]').disabled, false);
+  assert.equal(controller.serialize().settings.support_phone, 'draft');
+});
+
+test('renaming an accounting group refreshes assignment label without losing search or selection', async () => {
+  const { root, controller } = setup();
+  await controller.ready;
+  const select = root.querySelector('[data-user-id="101"] [data-field="group_ref"]');
+  select.value = 'id:10';
+  select.dispatchEvent(new root.ownerDocument.defaultView.Event('change', { bubbles: true }));
+  const search = root.querySelector('[data-field="search"]');
+  search.value = 'ANNA';
+  search.dispatchEvent(new root.ownerDocument.defaultView.Event('input', { bubbles: true }));
+  root.querySelectorAll('[role=tab]')[1].click();
+  const name = root.querySelector('[data-group-ref="id:10"] [data-field="name"]');
+  name.value = 'Новая группа';
+  name.dispatchEvent(new root.ownerDocument.defaultView.Event('input', { bubbles: true }));
+  root.querySelectorAll('[role=tab]')[0].click();
+  const refreshed = root.querySelector('[data-user-id="101"] [data-field="group_ref"]');
+  assert.equal(root.querySelector('[data-field="search"]').value, 'ANNA');
+  assert.equal(root.querySelectorAll('[data-user-id]').length, 1);
+  assert.equal(refreshed.value, 'id:10');
+  assert.equal(refreshed.querySelector('option[value="id:10"]').textContent, 'Новая группа');
+});
+
+test('activating an accounting group makes it available for assignment immediately', async () => {
+  const data = snapshot();
+  data.groups.push({ ...data.groups[0], id: 11, name: 'Резерв', is_active: false });
+  const { root, controller } = setup(data);
+  await controller.ready;
+  assert.equal(root.querySelector('[data-user-id="101"] option[value="id:11"]'), null);
+  root.querySelectorAll('[role=tab]')[1].click();
+  const active = root.querySelector('[data-group-ref="id:11"] [data-field="is_active"]');
+  active.checked = true;
+  active.dispatchEvent(new root.ownerDocument.defaultView.Event('change', { bubbles: true }));
+  root.querySelectorAll('[role=tab]')[0].click();
+  assert.equal(root.querySelector('[data-user-id="101"] option[value="id:11"]').textContent, 'Резерв');
+});
+
+test('unchanged inactive historical user does not fail active-group client validation', async () => {
+  const data = snapshot();
+  data.groups[0].is_active = false;
+  data.users[1].is_active = false;
+  const { controller, saves } = setup(data);
+  await controller.ready;
+  assert.equal(controller.validate().length, 0);
+  await controller.save();
+  assert.deepEqual(JSON.parse(JSON.stringify(saves[0].users[1])), {
+    amocrm_user_id: 102, track_time: true, hide_widget: false, group_ref: 'id:10',
+  });
+});

@@ -133,6 +133,9 @@
   SettingsController.prototype.switchTab = function (tab) {
     if (tab !== 'users' && tab !== 'settings') return;
     this.activeTab = tab;
+    if (tab === 'users' && !this.pendingSave) {
+      this.renderUsers(this.root.querySelector('.timesheet-settings__users'));
+    }
     this.root.querySelectorAll('[role=tab]').forEach(function (item, index) {
       item.setAttribute('aria-selected', String((index === 0) === (tab === 'users')));
     });
@@ -265,6 +268,7 @@
     panel.append(groups);
   };
   SettingsController.prototype.addGroup = function () {
+    if (this.pendingSave) throw new Error('Cannot edit while saving');
     this.groupCounter += 1;
     this.groups.push({ client_key: 'group_' + this.groupCounter, name: '', timezone: 'Europe/Minsk',
       work_start_time: '09:00:00', work_end_time: '18:00:00', manager_amocrm_user_id: null,
@@ -272,6 +276,7 @@
     this.render();
   };
   SettingsController.prototype.setUser = function (id, changes) {
+    if (this.pendingSave) throw new Error('Cannot edit while saving');
     var original = this.snapshot.users.find(function (item) { return item.amocrm_user_id === id; });
     var user = this.users.find(function (item) { return item.amocrm_user_id === id; });
     if (!user) throw new Error('Unknown user');
@@ -281,6 +286,7 @@
     });
   };
   SettingsController.prototype.setSupportPhone = function (value) {
+    if (this.pendingSave) throw new Error('Cannot edit while saving');
     if (!this.settings) throw new Error('Settings have not loaded');
     this.settings.support_phone = value || null;
     var input = this.root.querySelector('[data-field="support_phone"]');
@@ -301,6 +307,7 @@
     });
     var active = new Set(this.groups.filter(function (group) { return group.is_active; }).map(function (group) { return self.groupRef(group); }));
     this.users.forEach(function (user, index) {
+      if (!self.snapshot.users[index].is_active) return;
       if (user.track_time && !user.group_ref) errors.push({ code: 'TRACKED_USER_GROUP_REQUIRED', field: 'users.' + index + '.group_ref' });
       else if (user.track_time && !active.has(user.group_ref)) errors.push({ code: 'GROUP_INACTIVE', field: 'users.' + index + '.group_ref' });
     });
@@ -343,8 +350,22 @@
     var self = this;
     var pending = this.performSave();
     this.pendingSave = pending;
-    pending.then(function () { self.pendingSave = null; }, function () { self.pendingSave = null; });
+    this.setEditingLocked(true);
+    function unlock() { self.pendingSave = null; self.setEditingLocked(false); }
+    pending.then(unlock, unlock);
     return pending;
+  };
+  SettingsController.prototype.setEditingLocked = function (locked) {
+    this.root.querySelectorAll('.timesheet-settings input, .timesheet-settings select, ' +
+      '.timesheet-settings__add-group, .timesheet-settings__save').forEach(function (item) {
+      if (locked && !item.disabled) {
+        item.disabled = true;
+        item.dataset.saveLocked = 'true';
+      } else if (!locked && item.dataset.saveLocked === 'true') {
+        item.disabled = false;
+        delete item.dataset.saveLocked;
+      }
+    });
   };
   SettingsController.prototype.performSave = async function () {
     if (!this.snapshot || this.destroyed) throw new Error('Settings are unavailable');
