@@ -74,6 +74,32 @@ class WidgetPackageTests(unittest.TestCase):
         self.assertFalse(validator.validate())
         self.assertTrue(any("Credential-like" in error for error in validator.errors))
 
+    def test_validator_rejects_explicit_named_credential_literals(self):
+        synthetic_assignments = [
+            'const AMOCRM_CLIENT_SECRET = "synthetic-example-client-secret-value";',
+            "const clientSecret = 'synthetic-example-client-secret-value';",
+            "const access_token = 'synthetic-example-access-token-value';",
+            "const refreshToken = `synthetic-example-refresh-token-value`;",
+            'const config = { "client_secret": "synthetic-example-client-secret-value" };',
+        ]
+        for assignment in synthetic_assignments:
+            with self.subTest(assignment=assignment.split("=")[0]):
+                entries = self.entries()
+                entries["settings/settings.js"] += ("\n" + assignment).encode("utf-8")
+                validator = WidgetValidator(self.make_zip(entries))
+                self.assertFalse(validator.validate())
+                self.assertIn("Credential-like value in settings/settings.js", validator.errors)
+
+    def test_validator_allows_empty_credential_placeholders_and_identifier_references(self):
+        entries = self.entries()
+        entries["settings/settings.js"] += (
+            '\nconst AMOCRM_CLIENT_SECRET = "";\n'
+            "const access_token = '';\n"
+            'const refreshToken = process.env.REFRESH_TOKEN;\n'
+            'const config = { client_secret: AMOCRM_CLIENT_SECRET };\n'
+        ).encode("utf-8")
+        self.assertTrue(WidgetValidator(self.make_zip(entries)).validate())
+
     def test_validator_rejects_corrupt_required_image(self):
         entries = self.entries()
         entries["images/logo.png"] = b"not a PNG"
@@ -104,8 +130,26 @@ class WidgetPackageTests(unittest.TestCase):
                 self.assertFalse(archive.read("i18n/en.json").startswith(b"\xef\xbb\xbf"))
             for name, content in before.items():
                 self.assertEqual((work / name).read_bytes(), content, name)
-            self.assertFalse((work / "temp_widget_build").exists())
+            self.assertEqual(list(work.glob(".widget-stage-*")), [])
+            self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
             self.assertTrue(WidgetValidator(work / "timesheet_il_widget.zip").validate())
+
+    def test_builder_removes_temporary_artifacts_after_missing_source_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            shutil.copytree(ROOT / "widget", work / "widget")
+            shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
+            shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
+            (work / "frontend" / "settings" / "settings.css").unlink()
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(work / "build_widget.ps1"),
+                 "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Missing runtime source: settings/settings.css", result.stdout + result.stderr)
+            self.assertEqual(list(work.glob(".widget-stage-*")), [])
+            self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
+            self.assertFalse((work / "timesheet_il_widget.zip").exists())
 
 
 if __name__ == "__main__":

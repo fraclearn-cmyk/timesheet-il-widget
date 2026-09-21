@@ -23,6 +23,29 @@ SECRET_PATTERNS = (
     re.compile(r"\b(?:sk-[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16})\b"),
     re.compile(r"\beyJ[A-Za-z0-9_-]{16,}\.eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"),
 )
+SENSITIVE_KEY = r"(?:(?:amocrm[_-]?)?client[_-]?secret|access[_-]?token|refresh[_-]?token)"
+SENSITIVE_ASSIGNMENT = re.compile(
+    rf"(?<![\w$])(?:[\"']{SENSITIVE_KEY}[\"']|{SENSITIVE_KEY})\s*[:=]\s*([\"'`])",
+    re.IGNORECASE,
+)
+
+
+def has_named_secret_literal(content):
+    """Flag nonempty string literals assigned to well-known credential names."""
+    for match in SENSITIVE_ASSIGNMENT.finditer(content):
+        quote = match.group(1)
+        start = match.end()
+        index = start
+        while index < len(content):
+            if content[index] == "\\":
+                index += 2
+            elif content[index] == quote:
+                if content[start:index].strip():
+                    return True
+                break
+            else:
+                index += 1
+    return False
 
 
 class WidgetValidator:
@@ -68,7 +91,7 @@ class WidgetValidator:
                             json.loads(content)
                         except json.JSONDecodeError:
                             self.errors.append(f"Invalid JSON in {name}")
-                    if any(pattern.search(content) for pattern in SECRET_PATTERNS):
+                    if any(pattern.search(content) for pattern in SECRET_PATTERNS) or has_named_secret_literal(content):
                         self.errors.append(f"Credential-like value in {name}")
 
                 if "manifest.json" in text:
