@@ -23,7 +23,7 @@ SECRET_PATTERNS = (
     re.compile(r"\b(?:sk-[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16})\b"),
     re.compile(r"\beyJ[A-Za-z0-9_-]{16,}\.eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"),
 )
-SENSITIVE_KEY = r"(?:(?:amocrm[_-]?)?client[_-]?secret|access[_-]?token|refresh[_-]?token)"
+SENSITIVE_KEY = r"(?:amocrm[_-]?)?(?:client[_-]?secret|access[_-]?token|refresh[_-]?token)"
 SENSITIVE_ASSIGNMENT = re.compile(
     rf"(?<![\w$])(?:[\"']{SENSITIVE_KEY}[\"']|{SENSITIVE_KEY})\s*[:=]\s*([\"'`])",
     re.IGNORECASE,

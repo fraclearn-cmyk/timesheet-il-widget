@@ -74,8 +74,38 @@ try {
         if ($actual.Count -ne $runtime.Count -or (Compare-Object $actual $runtime)) {
             throw 'Build produced unexpected or missing ZIP entries.'
         }
+        foreach ($jsonName in @('manifest.json', 'i18n/ru.json', 'i18n/en.json')) {
+            $stream = $archive.GetEntry($jsonName).Open()
+            try {
+                $reader = New-Object System.IO.StreamReader($stream, $utf8, $false)
+                try {
+                    $jsonText = $reader.ReadToEnd()
+                } finally {
+                    $reader.Dispose()
+                }
+                try {
+                    $null = ConvertFrom-Json -InputObject $jsonText -ErrorAction Stop
+                } catch {
+                    throw "Invalid JSON in staged archive: $jsonName"
+                }
+            } finally {
+                $stream.Dispose()
+            }
+        }
     } finally {
         $archive.Dispose()
+    }
+    $validatorScript = Join-Path $root 'validate_widget_zip.py'
+    if (-not (Test-Path -LiteralPath $validatorScript -PathType Leaf)) {
+        throw 'Widget ZIP validator is missing.'
+    }
+    $pythonExe = Join-Path $root '.venv312\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
+        $pythonExe = (Get-Command python -ErrorAction Stop).Source
+    }
+    & $pythonExe $validatorScript $archiveTemp
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Staged widget ZIP failed validation.'
     }
     Move-Item -LiteralPath $archiveTemp -Destination $archiveFinal -Force
     Write-Host "Built $archiveFinal ($($runtime.Count) runtime files)."

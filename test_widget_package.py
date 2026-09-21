@@ -77,6 +77,10 @@ class WidgetPackageTests(unittest.TestCase):
     def test_validator_rejects_explicit_named_credential_literals(self):
         synthetic_assignments = [
             'const AMOCRM_CLIENT_SECRET = "synthetic-example-client-secret-value";',
+            'const AMOCRM_ACCESS_TOKEN = "synthetic-example-access-token-value";',
+            'const AMOCRM_REFRESH_TOKEN = "synthetic-example-refresh-token-value";',
+            'const amoCrmAccessToken = "synthetic-example-access-token-value";',
+            'const amoCrmRefreshToken = "synthetic-example-refresh-token-value";',
             "const clientSecret = 'synthetic-example-client-secret-value';",
             "const access_token = 'synthetic-example-access-token-value';",
             "const refreshToken = `synthetic-example-refresh-token-value`;",
@@ -94,8 +98,11 @@ class WidgetPackageTests(unittest.TestCase):
         entries = self.entries()
         entries["settings/settings.js"] += (
             '\nconst AMOCRM_CLIENT_SECRET = "";\n'
+            'const AMOCRM_ACCESS_TOKEN = "";\n'
+            "const AMOCRM_REFRESH_TOKEN = '';\n"
             "const access_token = '';\n"
             'const refreshToken = process.env.REFRESH_TOKEN;\n'
+            'const amoCrmAccessToken = process.env.ACCESS_TOKEN;\n'
             'const config = { client_secret: AMOCRM_CLIENT_SECRET };\n'
         ).encode("utf-8")
         self.assertTrue(WidgetValidator(self.make_zip(entries)).validate())
@@ -113,6 +120,7 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(ROOT / "widget", work / "widget")
             shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
+            shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
             locale = work / "widget" / "i18n" / "en.json"
             locale.write_bytes(b"\xef\xbb\xbf" + locale.read_bytes())
             before = {str(path.relative_to(work)): path.read_bytes()
@@ -140,6 +148,7 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(ROOT / "widget", work / "widget")
             shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
+            shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
             (work / "frontend" / "settings" / "settings.css").unlink()
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(work / "build_widget.ps1"),
@@ -147,6 +156,45 @@ class WidgetPackageTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Missing runtime source: settings/settings.css", result.stdout + result.stderr)
+            self.assertEqual(list(work.glob(".widget-stage-*")), [])
+            self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
+            self.assertFalse((work / "timesheet_il_widget.zip").exists())
+
+    def test_builder_removes_temporary_artifacts_after_late_json_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            shutil.copytree(ROOT / "widget", work / "widget")
+            shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
+            shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
+            shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
+            (work / "widget" / "i18n" / "en.json").write_text("{ invalid", encoding="utf-8")
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(work / "build_widget.ps1"),
+                 "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Invalid JSON in staged archive: i18n/en.json", result.stdout + result.stderr)
+            self.assertEqual(list(work.glob(".widget-stage-*")), [])
+            self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
+            self.assertFalse((work / "timesheet_il_widget.zip").exists())
+
+    def test_builder_does_not_publish_zip_with_synthetic_named_secret(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            shutil.copytree(ROOT / "widget", work / "widget")
+            shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
+            shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
+            shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
+            settings = work / "frontend" / "settings" / "settings.js"
+            settings.write_bytes(settings.read_bytes() +
+                b'\nconst AMOCRM_ACCESS_TOKEN = "synthetic-example-access-token-value";\n')
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(work / "build_widget.ps1"),
+                 "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Staged widget ZIP failed validation", result.stdout + result.stderr)
+            self.assertNotIn("synthetic-example-access-token-value", result.stdout + result.stderr)
             self.assertEqual(list(work.glob(".widget-stage-*")), [])
             self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
             self.assertFalse((work / "timesheet_il_widget.zip").exists())
