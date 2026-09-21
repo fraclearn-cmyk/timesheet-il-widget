@@ -132,7 +132,7 @@ class WidgetPackageTests(unittest.TestCase):
                  "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            with zipfile.ZipFile(work / "timesheet_il_widget.zip") as archive:
+            with zipfile.ZipFile(work / "widget.zip") as archive:
                 self.assertEqual(set(archive.namelist()), RUNTIME)
                 self.assertIn(b"https://api.example.test/api/v1", archive.read("i18n/en.json"))
                 self.assertFalse(archive.read("i18n/en.json").startswith(b"\xef\xbb\xbf"))
@@ -140,7 +140,7 @@ class WidgetPackageTests(unittest.TestCase):
                 self.assertEqual((work / name).read_bytes(), content, name)
             self.assertEqual(list(work.glob(".widget-stage-*")), [])
             self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
-            self.assertTrue(WidgetValidator(work / "timesheet_il_widget.zip").validate())
+            self.assertTrue(WidgetValidator(work / "widget.zip").validate())
 
     def test_builder_removes_temporary_artifacts_after_missing_source_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -158,7 +158,7 @@ class WidgetPackageTests(unittest.TestCase):
             self.assertIn("Missing runtime source: settings/settings.css", result.stdout + result.stderr)
             self.assertEqual(list(work.glob(".widget-stage-*")), [])
             self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
-            self.assertFalse((work / "timesheet_il_widget.zip").exists())
+            self.assertFalse((work / "widget.zip").exists())
 
     def test_builder_removes_temporary_artifacts_after_late_json_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -176,7 +176,7 @@ class WidgetPackageTests(unittest.TestCase):
             self.assertIn("Invalid JSON in staged archive: i18n/en.json", result.stdout + result.stderr)
             self.assertEqual(list(work.glob(".widget-stage-*")), [])
             self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
-            self.assertFalse((work / "timesheet_il_widget.zip").exists())
+            self.assertFalse((work / "widget.zip").exists())
 
     def test_builder_does_not_publish_zip_with_synthetic_named_secret(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -188,6 +188,8 @@ class WidgetPackageTests(unittest.TestCase):
             settings = work / "frontend" / "settings" / "settings.js"
             settings.write_bytes(settings.read_bytes() +
                 b'\nconst AMOCRM_ACCESS_TOKEN = "synthetic-example-access-token-value";\n')
+            previous_archive = work / "widget.zip"
+            previous_archive.write_bytes(b"previous validated archive")
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(work / "build_widget.ps1"),
                  "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
@@ -197,7 +199,7 @@ class WidgetPackageTests(unittest.TestCase):
             self.assertNotIn("synthetic-example-access-token-value", result.stdout + result.stderr)
             self.assertEqual(list(work.glob(".widget-stage-*")), [])
             self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
-            self.assertFalse((work / "timesheet_il_widget.zip").exists())
+            self.assertEqual(previous_archive.read_bytes(), b"previous validated archive")
 
 
 if __name__ == "__main__":

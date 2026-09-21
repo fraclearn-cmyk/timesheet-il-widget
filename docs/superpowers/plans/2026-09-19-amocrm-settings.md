@@ -547,7 +547,7 @@ git commit -m "feat: connect amoCRM settings lifecycle"
 
 **Interfaces:**
 - Consumes: все backend/frontend/widget artifacts Tasks 1–6.
-- Produces: проверяемый `timesheet_il_widget.zip` build artifact (ignored by Git), phase-3 completion evidence in `Plan.md`.
+- Produces: проверяемый `widget.zip` build artifact (ignored by Git), phase-3 local-completion evidence in `Plan.md`.
 
 - [ ] **Step 1: Добавить failing package/browser smoke assertions**
 
@@ -574,7 +574,7 @@ Run: `npm run test:settings`
 
 Run: `powershell -ExecutionPolicy Bypass -File .\build_widget.ps1 -ApiUrl "https://storage-turkey-multitask.ngrok-free.dev/api/v1"`
 
-Run: `.\.venv312\Scripts\python.exe .\validate_widget_zip.py .\timesheet_il_widget.zip`
+Run: `.\.venv312\Scripts\python.exe .\validate_widget_zip.py .\widget.zip`
 
 Expected before implementation: validator FAIL из-за отсутствующих `settings/*`.
 
@@ -607,7 +607,7 @@ Reviewer сверяет spec, Review Focus, account isolation, transaction rollb
 
 - [ ] **Step 6: Обновить `Plan.md` фактическими результатами**
 
-Отметить все пункты фазы 3 `[x]`, статус «Выполнена» с датой и командами, заполнить «Факт», добавить отчёт: что сделано; созданные/изменённые файлы; что пользователь уже может проверить; блокеры/риски. Не отмечать фазу завершённой, если live amoCRM smoke или обязательный gate не пройден.
+Отметить все локальные пункты фазы 3 `[x]`, статус «Локально реализована» с датой и командами, заполнить «Факт», добавить отчёт: что сделано; созданные/изменённые файлы; что пользователь уже может проверить; блокеры/риски. Complete live amoCRM smoke и детальный acceptance checklist отложены до локальной реализации всех фаз и не должны быть выданы за выполненные.
 
 - [ ] **Step 7: Commit and push phase**
 

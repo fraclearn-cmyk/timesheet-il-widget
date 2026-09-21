@@ -48,7 +48,7 @@
 | 0 | Контракт и технический spike amoCRM | Выполнена с подтверждёнными ограничениями | 2026-09-16 | `pytest -q`: 110 passed; live OAuth/account/users/rights/refresh и 7 типов событий проверены; calls/UI-iframe ограничены |
 | 1 | Единая модель данных и миграции | Выполнена | 2026-09-18 | `pytest -q`: 143 passed; 29 точечных unit-тестов прошли при независимом review; PostgreSQL upgrade/downgrade: 4 passed; одна голова `005` |
 | 2 | OAuth, синхронизация пользователей и права | Выполнена | 2026-09-19 | `pytest`: 248 passed, 10 skipped; PostgreSQL migrations: 10 passed; независимый entry-gate review: PASS; одна голова `009` |
-| 3 | Настройки amoMarket: пользователи и группы | В работе | 2026-09-21 | Локально: backend `369 passed`, Node `39 passed`, PostgreSQL migrations `15 passed`, package tests `11 passed`, `010 (head)`, ZIP `16` файлов; live amoCRM и already-stamped `010` не закрыты |
+| 3 | Настройки amoMarket: пользователи и группы | Локально реализована; live gate отложен | 2026-09-22 | Локально: backend `369 passed`, Node `39 passed`, PostgreSQL migrations `15 passed`, package tests `11 passed`, `010 (head)`, ZIP `16` файлов; complete live amoCRM smoke и детальная приёмка отложены до локальной реализации всех фаз |
 | 4 | Рабочие статусы и блокирующий интерфейс | Не начата | — | — |
 | 5 | Источник событий amoCRM и активность | Не начата | — | — |
 | 6 | API мониторинга и окно активности | Не начата | — | — |
@@ -501,18 +501,18 @@ flowchart TD
 #### Что можно проверить
 
 - Из `backend/`: `..\.venv312\Scripts\python.exe -m pytest -q --disable-warnings` с disposable `TEST_POSTGRES_ADMIN_URL` — `369 passed`; отдельно `tests/integration/test_migrations.py -q` — `15 passed`, `alembic heads` — одна `010 (head)`.
-- Из корня: `npm run test:settings` — `39 passed`; `.\.venv312\Scripts\python.exe -m unittest -q test_widget_package` — `11 passed`; `powershell -ExecutionPolicy Bypass -File .\build_widget.ps1 -ApiUrl "https://storage-turkey-multitask.ngrok-free.dev/api/v1"`, затем `.\.venv312\Scripts\python.exe .\validate_widget_zip.py .\timesheet_il_widget.zip` — `16` точных runtime-файлов; `git diff --check` — exit 0.
-- Ответственному за тестовый amoCRM: загрузить ZIP, сохранить `api_url`, открыть расширенные настройки и проверить две вкладки; создать группу, назначить пользователя, отдельно переключить `track_time` и `hide_widget`, нажать единственную стандартную кнопку сохранения amoCRM, перезагрузить страницу, проверить восстановленные значения. Затем открыть рабочую область и убедиться в отсутствии редактора; под employee/manager убедиться в отказе доступа. Проверить сеть: `X-Auth-Token`, CORS и один `PUT` на сохранение без ручной передачи OAuth token.
+- Из корня: `npm run test:settings` — `39 passed`; `.\.venv312\Scripts\python.exe -m unittest -q test_widget_package` — `11 passed`; `powershell -ExecutionPolicy Bypass -File .\build_widget.ps1 -ApiUrl "https://storage-turkey-multitask.ngrok-free.dev/api/v1"`, затем `.\.venv312\Scripts\python.exe .\validate_widget_zip.py .\widget.zip` — `16` точных runtime-файлов; `git diff --check` — exit 0.
+- Complete live amoCRM smoke и детальный пошаговый acceptance checklist отложены глобальным решением пользователя до того, как все фазы будут локально реализованы. Это не является live-верификацией фазы 3 и не отменяет будущую проверку.
 
 #### Блокеры и остаточные риски
 
-- Live amoCRM не проверен: jsdom не доказывает порядок native callbacks, ожидание асинхронного `onSave` перед закрытием окна и реальные `X-Auth-Token`/CORS. Поэтому фаза остаётся `В работе`.
+- Live amoCRM не проверен: jsdom не доказывает порядок native callbacks, ожидание асинхронного `onSave` перед закрытием окна и реальные `X-Auth-Token`/CORS. По новому глобальному решению этот live gate и подробная приёмка отложены до локальной реализации всех фаз; фаза 3 принята только как локально реализованная, не live-верифицированная.
 - Локальная persistent БД проверена 2026-09-22: текущая ревизия `e1db632ded80` (до `010`), `users.hide_widget` пока отсутствует по ожидаемой причине; в ней есть 2 записи `work_sessions`. Перед обновлением этой БД нужна резервная копия. Другая persistent БД, уже stamped ранней локальной `010`, может не иметь `users.hide_widget`: до её deployment необходимы backup и schema preflight; при отсутствующей колонке развертывание остановить до отдельной проверенной forward repair migration. Свежий PostgreSQL cycle этого пути не доказывает.
 - Отложенные minor: параметризация downgrade-guard по всем новым колонкам, выбор historical membership при equal-timestamp ID tie, уже неконсистентная inactive group + inactive membership. Они не скрыты локальным зелёным gate.
 
 ## Текущий отчёт по фазам
 
-Фазы 0–2 завершены; фаза 3 локально реализована и прошла backend/frontend/package/свежий PostgreSQL gate, но остаётся `В работе` до live amoCRM smoke и preflight/repair уже stamped `010` БД. Рабочий интерфейс остаётся задачей фазы 4.
+Фазы 0–2 завершены; фаза 3 локально реализована и принята для перехода к фазе 4 после backend/frontend/package/свежего PostgreSQL gate. Complete live amoCRM smoke и детальный acceptance checklist отложены до локальной реализации всех фаз; они не были выполнены и не считаются закрытыми. Preflight/repair уже stamped `010` БД также остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -526,3 +526,4 @@ flowchart TD
 | 2026-09-19 | Фаза 2 завершена; OAuth/request context, user sync, RBAC, migrations `006`–`009` и self-only mutations | 248 backend tests, 10 real-PostgreSQL migration tests и независимый security entry-gate review подтвердили критерии |
 | 2026-09-21 | Фаза 3 локально реализована, но оставлена `В работе` | 369 backend, 39 Node, 15 PostgreSQL migration, 11 package tests и точный ZIP прошли; live amoCRM и preflight старой `010` остаются обязательными |
 | 2026-09-22 | Убрана вторая кнопка сохранения; проверена локальная БД | Теперь сохранение идёт через стандартный `onSave` amoCRM; локальная БД на ревизии до `010`, содержит 2 рабочие записи и требует backup перед обновлением; live smoke остаётся открытым |
+| 2026-09-22 | Фаза 3 принята как локально реализованная; архив переименован в `widget.zip` | Пользователь отложил complete live amoCRM smoke и детальный acceptance checklist до локальной реализации всех фаз; staged validation и source non-mutation сохранены |

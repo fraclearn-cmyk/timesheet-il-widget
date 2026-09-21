@@ -15,7 +15,7 @@ $runtime = @(
 )
 $stage = Join-Path $root ('.widget-stage-' + [guid]::NewGuid().ToString('N'))
 $archiveTemp = Join-Path $root ('.widget-package-' + [guid]::NewGuid().ToString('N') + '.zip')
-$archiveFinal = Join-Path $root 'timesheet_il_widget.zip'
+$archiveFinal = Join-Path $root 'widget.zip'
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
 
 if (-not [uri]::IsWellFormedUriString($ApiUrl, [UriKind]::Absolute)) {
