@@ -237,6 +237,13 @@ class SettingsSnapshotService:
                         "Нельзя изменять настройки неактивного сотрудника.",
                         f"{field}.amocrm_user_id",
                     )
+                group = references.get(previous_ref)
+                if previous.is_active and (group is None or not group.is_active):
+                    raise SettingsProblem(
+                        "GROUP_IN_USE",
+                        "Нельзя отключить группу с активным членством неактивного сотрудника.",
+                        "groups",
+                    )
                 continue
             if entry.track_time and entry.group_ref is None:
                 raise SettingsProblem(
@@ -262,6 +269,20 @@ class SettingsSnapshotService:
                         "Выберите активную группу учёта.",
                         f"{field}.group_ref",
                     )
+        # This is a full snapshot, not a patch. Match the reader's visible set
+        # (active users plus users with history), so omissions cannot silently
+        # disable inactive users or retain tracked history without participation.
+        required_users = {
+            user.amocrm_user_id
+            for user in users.values()
+            if user.is_active or user.id in selected
+        }
+        if required_users - seen_users:
+            raise SettingsProblem(
+                "SETTINGS_USERS_INCOMPLETE",
+                "Снимок должен содержать всех пользователей. Обновите данные и повторите попытку.",
+                "users",
+            )
         return groups, users, memberships, selected
 
     def _upsert_groups(self, account_id, payload, existing, users):
@@ -305,17 +326,17 @@ class SettingsSnapshotService:
         self, account_id, payload, users, memberships, selected, group_ids
     ):
         entries = {users[entry.amocrm_user_id].id: entry for entry in payload.users}
+        active_user_ids = {user.id for user in users.values() if user.is_active}
         for member in memberships:
-            if not member.is_active:
+            if not member.is_active or member.user_id not in active_user_ids:
                 continue
-            entry = entries.get(member.user_id)
+            entry = entries[member.user_id]
             if (
-                entry is None
-                or not entry.track_time
+                not entry.track_time
                 or group_ids.get(entry.group_ref) != member.group_id
             ):
                 member.is_active = False
-                if entry is None or not entry.track_time:
+                if not entry.track_time:
                     member.track_time = False
         # Close the old active row before inserting its replacement so the
         # partial unique index never observes two active rows for one user.

@@ -209,16 +209,98 @@ def test_deactivation_preserves_history(scoped_client, db, valid_snapshot, omit_
     assert employee["hide_widget"] is True
 
 
-def test_omitted_user_membership_is_closed(scoped_client, db, valid_snapshot):
+@pytest.mark.parametrize("user_active", [True, False])
+@pytest.mark.parametrize("membership_active", [True, False])
+def test_omitted_visible_user_is_rejected_without_changes(
+    scoped_client, db, user_active, membership_active
+):
+    db.get(User, 2).is_active = user_active
+    db.get(GroupMember, 1).is_active = membership_active
+    db.commit()
+    admin = scoped_client("admin")
+    valid_snapshot = snapshot_update(admin.get("/api/v1/settings/snapshot").json())
     valid_snapshot["users"] = [
         u for u in valid_snapshot["users"] if u["amocrm_user_id"] != 102
     ]
+    valid_snapshot["settings"]["support_phone"] = "must not save"
+    valid_snapshot["groups"][0]["name"] = "must not save"
+    before = dump_state(db)
+    response = admin.put("/api/v1/settings/snapshot", json=valid_snapshot)
+    assert response.status_code == 409, response.text
+    assert response.json()["error"] == {
+        "code": "SETTINGS_USERS_INCOMPLETE",
+        "message": "Снимок должен содержать всех пользователей. Обновите данные и повторите попытку.",
+        "field": "users",
+    }
+    assert dump_state(db) == before
+
+
+@pytest.mark.parametrize("track_time", [True, False])
+def test_inactive_user_resubmit_preserves_active_membership(
+    scoped_client, db, track_time
+):
+    db.get(User, 2).is_active = False
+    db.get(GroupMember, 1).track_time = track_time
+    db.commit()
+    admin = scoped_client("admin")
+    payload = snapshot_update(admin.get("/api/v1/settings/snapshot").json())
+    before = dump_state(db)
+    response = admin.put("/api/v1/settings/snapshot", json=payload)
+    assert response.status_code == 200, response.text
+    after = dump_state(db)
+    assert after["group_members"] == before["group_members"]
+    assert after["users"] == before["users"]
+
+
+def test_full_snapshot_requires_unassigned_active_users(
+    scoped_client, db, valid_snapshot
+):
+    valid_snapshot["users"] = [
+        user for user in valid_snapshot["users"] if user["amocrm_user_id"] != 101
+    ]
+    before = dump_state(db)
     response = scoped_client("admin").put(
         "/api/v1/settings/snapshot", json=valid_snapshot
     )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "SETTINGS_USERS_INCOMPLETE"
+    assert dump_state(db) == before
+
+
+def test_full_snapshot_does_not_require_hidden_inactive_nonmember(scoped_client, db):
+    db.add(
+        User(
+            amocrm_user_id=104, amocrm_account_id=10, name="Not shown", is_active=False
+        )
+    )
+    db.commit()
+    admin = scoped_client("admin")
+    payload = snapshot_update(admin.get("/api/v1/settings/snapshot").json())
+    assert 104 not in {user["amocrm_user_id"] for user in payload["users"]}
+    response = admin.put("/api/v1/settings/snapshot", json=payload)
     assert response.status_code == 200, response.text
-    assert db.get(GroupMember, 1).is_active is False
-    assert db.get(GroupMember, 1).track_time is False
+
+
+@pytest.mark.parametrize("omit_group", [True, False])
+def test_inactive_active_membership_prevents_group_deactivation(
+    scoped_client, db, omit_group
+):
+    db.get(User, 2).is_active = False
+    db.commit()
+    admin = scoped_client("admin")
+    payload = snapshot_update(admin.get("/api/v1/settings/snapshot").json())
+    if omit_group:
+        payload["groups"] = [group for group in payload["groups"] if group["id"] != 10]
+    else:
+        next(group for group in payload["groups"] if group["id"] == 10)[
+            "is_active"
+        ] = False
+    before = dump_state(db)
+    response = admin.put("/api/v1/settings/snapshot", json=payload)
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "GROUP_IN_USE"
+    assert response.json()["error"]["field"] == "groups"
+    assert dump_state(db) == before
 
 
 def test_disabling_historical_tracking_without_group_restores_false(scoped_client, db):

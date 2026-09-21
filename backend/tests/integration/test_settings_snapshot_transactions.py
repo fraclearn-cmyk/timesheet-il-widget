@@ -73,11 +73,23 @@ def _payload(phone):
             ],
             "users": [
                 {
+                    "amocrm_user_id": 101,
+                    "group_ref": None,
+                    "track_time": False,
+                    "hide_widget": False,
+                },
+                {
+                    "amocrm_user_id": 102,
+                    "group_ref": None,
+                    "track_time": False,
+                    "hide_widget": False,
+                },
+                {
                     "amocrm_user_id": 103,
                     "group_ref": "client:sales",
                     "track_time": True,
                     "hide_widget": True,
-                }
+                },
             ],
         }
     )
