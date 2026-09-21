@@ -233,7 +233,7 @@ cd d:\табель
 .\build_widget.ps1 -ApiUrl "https://timesheet-backend.onrender.com/api/v1" -SupportEmail "support@your-company.com"
 ```
 
-Должен создаться файл: `timesheet_il_widget.zip`
+Должен создаться файл: `widget.zip`
 
 ---
 
@@ -248,7 +248,7 @@ cd d:\табель
 ### 2. Загрузите виджет
 
 1. Нажмите **"Загрузить свой виджет"**
-2. Выберите файл: `timesheet_il_widget.zip`
+2. Выберите файл: `widget.zip`
 3. Нажмите **"Загрузить"**
 4. Дождитесь проверки (~10-30 секунд)
 

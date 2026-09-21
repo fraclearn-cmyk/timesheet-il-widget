@@ -240,7 +240,7 @@ docker-compose up -d
 ❌ Приватные ключи (*.pem, *.key)  
 ❌ Логи (*.log)  
 ❌ Backup файлы  
-❌ Собранный виджет (timesheet_il_widget.zip)  
+❌ Собранный виджет (widget.zip)
 
 ### Проверьте на GitHub:
 

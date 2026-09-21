@@ -506,14 +506,14 @@ cd d:\табель
 .\build_widget.ps1 -ApiUrl "https://api.example.com/api/v1" -SupportEmail "support@example.com"
 ```
 
-Должен создаться файл: `timesheet_il_widget.zip`
+Должен создаться файл: `widget.zip`
 
 ### 8.2. Загрузка в amoCRM
 
 1. Откройте amoCRM
 2. Перейдите: **Настройки → Интеграции → Виджеты**
 3. Нажмите **"Загрузить свой виджет"**
-4. Выберите файл: `timesheet_il_widget.zip`
+4. Выберите файл: `widget.zip`
 5. Дождитесь проверки (~10-30 секунд)
 
 ### 8.3. Настройка виджета

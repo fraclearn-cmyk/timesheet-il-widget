@@ -151,7 +151,7 @@ Write-Host ""
 
 Write-Host "4. UPLOAD TO amoCRM:" -ForegroundColor White
 Write-Host "   Settings -> Integrations -> Widgets -> Upload custom widget" -ForegroundColor Cyan
-Write-Host "   Select file: timesheet_il_widget.zip" -ForegroundColor Cyan
+Write-Host "   Select file: widget.zip" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Host "USEFUL COMMANDS:" -ForegroundColor Yellow

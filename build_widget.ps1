@@ -15,6 +15,7 @@ $runtime = @(
 )
 $stage = Join-Path $root ('.widget-stage-' + [guid]::NewGuid().ToString('N'))
 $archiveTemp = Join-Path $root ('.widget-package-' + [guid]::NewGuid().ToString('N') + '.zip')
+$archiveBackup = Join-Path $root ('.widget-backup-' + [guid]::NewGuid().ToString('N') + '.zip')
 $archiveFinal = Join-Path $root 'widget.zip'
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
 
@@ -107,7 +108,11 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'Staged widget ZIP failed validation.'
     }
-    Move-Item -LiteralPath $archiveTemp -Destination $archiveFinal -Force
+    if (Test-Path -LiteralPath $archiveFinal -PathType Leaf) {
+        [System.IO.File]::Replace($archiveTemp, $archiveFinal, $archiveBackup)
+    } else {
+        [System.IO.File]::Move($archiveTemp, $archiveFinal)
+    }
     Write-Host "Built $archiveFinal ($($runtime.Count) runtime files)."
     Write-Host 'The API URL is staged in i18n text only; enter and save it in the native amoCRM field.'
 } finally {
@@ -120,5 +125,10 @@ try {
     if ($verifiedTemp.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -and
         (Test-Path -LiteralPath $verifiedTemp)) {
         Remove-Item -LiteralPath $verifiedTemp -Force
+    }
+    $verifiedBackup = [System.IO.Path]::GetFullPath($archiveBackup)
+    if ($verifiedBackup.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -and
+        (Test-Path -LiteralPath $verifiedBackup)) {
+        Remove-Item -LiteralPath $verifiedBackup -Force
     }
 }

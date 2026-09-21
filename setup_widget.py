@@ -40,14 +40,14 @@ def main():
     # Step 2: Build ZIP
     print_header("Step 2: Build ZIP Package")
     all_success &= run_command(
-        "powershell -ExecutionPolicy Bypass -File build_widget_v2.ps1",
+        "powershell -ExecutionPolicy Bypass -File build_widget.ps1",
         "Create ZIP package"
     )
     
     # Step 3: Validate
     print_header("Step 3: Validate Package")
     all_success &= run_command(
-        "python validate_widget_zip.py timesheet_il_widget.zip",
+        "python validate_widget_zip.py widget.zip",
         "Validate ZIP package"
     )
     
@@ -57,14 +57,14 @@ def main():
         print("✓ ALL STEPS COMPLETED SUCCESSFULLY")
         print("")
         print("Package ready for deployment:")
-        print("  File: d:\\табель\\timesheet_il_widget.zip")
+        print("  File: d:\\табель\\widget.zip")
         print("  Size: 22.67 KB")
         print("  Status: Ready for amoCRM installation")
         print("")
         print("Next steps:")
         print("  1. Open amoCRM")
         print("  2. Settings → Integrations → Widgets")
-        print("  3. Upload timesheet_il_widget.zip")
+        print("  3. Upload widget.zip")
         print("  4. Configure API URL")
         print("  5. Enable widget")
         return 0

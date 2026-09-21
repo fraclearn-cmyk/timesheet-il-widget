@@ -1,4 +1,7 @@
-# 📋 CODE REVIEW REQUEST: amoCRM Widget
+# 📋 ИСТОРИЧЕСКИЙ CODE REVIEW REQUEST: amoCRM Widget
+
+> Исторический review версии v3.0.2: не загружайте упомянутый ниже архив.
+> Его имя относится к той версии; текущий `build_widget.ps1` публикует `widget.zip`.
 
 **Дата:** 11.08.2026  
 **Версия:** 3.0.2  

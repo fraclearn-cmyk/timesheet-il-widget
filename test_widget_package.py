@@ -140,7 +140,34 @@ class WidgetPackageTests(unittest.TestCase):
                 self.assertEqual((work / name).read_bytes(), content, name)
             self.assertEqual(list(work.glob(".widget-stage-*")), [])
             self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
+            self.assertEqual(list(work.glob(".widget-backup-*.zip")), [])
             self.assertTrue(WidgetValidator(work / "widget.zip").validate())
+
+    def test_builder_replaces_an_existing_valid_archive_after_staged_validation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            shutil.copytree(ROOT / "widget", work / "widget")
+            shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
+            shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
+            shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
+            command = [
+                "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                str(work / "build_widget.ps1"), "-ApiUrl",
+            ]
+            first = subprocess.run(command + ["https://first.example.test/api/v1"], cwd=work,
+                                   capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            previous_bytes = (work / "widget.zip").read_bytes()
+            second = subprocess.run(command + ["https://second.example.test/api/v1"], cwd=work,
+                                    capture_output=True, text=True)
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            with zipfile.ZipFile(work / "widget.zip") as archive:
+                self.assertIn(b"https://second.example.test/api/v1", archive.read("i18n/en.json"))
+            self.assertNotEqual((work / "widget.zip").read_bytes(), previous_bytes)
+            self.assertTrue(WidgetValidator(work / "widget.zip").validate())
+            self.assertEqual(list(work.glob(".widget-stage-*")), [])
+            self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
+            self.assertEqual(list(work.glob(".widget-backup-*.zip")), [])
 
     def test_builder_removes_temporary_artifacts_after_missing_source_failure(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -197,7 +197,7 @@ timeout /t 5
 
 Должно появиться:
 ```
-Archive created: timesheet_il_widget.zip (10.xx KB)
+Archive created: widget.zip (10.xx KB)
 API URL: https://ваш-url.ngrok.io/api/v1
 ```
 
@@ -214,7 +214,7 @@ API URL: https://ваш-url.ngrok.io/api/v1
 ### 6.2. Загрузите виджет
 
 1. Нажмите **"Добавить виджет"** или **"Загрузить свой виджет"**
-2. Выберите файл: `timesheet_il_widget.zip` (в папке d:\табель)
+2. Выберите файл: `widget.zip` (в папке d:\табель)
 3. Нажмите **"Загрузить"**
 4. Дождитесь проверки (~10-30 секунд)
 
@@ -327,10 +327,10 @@ docker-compose exec db psql -U postgres -d timesheet_db -c "SELECT * FROM work_s
 **Решение:**
 ```bash
 # Проверьте размер
-dir timesheet_il_widget.zip
+dir widget.zip
 
 # Проверьте содержимое
-Expand-Archive -Path timesheet_il_widget.zip -DestinationPath temp_check
+Expand-Archive -Path widget.zip -DestinationPath temp_check
 dir temp_check
 ```
 

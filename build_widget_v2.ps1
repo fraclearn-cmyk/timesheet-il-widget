@@ -1,5 +1,6 @@
-# Widget Builder for amoCRM Timesheet IL v3.0.2
-# Creates ZIP package with UTF-8 encoding (no BOM)
+# HISTORICAL/LEGACY: Widget Builder for amoCRM Timesheet IL v3.0.2.
+# Do not use for current releases; use build_widget.ps1, which publishes widget.zip.
+# This script retains its historical archive name for v3.0.2 reproducibility.
 
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "  amoCRM Widget Builder" -ForegroundColor Cyan

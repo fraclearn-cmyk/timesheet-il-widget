@@ -127,7 +127,7 @@ widget/
 Создайте ZIP архив со следующей структурой:
 
 ```
-timesheet_il_widget.zip
+widget.zip
 ├── manifest.json
 ├── script.js
 ├── styles.css
@@ -146,7 +146,7 @@ timesheet_il_widget.zip
 **Команда для создания архива (Windows PowerShell):**
 ```powershell
 cd widget
-Compress-Archive -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\timesheet_il_widget.zip
+Compress-Archive -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\widget.zip
 ```
 
 ---
@@ -166,7 +166,7 @@ Compress-Archive -Path manifest.json,script.js,styles.css,i18n,images -Destinati
 
 ### Шаг 3: Загрузить ZIP архив
 
-1. Выберите файл `timesheet_il_widget.zip`
+1. Выберите файл `widget.zip`
 2. Нажмите **"Загрузить"**
 3. Дождитесь проверки виджета системой amoCRM
 
@@ -528,13 +528,13 @@ widget/images/icon.png    (64x64px)
 
 ```powershell
 cd widget
-Compress-Archive -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\timesheet_il_widget.zip
+Compress-Archive -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\widget.zip
 ```
 
 ### 3. 🚀 Установите в amoCRM:
 
 - Войдите в amoCRM → Настройки → Интеграции → Виджеты
-- Загрузите `timesheet_il_widget.zip`
+- Загрузите `widget.zip`
 - Включите виджет
 - Выберите разделы для отображения
 - Сохраните настройки

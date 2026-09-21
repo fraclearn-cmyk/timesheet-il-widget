@@ -110,13 +110,13 @@ ngrok http 8000
 - [ ] Выполнена команда (из папки проекта):
   ```powershell
   cd widget
-  Compress-Archive -Force -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\timesheet_il_widget.zip
+  Compress-Archive -Force -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\widget.zip
   ```
-- [ ] Файл `timesheet_il_widget.zip` создан в корне проекта
+- [ ] Файл `widget.zip` создан в корне проекта
 
 **Проверка архива:**
 ```
-timesheet_il_widget.zip
+widget.zip
 ├── manifest.json          ✅
 ├── script.js              ✅
 ├── styles.css             ✅
@@ -134,7 +134,7 @@ timesheet_il_widget.zip
 
 - [ ] Открыт amoCRM → Настройки → Интеграции → Виджеты
 - [ ] Нажата кнопка "Добавить виджет" или "Загрузить свой виджет"
-- [ ] Выбран файл `timesheet_il_widget.zip`
+- [ ] Выбран файл `widget.zip`
 - [ ] Загрузка завершена успешно
 - [ ] Виджет включен (тумблер "Вкл")
 - [ ] Выбраны разделы для отображения:
@@ -188,7 +188,7 @@ ngrok http 8000
 
 # 5. Создать архив
 cd widget
-Compress-Archive -Force -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\timesheet_il_widget.zip
+Compress-Archive -Force -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\widget.zip
 
 # 6. Загрузить в amoCRM
 # ВРУЧНУЮ: через интерфейс amoCRM
@@ -202,7 +202,7 @@ Compress-Archive -Force -Path manifest.json,script.js,styles.css,i18n,images -De
 
 # 2. Создать архив
 cd d:\табель\widget
-Compress-Archive -Force -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\timesheet_il_widget.zip
+Compress-Archive -Force -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\widget.zip
 
 # 3. Загрузить в amoCRM
 # ВРУЧНУЮ: через интерфейс amoCRM
@@ -293,7 +293,7 @@ docker-compose logs backend --tail=50
 - [ ] `widget/images/icon.png` - существует
 
 ✅ **Архив:**
-- [ ] `timesheet_il_widget.zip` - создан
+- [ ] `widget.zip` - создан
 - [ ] Размер архива > 10 KB (не пустой)
 - [ ] Все файлы в корне архива (не в подпапке)
 

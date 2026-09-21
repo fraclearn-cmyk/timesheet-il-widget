@@ -24,7 +24,7 @@
 # - Email поддержки
 # - Ссылку на support
 
-# 4. Получите готовый архив: timesheet_il_widget.zip
+# 4. Получите готовый архив: widget.zip
 
 # 5. Загрузите в amoCRM
 ```
@@ -46,7 +46,7 @@ mkdir widget\images
 
 # 5. Создайте ZIP архив
 cd widget
-Compress-Archive -Force -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\timesheet_il_widget.zip
+Compress-Archive -Force -Path manifest.json,script.js,styles.css,i18n,images -DestinationPath ..\widget.zip
 
 # 6. Загрузите в amoCRM
 ```
@@ -136,7 +136,7 @@ cd d:\табель
 - ✅ Создаст ZIP архив
 - ✅ Проверит backend
 
-**Результат:** Файл `timesheet_il_widget.zip` готов к загрузке.
+**Результат:** Файл `widget.zip` готов к загрузке.
 
 ---
 
@@ -151,7 +151,7 @@ cd d:\табель
    - Нажмите "Добавить виджет" или "Загрузить свой виджет"
 
 3. **Загрузите архив**
-   - Выберите файл `timesheet_il_widget.zip`
+   - Выберите файл `widget.zip`
    - Нажмите "Загрузить"
    - Дождитесь проверки (~30 секунд)
 
@@ -199,7 +199,7 @@ ngrok http 8000
 # 4. Запустить скрипт (заменить URL на ngrok URL)
 .\prepare_widget.ps1 -ApiUrl "https://YOUR-NGROK-URL.ngrok.io/api/v1"
 
-# 5. Загрузить timesheet_il_widget.zip в amoCRM
+# 5. Загрузить widget.zip в amoCRM
 
 # 6. Готово! ✨
 ```
@@ -241,7 +241,7 @@ docker-compose restart backend
 - [ ] ✅ CORS настроен для *.amocrm.ru
 - [ ] ✅ Миграции применены (`alembic upgrade head`)
 - [ ] ✅ Изображения созданы (logo.png, icon.png)
-- [ ] ✅ ZIP архив создан (`timesheet_il_widget.zip`)
+- [ ] ✅ ZIP архив создан (`widget.zip`)
 - [ ] ✅ У вас есть доступ к amoCRM с правами администратора
 
 ---
@@ -252,7 +252,7 @@ docker-compose restart backend
 
 ```powershell
 # 1. Проверьте структуру архива
-Expand-Archive -Path timesheet_il_widget.zip -DestinationPath temp_check
+Expand-Archive -Path widget.zip -DestinationPath temp_check
 ls temp_check
 # Должны быть: manifest.json, script.js, styles.css, i18n/, images/
 
