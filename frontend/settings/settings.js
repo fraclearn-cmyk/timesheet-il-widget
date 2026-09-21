@@ -123,10 +123,6 @@
     var message = node(doc, 'div', 'timesheet-settings__message', this.message);
     message.setAttribute('role', 'alert');
     shell.append(message);
-    var save = node(doc, 'button', 'button-input button-input_blue timesheet-settings__save', 'Сохранить');
-    save.type = 'button';
-    save.addEventListener('click', function () { self.save().catch(function () {}); });
-    shell.append(save);
     this.root.replaceChildren(shell);
     this.markErrors();
   };
@@ -362,7 +358,7 @@
   };
   SettingsController.prototype.setEditingLocked = function (locked) {
     this.root.querySelectorAll('.timesheet-settings input, .timesheet-settings select, ' +
-      '.timesheet-settings__add-group, .timesheet-settings__save').forEach(function (item) {
+      '.timesheet-settings__add-group').forEach(function (item) {
       if (locked && !item.disabled) {
         item.disabled = true;
         item.dataset.saveLocked = 'true';

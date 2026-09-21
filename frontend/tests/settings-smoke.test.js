@@ -18,7 +18,7 @@ function snapshot(revision = 3) {
   };
 }
 
-test('advanced settings smoke saves a canonical snapshot without rendering in working area', async () => {
+test('advanced settings smoke uses amoCRM onSave without an embedded save action', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="list_page_holder"></div></body></html>', {
     url: 'https://account.amocrm.ru', runScripts: 'outside-only',
   });
@@ -54,7 +54,7 @@ test('advanced settings smoke saves a canonical snapshot without rendering in wo
   widget.callbacks.advancedSettings();
   await widget.settingsController.ready;
   assert.deepEqual([...document.querySelectorAll('[role=tab]')].map((tab) => tab.textContent), ['Пользователи', 'Настройки']);
-  assert.equal(document.querySelectorAll('.timesheet-settings__save').length, 1);
+  assert.equal(document.querySelectorAll('.timesheet-settings__save').length, 0);
   document.querySelector('[role=tab]:last-child').click();
   document.querySelector('.timesheet-settings__add-group').click();
   const newGroup = document.querySelector('[data-group-ref^="client:"]');
@@ -62,8 +62,7 @@ test('advanced settings smoke saves a canonical snapshot without rendering in wo
   name.value = 'Sales';
   name.dispatchEvent(new window.Event('input', { bubbles: true }));
   widget.settingsController.setUser(101, { track_time: true, group_ref: newGroup.getAttribute('data-group-ref') });
-  document.querySelector('.timesheet-settings__save').click();
-  await widget.settingsController.save();
+  await widget.callbacks.onSave();
   assert.deepEqual(requests.map((request) => request.method), ['GET', 'PUT']);
   assert.equal(widget.settingsController.serialize().revision, 4);
   assert.equal(widget.settingsController.serialize().users[0].group_ref, 'id:20');

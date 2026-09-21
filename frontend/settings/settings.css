@@ -127,7 +127,6 @@
 }
 
 .timesheet-settings .timesheet-settings__message { color: #c43d3d; margin: 12px 0; min-height: 1.4em; }
-.timesheet-settings .timesheet-settings__save { cursor: pointer; }
 
 @media (max-width: 800px) {
   .timesheet-settings .timesheet-settings__user { grid-template-columns: repeat(2, minmax(0, 1fr)); }

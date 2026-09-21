@@ -95,7 +95,7 @@ test('settings callback leaves native install form and advancedSettings owns onl
   widget.callbacks.advancedSettings();
   await widget.settingsController.ready;
   assert.equal(document.querySelectorAll('[role=tab]').length, 2);
-  assert.equal(document.querySelectorAll('.button-input_blue.timesheet-settings__save').length, 1);
+  assert.equal(document.querySelectorAll('.timesheet-settings__save').length, 0);
   assert.ok(document.querySelector('#list_page_holder .timesheet-settings'));
   assert.ok(document.querySelector('link[href="/widgets/timesheet/settings/settings.css?v=3.0.2"]'));
   assert.ok(document.querySelector('#amo-owned'));
@@ -104,7 +104,7 @@ test('settings callback leaves native install form and advancedSettings owns onl
   assert.equal('headers' in requests[0], false);
 });
 
-test('in-panel button and onSave share one authorized PUT and adopt canonical response', async () => {
+test('amoCRM onSave is the only editor save action and adopts the canonical response', async () => {
   let finishSave;
   const pending = new Promise((resolve) => { finishSave = resolve; });
   const { document, widget, requests } = boot({ save: pending });
@@ -119,7 +119,7 @@ test('in-panel button and onSave share one authorized PUT and adopt canonical re
   const group = document.querySelector('[data-user-id="101"] [data-field="group_ref"]');
   group.value = 'id:10';
   group.dispatchEvent(new document.defaultView.Event('change', { bubbles: true }));
-  document.querySelector('.timesheet-settings__save').click();
+  assert.equal(document.querySelector('.timesheet-settings__save'), null);
   const callbackSave = widget.callbacks.onSave();
   assert.equal(requests.length, 2);
   assert.equal(requests[1].method, 'PUT');
