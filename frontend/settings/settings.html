@@ -1,0 +1,16 @@
+<div class="timesheet-settings" lang="ru">
+  <div class="timesheet-settings__tabs" role="tablist" aria-label="Настройки табеля">
+    <button class="timesheet-settings__tab" type="button" role="tab" aria-selected="true">Пользователи</button>
+    <button class="timesheet-settings__tab" type="button" role="tab" aria-selected="false">Настройки</button>
+  </div>
+  <section class="timesheet-settings__panel" role="tabpanel">
+    <input class="timesheet-settings__control" type="search" data-field="search" aria-label="Поиск пользователей" placeholder="Поиск по имени или email">
+    <div class="timesheet-settings__users"></div>
+  </section>
+  <section class="timesheet-settings__panel" role="tabpanel" hidden>
+    <div class="timesheet-settings__account"></div>
+    <div class="timesheet-settings__groups"></div>
+  </section>
+  <div class="timesheet-settings__message" role="alert"></div>
+  <button class="button-input button-input_blue timesheet-settings__save" type="button">Сохранить</button>
+</div>

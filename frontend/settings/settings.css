@@ -1,0 +1,134 @@
+.timesheet-settings {
+  color: #2e3640;
+  font: inherit;
+  margin: 16px 20px;
+  max-width: 1100px;
+}
+
+.timesheet-settings [hidden] { display: none !important; }
+
+.timesheet-settings .timesheet-settings__tabs {
+  border-bottom: 1px solid #dfe2e6;
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.timesheet-settings .timesheet-settings__tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: #687481;
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 4px;
+}
+
+.timesheet-settings .timesheet-settings__tab[aria-selected="true"] {
+  border-bottom-color: #4c8bf7;
+  color: #2e3640;
+}
+
+.timesheet-settings .timesheet-settings__panel { min-width: 0; }
+
+.timesheet-settings .timesheet-settings__control {
+  background: #fff;
+  border: 1px solid #d7dce1;
+  border-radius: 3px;
+  box-sizing: border-box;
+  color: inherit;
+  font: inherit;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.timesheet-settings .timesheet-settings__control[type="checkbox"] {
+  min-height: auto;
+}
+
+.timesheet-settings .timesheet-settings__control[aria-invalid="true"] {
+  border-color: #d9534f;
+  outline: 1px solid #d9534f;
+}
+
+.timesheet-settings .timesheet-settings__label {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.timesheet-settings .timesheet-settings__heading {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 20px 0 10px;
+}
+
+.timesheet-settings .timesheet-settings__user-group {
+  border-bottom: 1px solid #edf0f2;
+  padding-bottom: 8px;
+}
+
+.timesheet-settings .timesheet-settings__user {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(2, minmax(140px, 1fr)) minmax(160px, 1fr);
+  padding: 9px 0;
+}
+
+.timesheet-settings .timesheet-settings__identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.timesheet-settings .timesheet-settings__identity small {
+  color: #8a949e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timesheet-settings .timesheet-settings__avatar {
+  border-radius: 50%;
+  height: 28px;
+  object-fit: cover;
+  width: 28px;
+}
+
+.timesheet-settings .timesheet-settings__account,
+.timesheet-settings .timesheet-settings__group {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 16px;
+}
+
+.timesheet-settings .timesheet-settings__group {
+  border: 1px solid #dfe2e6;
+  border-radius: 4px;
+  padding: 14px;
+}
+
+.timesheet-settings .timesheet-settings__group legend { font-weight: 600; }
+.timesheet-settings .timesheet-settings__account .timesheet-settings__label,
+.timesheet-settings .timesheet-settings__group .timesheet-settings__label { align-items: start; flex-direction: column; }
+.timesheet-settings .timesheet-settings__account .timesheet-settings__label:has([type="checkbox"]),
+.timesheet-settings .timesheet-settings__group .timesheet-settings__label:has([type="checkbox"]) { align-items: center; flex-direction: row; }
+
+.timesheet-settings .timesheet-settings__add-group {
+  background: #fff;
+  border: 1px solid #c9d0d7;
+  border-radius: 3px;
+  color: #2e3640;
+  cursor: pointer;
+  font: inherit;
+  padding: 7px 12px;
+}
+
+.timesheet-settings .timesheet-settings__message { color: #c43d3d; margin: 12px 0; min-height: 1.4em; }
+.timesheet-settings .timesheet-settings__save { cursor: pointer; }
+
+@media (max-width: 800px) {
+  .timesheet-settings .timesheet-settings__user { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

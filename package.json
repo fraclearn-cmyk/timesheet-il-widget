@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test:settings": "node --test frontend/tests/settings-controller.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}
