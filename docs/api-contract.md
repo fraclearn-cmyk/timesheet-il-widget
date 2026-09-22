@@ -257,6 +257,41 @@ activity intervals и raw CRM events в XLSX не включаются.
 
 ## Фактическое состояние реализации
 
+## Рабочий статус виджета (новый API)
+
+Все маршруты `/api/v1/timesheet/*` требуют проверенный `RequestContext` и работают
+только с текущим сотрудником текущего amoCRM-аккаунта. ID сотрудника, аккаунта
+или сессии не принимаются от браузера. Legacy `/api/v1/sessions/*` не меняются.
+
+`GET /api/v1/timesheet/my-status` возвращает HTTP 200 и объект:
+
+```json
+{
+  "session_id": null,
+  "status": "not_started",
+  "started_at": null,
+  "ended_at": null,
+  "break_seconds": 0,
+  "track_time": true,
+  "hide_widget": false,
+  "restart_allowed": false
+}
+```
+
+`status` — `not_started`, `working`, `on_break` или `finished`. Время
+`started_at`/`ended_at` выдаётся в UTC с суффиксом `Z` либо `null`.
+`track_time=false` отключает команды учёта (HTTP 403 `TRACK_TIME_DISABLED`).
+`hide_widget=true` скрывает рабочий UI, но не выключает учёт на сервере.
+`restart_allowed` — подсказка UI для завершённого дня при действующем
+разрешении группы; сервер всё равно повторно проверяет команду.
+
+`POST /api/v1/timesheet/start-work`, `/start-break`, `/end-break` и
+`/finish-work` принимают только `{ "idempotency_key": "<UUID>" }`.
+Ответ HTTP 200 содержит поля статуса выше и непустое `message`. Повтор того же
+UUID с тем же действием возвращает первоначальный ответ; с другим действием —
+HTTP 409 `IDEMPOTENCY_KEY_REUSED`. Недопустимый переход — HTTP 409
+`STATUS_TRANSITION_INVALID`. Некорректный UUID или лишние поля — HTTP 422.
+
 Существующие `/api/v1/sessions/*`, `/api/v1/reports/*` и `/api/v1/excel/*` — legacy routes
 с другим URL, параметрами и частью доверенных headers. Они не могут считаться реализацией
 этого контракта до отдельных endpoint/integration tests в следующих фазах.

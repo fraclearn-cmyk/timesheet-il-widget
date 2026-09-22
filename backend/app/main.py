@@ -181,6 +181,7 @@ try:
         users as settings_users,
         groups as settings_groups,
         reports,
+        timesheet,
     )
     from app.api.v1.endpoints import departments, excel, kpi
 
@@ -189,6 +190,12 @@ try:
         sessions.router,
         prefix="/api/v1/sessions",
         tags=["sessions"],
+        dependencies=protected,
+    )
+    app.include_router(
+        timesheet.router,
+        prefix="/api/v1/timesheet",
+        tags=["timesheet"],
         dependencies=protected,
     )
     app.include_router(
