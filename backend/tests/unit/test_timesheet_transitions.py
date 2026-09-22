@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from uuid import UUID, uuid4
 
 import pytest
@@ -13,6 +13,24 @@ from app.services.timesheet_service import TimesheetConflict, TimesheetService
 
 
 NOW = datetime(2026, 9, 22, 6)
+
+
+@pytest.mark.parametrize('start,end,now,day,late', [
+    (time(9), time(18), datetime(2026, 9, 22, 6), '2026-09-22', 0),
+    (time(9), time(18), datetime(2026, 9, 22, 6, 17), '2026-09-22', 17),
+    (time(22), time(6), datetime(2026, 9, 22, 19), '2026-09-22', 0),
+    (time(22), time(6), datetime(2026, 9, 22, 22, 15), '2026-09-22', 195),
+])
+def test_start_work_persists_group_shift_lateness(scope, start, end, now, day, late):
+    db, context, group = scope
+    group.work_start_time, group.work_end_time = start, end
+    db.commit()
+    TimesheetService(db).apply(context, 'start-work', uuid4(), now)
+    work = db.query(WorkSession).one()
+    assert work.business_date.isoformat() == day
+    assert work.start_time == now and work.start_time.tzinfo is None
+    assert work.late_minutes == late
+    assert work.is_late is (late > 0)
 
 
 @pytest.fixture

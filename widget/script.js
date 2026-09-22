@@ -32,6 +32,8 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay'],
         this.settingsMount = null;
         this.settingsStyle = null;
         this.timesheetController = null;
+        this.workingStyle = null;
+        this.workingStyleTimer = null;
         this.removeFocusRefresh = null;
         this.timesheetOverlay = Overlay.createOverlay(document);
 
@@ -53,6 +55,13 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay'],
             }
         }
         function stopTimesheet() {
+            clearTimeout(widget.workingStyleTimer);
+            widget.workingStyleTimer = null;
+            if (widget.workingStyle) {
+                widget.workingStyle.onload = widget.workingStyle.onerror = null;
+                widget.workingStyle.remove();
+            }
+            widget.workingStyle = null;
             if (widget.removeFocusRefresh) widget.removeFocusRefresh();
             widget.removeFocusRefresh = null;
             if (widget.timesheetController) widget.timesheetController.destroy();
@@ -63,16 +72,34 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay'],
             var baseUrl = apiUrl(widget);
             stopTimesheet();
             if (!baseUrl || typeof widget.$authorizedAjax !== 'function') return;
+            var settings = widget.get_settings();
+            if (!settings.path) return;
+            var style = document.createElement('link');
+            style.rel = 'stylesheet';
+            style.href = String(settings.path).replace(/\/?$/, '/') + 'styles.css?v=' + encodeURIComponent(settings.version || '');
+            widget.workingStyle = style;
+            style.onerror = stopTimesheet;
+            widget.workingStyleTimer = setTimeout(stopTimesheet, 10000);
+            style.onload = function() {
+                if (widget.workingStyle !== style) return;
+                clearTimeout(widget.workingStyleTimer);
+                widget.workingStyleTimer = null;
+                style.onload = style.onerror = null;
+                startController(baseUrl);
+            };
+            document.head.appendChild(style);
+        }
+        function startController(baseUrl) {
             widget.timesheetController = TimesheetController.createTimesheetController({
                 request: function(request) {
-                    var options = { url: baseUrl + request.url, method: request.method, dataType: request.dataType };
+                    var options = { url: baseUrl + request.url, method: request.method, dataType: request.dataType, timeout: 10000 };
                     if (request.contentType) options.contentType = request.contentType;
                     if (request.data) options.data = request.data;
                     return toPromise(widget.$authorizedAjax(options));
                 },
                 render: renderWorkingUi,
                 clear: clearWorkingUi,
-                schedule: function(fn) { var timer = setTimeout(fn, 5000); return function() { clearTimeout(timer); }; },
+                schedule: function(fn, delay) { var timer = setTimeout(fn, delay); return function() { clearTimeout(timer); }; },
                 uuid: uuid
             });
             widget.timesheetController.load();
@@ -85,13 +112,14 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay'],
             render: function() { return true; },
             init: function() {
                 var area = typeof widget.system === 'function' && widget.system().area;
-                if (area === 'settings' || area === 'advanced_settings') return true;
+                if (area === 'settings' || area === 'advanced_settings') { stopTimesheet(); return true; }
                 startTimesheet();
                 return true;
             },
             bind_actions: function() { return true; },
-            settings: function() { return true; },
+            settings: function() { stopTimesheet(); return true; },
             advancedSettings: function() {
+                stopTimesheet();
                 if (typeof widget.system !== 'function' || widget.system().area !== 'advanced_settings') return false;
                 removeSettings();
                 var holder = document.getElementById('list_page_holder');

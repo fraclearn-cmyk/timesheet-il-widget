@@ -14,11 +14,29 @@
     }
     function createTimesheetController(options) {
         var confirmed = null, pending = null, inFlight = null, cancelRetry = null, destroyed = false, generation = 0;
+        var deadlines = new Set();
         function clearRetry() { if (cancelRetry) cancelRetry(); cancelRetry = null; }
-        function retry() {
+        function retry(delay) {
             clearRetry();
             if (!destroyed) cancelRetry = options.schedule(function() {
                 cancelRetry = null; if (pending) command(pending.action); else load();
+            }, delay || 5000);
+        }
+        function request(optionsForRequest) {
+            return new Promise(function(resolve, reject) {
+                var settled = false;
+                function finish(error, value) {
+                    if (settled) return;
+                    settled = true;
+                    cancelDeadline();
+                    deadlines.delete(cancel);
+                    if (error) reject(error); else resolve(value);
+                }
+                function cancel() { finish(new Error('Request cancelled')); }
+                var cancelDeadline = options.schedule(function() { finish(new Error('Request timeout')); }, 10000);
+                deadlines.add(cancel);
+                Promise.resolve().then(function() { return options.request(optionsForRequest); })
+                    .then(function(value) { finish(null, value); }, function(error) { finish(error || new Error('Request failed')); });
             });
         }
         function failOpen() { confirmed = null; options.clear(); retry(); }
@@ -27,15 +45,17 @@
             confirmed = snapshot;
             options.clear();
             if (snapshot.track_time && !snapshot.hide_widget) options.render(snapshot);
-            clearRetry();
+            retry(30000);
             return true;
         }
         function load() {
             if (destroyed) return Promise.resolve();
+            // A focus/health refresh must never supersede an unconfirmed command.
+            if (pending) return command(pending.action);
+            clearRetry();
             var currentGeneration = ++generation;
-            return Promise.resolve().then(function() {
-                return options.request({ url: '/timesheet/my-status', method: 'GET', dataType: 'json' });
-            }).then(function(snapshot) { if (!destroyed && currentGeneration === generation) accept(snapshot); }, function() {
+            return request({ url: '/timesheet/my-status', method: 'GET', dataType: 'json' })
+            .then(function(snapshot) { if (!destroyed && currentGeneration === generation) accept(snapshot); }, function() {
                 if (!destroyed && currentGeneration === generation) failOpen();
             });
         }
@@ -44,13 +64,13 @@
                 (confirmed && (!confirmed.track_time || confirmed.hide_widget))) return Promise.resolve();
             if (inFlight) return inFlight;
             if (pending && pending.action !== action) return Promise.resolve();
+            clearRetry();
             if (!pending) pending = { action: action, key: options.uuid() };
             var current = pending;
             var currentGeneration = ++generation;
-            inFlight = Promise.resolve().then(function() {
-                return options.request({ url: '/timesheet/' + action, method: 'POST', dataType: 'json',
-                    contentType: 'application/json', data: JSON.stringify({ idempotency_key: current.key }) });
-            }).then(function(snapshot) {
+            inFlight = request({ url: '/timesheet/' + action, method: 'POST', dataType: 'json',
+                    contentType: 'application/json', data: JSON.stringify({ idempotency_key: current.key }) })
+            .then(function(snapshot) {
                 if (destroyed || currentGeneration !== generation) return;
                 if (accept(snapshot)) pending = null;
             }, function(error) {
@@ -60,7 +80,11 @@
             }).finally(function() { inFlight = null; });
             return inFlight;
         }
-        function destroy() { destroyed = true; generation++; clearRetry(); confirmed = null; pending = null; options.clear(); }
+        function destroy() {
+            destroyed = true; generation++; clearRetry();
+            deadlines.forEach(function(cancel) { cancel(); });
+            confirmed = null; pending = null; options.clear();
+        }
         return { load: load, command: command, destroy: destroy };
     }
     return { createTimesheetController: createTimesheetController };

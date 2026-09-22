@@ -12,7 +12,9 @@
     function createOverlay(doc) {
         var host = null, trap = null, command = null;
         function clear() {
-            if (trap) doc.removeEventListener('keydown', trap, true);
+            if (trap) ['keydown', 'keyup', 'keypress'].forEach(function(type) {
+                doc.removeEventListener(type, trap, true);
+            });
             trap = null;
             if (host) host.remove();
             host = null;
@@ -51,24 +53,26 @@
             if (blocked) {
                 trap = function(event) {
                     if (!host) return;
+                    event.stopImmediatePropagation();
                     var buttons = panel.querySelectorAll('button');
                     var first = buttons[0] || panel;
                     var last = buttons[buttons.length - 1] || panel;
-                    if (event.key === 'Tab' &&
+                    if (event.type === 'keydown' && event.key === 'Tab' &&
                         (!host.contains(doc.activeElement) ||
                          (!event.shiftKey && doc.activeElement === last) ||
                          (event.shiftKey && doc.activeElement === first))) {
                         event.preventDefault();
-                        event.stopPropagation();
                         (event.shiftKey ? last : first).focus();
-                    } else if (!host.contains(doc.activeElement) &&
-                               (event.key === 'Enter' || event.key === ' ')) {
+                    } else if (event.key !== 'Tab' &&
+                               !(panel.contains(event.target) && event.target.tagName === 'BUTTON' &&
+                                 (event.key === 'Enter' || event.key === ' '))) {
                         event.preventDefault();
-                        event.stopPropagation();
-                        first.focus();
+                        if (!host.contains(doc.activeElement)) first.focus();
                     }
                 };
-                doc.addEventListener('keydown', trap, true);
+                ['keydown', 'keyup', 'keypress'].forEach(function(type) {
+                    doc.addEventListener(type, trap, true);
+                });
                 (panel.querySelector('button') || panel).focus();
             }
         }

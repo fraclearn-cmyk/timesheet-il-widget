@@ -2,11 +2,26 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { resolve } = require('node:path');
-const { JSDOM } = require('jsdom');
+const { JSDOM, ResourceLoader } = require('jsdom');
 
 const settingsSource = readFileSync(resolve(__dirname, '../settings/settings.js'), 'utf8');
 const widgetSource = readFileSync(resolve(__dirname, '../../widget/script.js'), 'utf8');
 const manifest = JSON.parse(readFileSync(resolve(__dirname, '../../widget/manifest.json'), 'utf8'));
+const workingCss = readFileSync(resolve(__dirname, '../../widget/styles.css'));
+const fixtures = [];
+test.afterEach(() => {
+  for (const { widget, dom } of fixtures.splice(0)) {
+    widget.callbacks.destroy();
+    dom.window.close();
+  }
+});
+
+class WidgetResources extends ResourceLoader {
+  fetch(url) {
+    if (url.includes('/widgets/timesheet/styles.css')) return Promise.resolve(workingCss);
+    return null;
+  }
+}
 
 function snapshot() {
   return {
@@ -23,7 +38,7 @@ function snapshot() {
 function boot(options = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><form id="install-form"></form>' +
     '<div id="list_page_holder"><p id="amo-owned">amoCRM content</p></div><div id="timesheet-overlay"></div></body></html>', {
-    url: 'https://account.amocrm.ru', runScripts: 'outside-only',
+    url: 'https://account.amocrm.ru', runScripts: 'outside-only', resources: new WidgetResources(),
   });
   const { window } = dom;
   const { document } = window;
@@ -48,7 +63,9 @@ function boot(options = {}) {
     if (request.method === 'GET') return options.load || Promise.resolve(snapshot());
     return options.save || Promise.resolve(snapshot());
   };
-  return { dom, document, widget, requests };
+  const fixture = { dom, document, widget, requests };
+  fixtures.push(fixture);
+  return fixture;
 }
 
 test('working init without API URL remains fail-open and keeps settings editor out', () => {

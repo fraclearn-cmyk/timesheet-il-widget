@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.business_time import business_date
+from app.core.business_time import business_date, shift_start_utc, minutes_late
 from app.core.time_utils import utc_now
 from app.models import GroupMember, StatusTransition, TimesheetCommand, WidgetGroup, WorkSession, WorkStatus
 
@@ -114,8 +114,10 @@ class TimesheetService:
             if action not in allowed[state]:
                 raise TimesheetConflict("STATUS_TRANSITION_INVALID")
             if action == "start-work":
+                late = minutes_late(now, shift_start_utc(day, group.timezone, group.work_start_time))
                 work = WorkSession(amocrm_account_id=context.account_id, amocrm_user_id=context.user.amocrm_user_id,
-                                   user_name=context.user.name, start_time=now, business_date=day, current_status=WorkStatus.WORKING)
+                                   user_name=context.user.name, start_time=now, business_date=day, current_status=WorkStatus.WORKING,
+                                   is_late=late > 0, late_minutes=late)
                 self.db.add(work)
                 self.db.flush()
                 transition = StatusTransition(work_session_id=work.id, to_status="working", timestamp=now)

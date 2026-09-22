@@ -1,10 +1,33 @@
 from uuid import uuid4
+from datetime import datetime, time
+import pytest
+from app.models import WorkSession
 
 from app.models.group_member import GroupMember
 from app.models.widget_group import WidgetGroup
 
 
 BASE = "/api/v1/timesheet"
+
+
+@pytest.mark.parametrize('start,end,now,late', [
+    (time(9), time(18), datetime(2026, 9, 22, 6), 0),
+    (time(9), time(18), datetime(2026, 9, 22, 6, 17), 17),
+    (time(22), time(6), datetime(2026, 9, 22, 19), 0),
+    (time(22), time(6), datetime(2026, 9, 22, 22, 15), 195),
+])
+def test_start_work_api_records_shift_lateness(scoped_client, db, monkeypatch, start, end, now, late):
+    monkeypatch.setattr('app.services.timesheet_service.utc_now', lambda: now)
+    group = db.query(WidgetGroup).filter_by(id=10).one()
+    group.work_start_time, group.work_end_time = start, end
+    db.commit()
+    response = command(scoped_client('employee'), 'start-work')
+    assert response.status_code == 200
+    work = db.get(WorkSession, response.json()['session_id'])
+    assert work.business_date.isoformat() == '2026-09-22'
+    assert work.start_time == now and work.start_time.tzinfo is None
+    assert work.late_minutes == late
+    assert work.is_late is (late > 0)
 
 
 def command(client, action, key=None, **extra):

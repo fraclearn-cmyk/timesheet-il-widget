@@ -48,6 +48,25 @@ test('finished without restart keeps keyboard focus in blocking overlay', async 
   expect(await page.evaluate(() => document.activeElement.closest('.timesheet-overlay') !== null)).toBe(true);
 });
 
+test('blocked overlay isolates shortcuts and preserves Enter/Space button activation', async ({ page }) => {
+  await page.evaluate((snapshot) => {
+    window.keys = []; window.commands = [];
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+      document.addEventListener(type, (event) => window.keys.push(type + ':' + event.key));
+    }
+    window.overlay.render(snapshot, (action) => window.commands.push(action));
+  }, { ...base, status: 'on_break' });
+  await page.keyboard.press('a');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Space');
+  expect(await page.evaluate(() => window.keys)).toEqual([]);
+  expect(await page.evaluate(() => window.commands)).toEqual(['end-break', 'end-break']);
+  await page.evaluate(() => window.overlay.clear());
+  await page.locator('#crm-action').focus();
+  await page.keyboard.press('a');
+  expect(await page.evaluate(() => window.keys)).toEqual(['keydown:a', 'keypress:a', 'keyup:a']);
+});
+
 test('unknown and opted-out states leave amoCRM clear', async ({ page }) => {
   for (const snapshot of [null, { ...base, status: 'on_break', track_time: false },
     { ...base, status: 'on_break', hide_widget: true }]) {
