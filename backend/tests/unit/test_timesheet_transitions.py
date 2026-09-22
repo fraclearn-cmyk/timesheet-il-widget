@@ -75,3 +75,30 @@ def test_track_time_false_denies_commands(scope):
     db.commit()
     with pytest.raises(TimesheetConflict, match="TRACK_TIME_DISABLED"):
         TimesheetService(db).apply(context, "start-work", uuid4(), NOW)
+
+
+def test_open_prior_business_day_remains_authoritative(scope):
+    db, context, _ = scope
+    service = TimesheetService(db)
+    first = service.apply(context, "start-work", uuid4(), NOW)
+    next_day = NOW + timedelta(days=1)
+    assert service.get_status(context, next_day).session_id == first.session_id
+    assert service.get_status(context, next_day).status == "working"
+    with pytest.raises(TimesheetConflict, match="STATUS_TRANSITION_INVALID"):
+        service.apply(context, "start-work", uuid4(), next_day)
+    assert service.apply(context, "finish-work", uuid4(), next_day).status == "finished"
+
+
+def test_account_identity_keeps_same_external_user_and_key_independent(scope):
+    db, context, _ = scope
+    other = User(id=2, amocrm_account_id=11, amocrm_user_id=101, name="Other")
+    group = WidgetGroup(id=2, account_id=11, name="Other", timezone="UTC")
+    db.add_all([other, group])
+    db.flush()
+    db.add(GroupMember(account_id=11, user_id=2, group_id=2, is_active=True, track_time=True))
+    db.commit()
+    key = uuid4()
+    first = TimesheetService(db).apply(context, "start-work", key, NOW)
+    second = TimesheetService(db).apply(RequestContext(11, other), "start-work", key, NOW)
+    assert second.session_id != first.session_id
+    assert db.query(StatusTransition).count() == 2

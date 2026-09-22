@@ -47,14 +47,21 @@ class TimesheetService:
                         WorkSession.business_date == day)
                 .order_by(WorkSession.start_time.desc(), WorkSession.id.desc()).all())
 
-    def _snapshot(self, context, now, membership):
+    def _open_session(self, context):
+        return (self.db.query(WorkSession)
+                .filter(WorkSession.amocrm_account_id == context.account_id,
+                        WorkSession.amocrm_user_id == context.user.amocrm_user_id,
+                        WorkSession.end_time.is_(None))
+                .one_or_none())
+
+    def _snapshot(self, context, now, membership, preferred_work=None):
         if membership is None:
             return TimesheetSnapshot(None, "not_started", None, None, 0, False, False, False)
         member, group = membership
         day = business_date(now, group.timezone, group.work_start_time, group.work_end_time)
         sessions = self._sessions(context, day)
-        open_session = next((s for s in sessions if s.end_time is None), None)
-        work = open_session or (sessions[0] if sessions else None)
+        open_session = self._open_session(context)
+        work = preferred_work or open_session or (sessions[0] if sessions else None)
         if work is None:
             return TimesheetSnapshot(None, "not_started", None, None, 0, bool(member.track_time), bool(member.hide_widget), False)
         status = "on_break" if work.current_status == WorkStatus.BREAK else work.current_status.value
@@ -101,8 +108,8 @@ class TimesheetService:
             member, group = membership
             day = business_date(now, group.timezone, group.work_start_time, group.work_end_time)
             sessions = self._sessions(context, day)
-            work = next((s for s in sessions if s.end_time is None), None)
-            state = "not_started" if not sessions else ("on_break" if work and work.current_status == WorkStatus.BREAK else "working" if work else "finished")
+            work = self._open_session(context)
+            state = "on_break" if work and work.current_status == WorkStatus.BREAK else "working" if work else "finished" if sessions else "not_started"
             allowed = {"not_started": {"start-work"}, "working": {"start-break", "finish-work"}, "on_break": {"end-break", "finish-work"}, "finished": {"start-work"} if group.allow_restart_session else set()}
             if action not in allowed[state]:
                 raise TimesheetConflict("STATUS_TRANSITION_INVALID")
@@ -127,7 +134,7 @@ class TimesheetService:
                 transition = StatusTransition(work_session_id=work.id, from_status=previous_status, to_status=target.value, timestamp=now, duration=elapsed)
             self.db.add(transition)
             self.db.flush()
-            result = self._snapshot(context, now, membership)
+            result = self._snapshot(context, now, membership, work)
             self.db.add(TimesheetCommand(account_id=context.account_id, amocrm_user_id=context.user.amocrm_user_id,
                                          key=str(key), action=action, response=asdict(result)))
             self.db.commit()

@@ -46,6 +46,12 @@ def upgrade() -> None:
             from datetime import timedelta
             day -= timedelta(days=1)
         conn.execute(sa.text("UPDATE work_sessions SET business_date=:day WHERE id=:id"), {"day": day, "id": row["id"]})
+    # Preserve the exact pre-phase-4 population and backfilled dates so a
+    # downgrade can distinguish historical backfill from later data.
+    op.create_table("timesheet_session_baseline",
+        sa.Column("work_session_id", sa.Integer(), primary_key=True),
+        sa.Column("business_date", sa.Date(), nullable=True))
+    conn.execute(sa.text("INSERT INTO timesheet_session_baseline (work_session_id,business_date) SELECT id,business_date FROM work_sessions"))
     op.create_index("uq_work_sessions_open_account_user", "work_sessions", ["amocrm_account_id", "amocrm_user_id"], unique=True, postgresql_where=sa.text("end_time IS NULL"), sqlite_where=sa.text("end_time IS NULL"))
     op.create_table("timesheet_commands",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -60,8 +66,14 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     conn = op.get_bind()
-    if conn.scalar(sa.text("SELECT count(*) FROM timesheet_commands")):
-        raise RuntimeError("cannot downgrade phase-4 data without erasing commands")
+    changed = conn.scalar(sa.text("""
+        SELECT count(*) FROM work_sessions s
+        LEFT JOIN timesheet_session_baseline b ON b.work_session_id=s.id
+        WHERE b.work_session_id IS NULL OR s.business_date IS DISTINCT FROM b.business_date
+    """))
+    if conn.scalar(sa.text("SELECT count(*) FROM timesheet_commands")) or changed:
+        raise RuntimeError("cannot downgrade phase-4 data without erasing commands or session business dates")
     op.drop_table("timesheet_commands")
+    op.drop_table("timesheet_session_baseline")
     op.drop_index("uq_work_sessions_open_account_user", table_name="work_sessions")
     op.drop_column("work_sessions", "business_date")

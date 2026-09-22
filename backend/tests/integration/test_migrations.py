@@ -6,6 +6,8 @@ tests skip, allowing contract/unit tests on machines without PostgreSQL.
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from pathlib import Path
 from uuid import uuid4
 
@@ -21,6 +23,9 @@ from app.core.config import settings
 from app.models import User, WorkSession, WorkStatus, GroupMember, WidgetGroup, CrmEvent
 from app.core.database import Base
 from app.models import ActivityInterval
+from app.core.access_policy import RequestContext
+from app.services.timesheet_service import TimesheetConflict, TimesheetService
+from datetime import datetime
 
 
 def test_011_backfills_group_business_date_and_rejects_duplicate_open_sessions(migrated_db):
@@ -33,7 +38,7 @@ def test_011_backfills_group_business_date_and_rejects_duplicate_open_sessions(m
         conn.execute(text("INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,end_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-21 23:00:00','2026-09-22 02:00:00','finished',now(),now())"))
     command.upgrade(config, "011")
     with engine.connect() as conn:
-        assert str(conn.scalar(text("SELECT business_date FROM work_sessions WHERE id=1"))) == "2026-09-22"
+        assert str(conn.scalar(text("SELECT business_date FROM work_sessions WHERE id=1"))) == "2026-09-21"
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO timesheet_commands (account_id,amocrm_user_id,key,action,response,created_at) VALUES (100,700,'11111111-1111-4111-8111-111111111111','start-work','{}',now())"))
     with pytest.raises(RuntimeError, match="phase-4 data"):
@@ -51,6 +56,59 @@ def test_011_rejects_preexisting_duplicate_open_sessions_without_rewriting(migra
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "010"
         assert conn.scalar(text("SELECT count(*) FROM work_sessions")) == 2
+
+
+def test_011_downgrade_refuses_new_session_without_command(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "011")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
+        conn.execute(text("INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,end_time,current_status,business_date,created_at,updated_at) VALUES (100,700,'One','2026-09-22 06:00:00','2026-09-22 07:00:00','finished','2026-09-22',now(),now())"))
+    with pytest.raises(RuntimeError, match="phase-4 data"):
+        command.downgrade(config, "010")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "011"
+        assert conn.scalar(text("SELECT count(*) FROM work_sessions")) == 1
+
+
+def test_011_two_connections_competing_start_create_one_session(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "011")
+    with Session(engine) as db:
+        db.add(User(id=7, amocrm_user_id=700, amocrm_account_id=100, name="One"))
+        db.add(WidgetGroup(id=10, account_id=100, name="Sales", timezone="UTC"))
+        db.flush()
+        db.add(GroupMember(account_id=100, user_id=7, group_id=10, is_active=True, track_time=True))
+        db.commit()
+    barrier = Barrier(2)
+
+    def start():
+        with Session(engine) as db:
+            user = db.get(User, 7)
+            barrier.wait(timeout=10)
+            try:
+                return TimesheetService(db).apply(RequestContext(100, user), "start-work", uuid4(), datetime(2026, 9, 22, 6)).status
+            except TimesheetConflict as exc:
+                return str(exc)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _: start(), range(2)))
+    assert sorted(outcomes) == ["STATUS_TRANSITION_INVALID", "working"]
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM work_sessions")) == 1
+        assert conn.scalar(text("SELECT count(*) FROM status_transitions")) == 1
+        assert conn.scalar(text("SELECT count(*) FROM timesheet_commands")) == 1
+
+
+def test_011_partial_unique_index_rejects_second_open_session(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "011")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
+        conn.execute(text("INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (100,700,'One','2026-09-22 06:00:00','working',now(),now())"))
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (100,700,'One','2026-09-22 07:00:00','working',now(),now())"))
 
 
 @pytest.fixture
