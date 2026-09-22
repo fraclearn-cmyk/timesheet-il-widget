@@ -48,8 +48,8 @@
 | 0 | Контракт и технический spike amoCRM | Выполнена с подтверждёнными ограничениями | 2026-09-16 | `pytest -q`: 110 passed; live OAuth/account/users/rights/refresh и 7 типов событий проверены; calls/UI-iframe ограничены |
 | 1 | Единая модель данных и миграции | Выполнена | 2026-09-18 | `pytest -q`: 143 passed; 29 точечных unit-тестов прошли при независимом review; PostgreSQL upgrade/downgrade: 4 passed; одна голова `005` |
 | 2 | OAuth, синхронизация пользователей и права | Выполнена | 2026-09-19 | `pytest`: 248 passed, 10 skipped; PostgreSQL migrations: 10 passed; независимый entry-gate review: PASS; одна голова `009` |
-| 3 | Настройки amoMarket: пользователи и группы | Локально реализована; live gate отложен | 2026-09-22 | Локально: backend `369 passed`, Node `39 passed`, PostgreSQL migrations `15 passed`, package tests `11 passed`, `010 (head)`, ZIP `16` файлов; complete live amoCRM smoke и детальная приёмка отложены до локальной реализации всех фаз |
-| 4 | Рабочие статусы и блокирующий интерфейс | Не начата | — | — |
+| 3 | Настройки amoMarket: пользователи и группы | Локально реализована; live gate отложен | 2026-09-22 | Локально: backend `369 passed`, Node `39 passed`, PostgreSQL migrations `15 passed`, package tests `12 passed`, `010 (head)`, ZIP `16` файлов; complete live amoCRM smoke и детальная приёмка отложены до локальной реализации всех фаз |
+| 4 | Рабочие статусы и блокирующий интерфейс | В работе: проектирование и baseline | 2026-09-22 | Текущий backend baseline: `350 passed`, `18 skipped`, `1 failed` на границе локальной и UTC-даты; причина установлена, исправление ещё не внесено |
 | 5 | Источник событий amoCRM и активность | Не начата | — | — |
 | 6 | API мониторинга и окно активности | Не начата | — | — |
 | 7 | Табель, отчёты и Excel | Не начата | — | — |
@@ -171,6 +171,8 @@
 **Критерии готовности:** настройки сохраняются только у пользователя с нужным правом amoCRM; «Скрыть» не выключает учёт; один сотрудник имеет максимум одну группу; настройки отсутствуют в рабочем интерфейсе.
 
 ## Фаза 4. Рабочие статусы и блокирующий интерфейс
+
+**Baseline 2026-09-22:** общий backend-прогон дал `350 passed`, `18 skipped`, `1 failed` в `test_legacy_consumers_query_canonical_fields_and_correct_account`: старая KPI-логика определяет «сегодня» по локальной дате компьютера, а сессия хранит время в UTC. При переходе местной даты раньше UTC-даты тест получает ноль вместо часа. Это открытая задача фазы, а не пройденная проверка.
 
 **Готовое состояние:** сотрудник может менять только собственный статус, backend корректно считает рабочий день/перерывы/опоздание, а overlay блокирует amoCRM в нерабочих состояниях.
 
@@ -501,7 +503,7 @@ flowchart TD
 #### Что можно проверить
 
 - Из `backend/`: `..\.venv312\Scripts\python.exe -m pytest -q --disable-warnings` с disposable `TEST_POSTGRES_ADMIN_URL` — `369 passed`; отдельно `tests/integration/test_migrations.py -q` — `15 passed`, `alembic heads` — одна `010 (head)`.
-- Из корня: `npm run test:settings` — `39 passed`; `.\.venv312\Scripts\python.exe -m unittest -q test_widget_package` — `11 passed`; `powershell -ExecutionPolicy Bypass -File .\build_widget.ps1 -ApiUrl "https://storage-turkey-multitask.ngrok-free.dev/api/v1"`, затем `.\.venv312\Scripts\python.exe .\validate_widget_zip.py .\widget.zip` — `16` точных runtime-файлов; `git diff --check` — exit 0.
+- Из корня: `npm run test:settings` — `39 passed`; `.\.venv312\Scripts\python.exe -m unittest -q test_widget_package` — `12 passed`; `powershell -ExecutionPolicy Bypass -File .\build_widget.ps1 -ApiUrl "https://storage-turkey-multitask.ngrok-free.dev/api/v1"`, затем `.\.venv312\Scripts\python.exe .\validate_widget_zip.py .\widget.zip` — `16` точных runtime-файлов; `git diff --check` — exit 0.
 - Complete live amoCRM smoke и детальный пошаговый acceptance checklist отложены глобальным решением пользователя до того, как все фазы будут локально реализованы. Это не является live-верификацией фазы 3 и не отменяет будущую проверку.
 
 #### Блокеры и остаточные риски
@@ -527,3 +529,4 @@ flowchart TD
 | 2026-09-21 | Фаза 3 локально реализована, но оставлена `В работе` | 369 backend, 39 Node, 15 PostgreSQL migration, 11 package tests и точный ZIP прошли; live amoCRM и preflight старой `010` остаются обязательными |
 | 2026-09-22 | Убрана вторая кнопка сохранения; проверена локальная БД | Теперь сохранение идёт через стандартный `onSave` amoCRM; локальная БД на ревизии до `010`, содержит 2 рабочие записи и требует backup перед обновлением; live smoke остаётся открытым |
 | 2026-09-22 | Фаза 3 принята как локально реализованная; архив переименован в `widget.zip` | Пользователь отложил complete live amoCRM smoke и детальный acceptance checklist до локальной реализации всех фаз; staged validation и source non-mutation сохранены |
+| 2026-09-22 | Начата подготовка фазы 4; найден сбой на границе дат | Общий backend baseline: 350 passed, 18 skipped, 1 failed; расчёт «сегодня» использует локальную дату вместо согласованного часового пояса группы |
