@@ -46,15 +46,17 @@ console output. В этом документе «неизвестно» не з�
 
 ## Подтверждено локально и mock-контрактом
 
-- `widget/manifest.json` использует только `settings` и `advanced_settings`: стандартное
-  окно установки сохраняет `api_url`, собственная страница показывает редактор.
-  Рабочие locations намеренно не включены до безопасной реализации фазы 4.
+- После локальных lifecycle/browser tests фазы 4 `widget/manifest.json` включает
+  `settings`, `advanced_settings` и рабочую location `everywhere`: стандартное окно
+  установки сохраняет `api_url`, собственная страница показывает редактор, рабочая
+  область использует контроллер статуса.
 - Локальный DOM smoke проверяет общий путь `advancedSettings` → редактор →
   `this.$authorizedAjax` → канонический `PUT` snapshot → `destroy`, но не доказывает,
   что live amoCRM дождётся асинхронного `onSave` до закрытия своего окна.
-- В виджете читаются `AMOCRM.constant('account').id` и
-  `AMOCRM.constant('user').{id,name}`. Эти значения доступны UI, но текущий fallback
-  подставляет demo account/user и поэтому не пригоден для серверной аутентификации.
+- Demo fallback удалён. Рабочий контроллер получает подтверждённый статус через
+  `$authorizedAjax` и проверенную сервером личность; browser ID не служат основанием
+  аутентификации. При недоступности backend, таймауте или неподтверждённом ответе
+  действует fail-open: amoCRM остаётся без кнопок табеля и overlay.
 - OAuth adapter фазы 0 отправляет server-side `authorization_code` либо
   `refresh_token` grant на `{account_url}/oauth2/access_token`; успешный mock-ответ
   требует `access_token`, `refresh_token`, `expires_in`. Значения токенов не логируются.
@@ -85,11 +87,12 @@ console output. В этом документе «неизвестно» не з�
 amoCRM smoke и детальный пошаговый acceptance checklist отложены до локальной реализации
 всех фаз; этот gate не пройден и не заявляется выполненным.
 
-Сборка включает только 16 перечисленных runtime-файлов (`settings/*` в корне ZIP,
-не `frontend/settings/*`), проверяет точные paths и отсутствие credential-like
-текста. `-ApiUrl` меняет только staged строку `api_url_placeholder` в i18n; amoCRM
-может не отображать её в native `text`-поле, поэтому URL нужно явно ввести и
-сохранить в настройке `api_url`. Это не OAuth credential. Исходники сборка не меняет.
+Сборка включает ровно 18 перечисленных runtime-файлов, в том числе `overlay.js` и
+`timesheet/controller.js` (`settings/*` в корне ZIP, не `frontend/settings/*`),
+проверяет точные paths и отсутствие credential-like текста. Параметр `-ApiUrl`
+deprecated и игнорируется: operational URL задаётся только в native настройке
+`api_url` установленного виджета. Подсказка в архиве остаётся нейтральным HTTPS-примером.
+Это не OAuth credential. Исходники сборка не меняет.
 
 Для persistent БД с ранней локально применённой ревизией `010` существует отдельный
 deployment gate: stamp `010` сам по себе недостаточен, поскольку старый вариант мог
@@ -123,7 +126,8 @@ forward repair migration (или восстановление чистой те�
   описывает контекстные переменные `#ACCOUNT_ID#` и `#USER_ID#`; это не server-side
   удостоверение личности.
 - [Web SDK locations](https://www.amocrm.ru/developers/content/web_sdk/start) перечисляет
-  доступные locations; только используемая location оставлена в manifest.
+  доступные locations; текущий manifest включает `settings`, `advanced_settings`
+  и `everywhere`.
 - [Возможности телефонии](https://www.amocrm.ru/developers/content/telephony/capabilities-2)
   показывает notification payload, но не подтверждает универсальный API чтения истории
   звонков для данного виджета.
