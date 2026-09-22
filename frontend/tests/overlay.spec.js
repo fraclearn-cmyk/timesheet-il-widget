@@ -18,10 +18,17 @@ test('confirmed break blocks mouse and keyboard until clear', async ({ page }) =
   await page.evaluate((snapshot) => window.overlay.render(snapshot), { ...base, status: 'on_break' });
   await expect(page.locator('.timesheet-overlay')).toHaveCount(1);
   await expect(page.locator('.timesheet-action')).toHaveCount(2);
-  await page.locator('#crm-action').click({ force: true });
-  await page.keyboard.press('Tab');
-  await page.keyboard.press('Tab');
-  await page.keyboard.press('Tab');
+  const crmBounds = await page.locator('#crm-action').boundingBox();
+  await page.mouse.click(crmBounds.x + crmBounds.width / 2, crmBounds.y + crmBounds.height / 2);
+  expect(await page.evaluate(() => window.crmClicks || 0)).toBe(0);
+  for (let index = 0; index < 3; index++) {
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement.closest('.timesheet-overlay') !== null)).toBe(true);
+  }
+  for (let index = 0; index < 3; index++) {
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(() => document.activeElement.closest('.timesheet-overlay') !== null)).toBe(true);
+  }
   await page.keyboard.press('Enter');
   expect(await page.evaluate(() => window.crmClicks || 0)).toBe(0);
   await page.evaluate(() => window.overlay.clear());
@@ -30,6 +37,15 @@ test('confirmed break blocks mouse and keyboard until clear', async ({ page }) =
   await page.locator('#crm-action').focus();
   await page.keyboard.press('Enter');
   expect(await page.evaluate(() => window.crmClicks)).toBe(2);
+});
+
+test('finished without restart keeps keyboard focus in blocking overlay', async ({ page }) => {
+  await page.evaluate((snapshot) => window.overlay.render(snapshot), { ...base, status: 'finished' });
+  await expect(page.locator('.timesheet-action')).toHaveCount(0);
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement.closest('.timesheet-overlay') !== null)).toBe(true);
+  await page.keyboard.press('Shift+Tab');
+  expect(await page.evaluate(() => document.activeElement.closest('.timesheet-overlay') !== null)).toBe(true);
 });
 
 test('unknown and opted-out states leave amoCRM clear', async ({ page }) => {

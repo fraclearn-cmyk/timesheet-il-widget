@@ -1,6 +1,6 @@
 # Build a fixed, runtime-only amoCRM widget package. Sources are never edited.
 param(
-    [string]$ApiUrl = "https://example.com/api/v1"
+    [string]$ApiUrl
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,17 +19,9 @@ $archiveBackup = Join-Path $root ('.widget-backup-' + [guid]::NewGuid().ToString
 $archiveFinal = Join-Path $root 'widget.zip'
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
 
-if (-not [uri]::IsWellFormedUriString($ApiUrl, [UriKind]::Absolute)) {
-    throw 'ApiUrl must be an absolute URL.'
+if ($PSBoundParameters.ContainsKey('ApiUrl')) {
+    Write-Warning '-ApiUrl is deprecated and ignored; configure the native amoCRM api_url field instead.'
 }
-$apiUri = [uri]$ApiUrl
-if ($apiUri.Scheme -ne 'https' -and -not ($apiUri.Scheme -eq 'http' -and $apiUri.Host -eq 'localhost')) {
-    throw 'ApiUrl must use HTTPS (HTTP localhost is allowed for development).'
-}
-if ($apiUri.UserInfo -or $apiUri.Query -or $apiUri.Fragment) {
-    throw 'ApiUrl must not contain credentials, query, or fragment.'
-}
-$ApiUrl = $ApiUrl.TrimEnd('/')
 
 try {
     New-Item -ItemType Directory -Path $stage | Out-Null

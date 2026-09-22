@@ -45,21 +45,31 @@
                 button.addEventListener('click', function() { if (command) command(item[0]); });
                 panel.appendChild(button);
             });
+            if (blocked && !permitted.length) panel.tabIndex = -1;
             host.appendChild(panel);
             doc.body.appendChild(host);
             if (blocked) {
                 trap = function(event) {
-                    if (host && !host.contains(doc.activeElement) &&
-                        (event.key === 'Tab' || event.key === 'Enter' || event.key === ' ')) {
+                    if (!host) return;
+                    var buttons = panel.querySelectorAll('button');
+                    var first = buttons[0] || panel;
+                    var last = buttons[buttons.length - 1] || panel;
+                    if (event.key === 'Tab' &&
+                        (!host.contains(doc.activeElement) ||
+                         (!event.shiftKey && doc.activeElement === last) ||
+                         (event.shiftKey && doc.activeElement === first))) {
                         event.preventDefault();
                         event.stopPropagation();
-                        var first = panel.querySelector('button');
-                        if (first) first.focus();
+                        (event.shiftKey ? last : first).focus();
+                    } else if (!host.contains(doc.activeElement) &&
+                               (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        first.focus();
                     }
                 };
                 doc.addEventListener('keydown', trap, true);
-                var first = panel.querySelector('button');
-                if (first) first.focus();
+                (panel.querySelector('button') || panel).focus();
             }
         }
         return { render: render, clear: clear };

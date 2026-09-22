@@ -132,6 +132,7 @@ class WidgetPackageTests(unittest.TestCase):
                  "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("-ApiUrl is deprecated", result.stdout + result.stderr)
             with zipfile.ZipFile(work / "widget.zip") as archive:
                 self.assertEqual(set(archive.namelist()), RUNTIME)
                 self.assertIn(b"https://example.com/api/v1", archive.read("i18n/en.json"))
