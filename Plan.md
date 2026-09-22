@@ -49,7 +49,7 @@
 | 1 | Единая модель данных и миграции | Выполнена | 2026-09-18 | `pytest -q`: 143 passed; 29 точечных unit-тестов прошли при независимом review; PostgreSQL upgrade/downgrade: 4 passed; одна голова `005` |
 | 2 | OAuth, синхронизация пользователей и права | Выполнена | 2026-09-19 | `pytest`: 248 passed, 10 skipped; PostgreSQL migrations: 10 passed; независимый entry-gate review: PASS; одна голова `009` |
 | 3 | Настройки amoMarket: пользователи и группы | Локально реализована; live gate отложен | 2026-09-22 | Локально: backend `369 passed`, Node `39 passed`, PostgreSQL migrations `15 passed`, package tests `12 passed`, `010 (head)`, ZIP `16` файлов; complete live amoCRM smoke и детальная приёмка отложены до локальной реализации всех фаз |
-| 4 | Рабочие статусы и блокирующий интерфейс | В работе: проектирование и baseline | 2026-09-22 | Текущий backend baseline: `350 passed`, `18 skipped`, `1 failed` на границе локальной и UTC-даты; причина установлена, исправление ещё не внесено |
+| 4 | Рабочие статусы и блокирующий интерфейс | Локально выполнена; live gate отложен | 2026-09-23 | Backend `404 passed`, Node `42 + 15 passed`, browser `11 passed`, package `12 passed`; независимый review закрыт; `widget.zip` содержит 18 точных runtime-файлов |
 | 5 | Источник событий amoCRM и активность | Не начата | — | — |
 | 6 | API мониторинга и окно активности | Не начата | — | — |
 | 7 | Табель, отчёты и Excel | Не начата | — | — |
@@ -64,7 +64,7 @@
 | Выровнять существующие модели, сервисы и API | Модели, схемы и подключённые маршруты используют verified request context, account scope и policy-фильтрацию | Выполнено | Нет |
 | Ввести отдельные группы виджета и уникальность группы сотрудника | Добавлены `WidgetGroup`/`GroupMember`; PostgreSQL запрещает второе активное членство в пределах аккаунта и сохраняет историю неактивных членств | Выполнено | Нет; чистый и заполненный цикл миграций проверен на PostgreSQL |
 | Реализовать настройки «Учитывать» и «Скрыть» | `frontend/settings/*`, `widget/script.js`, `backend/app/api/v1/settings.py`, `settings_snapshot_service.py`; локальный DOM smoke и API-тесты прошли | Локально выполнено, live gate открыт | Проверить реальный `onSave`/`$authorizedAjax` в amoCRM и схему persistent БД со старой `010` |
-| Реализовать статусы и overlay | Не выполнено | Не начато | Нужен стабильный контракт сессий |
+| Реализовать статусы и overlay | Доменный автомат, idempotent-команды, authenticated API, fail-open controller и блокирующий overlay реализованы; `widget.zip` пересобран | Локально выполнено, live gate отложен | Реальный порядок событий/стилей и CORS в amoCRM проверяются после локальной реализации всех фаз |
 | Получать полный перечень событий аналитики и звонки | Не выполнено | Не начато | Ограничения amoCRM требуют spike |
 | Реализовать интервалы с порогом 5 минут | Единая модель и правила источников готовы: подтверждённый интервал создаётся только во время `Работаю`; порог и сбор событий остаются фазой 5 | Частично выполнено по плану | Зависит от источника событий фазы 5 |
 | Реализовать мониторинг по ролям и активность за 7 дней | Не выполнено | Не начато | Зависит от RBAC и activity API |
@@ -174,17 +174,19 @@
 
 **Baseline 2026-09-22:** общий backend-прогон дал `350 passed`, `18 skipped`, `1 failed` в `test_legacy_consumers_query_canonical_fields_and_correct_account`: старая KPI-логика определяет «сегодня» по локальной дате компьютера, а сессия хранит время в UTC. При переходе местной даты раньше UTC-даты тест получает ноль вместо часа. Это открытая задача фазы, а не пройденная проверка.
 
+**Итог 2026-09-23:** KPI и рабочие статусы используют business date группы; полный PostgreSQL-прогон завершён результатом `404 passed`, `0 skipped`. Независимый review и дополнительные проверки fail-open закрыты.
+
 **Готовое состояние:** сотрудник может менять только собственный статус, backend корректно считает рабочий день/перерывы/опоздание, а overlay блокирует amoCRM в нерабочих состояниях.
 
 **Задачи:**
 
-- [ ] Создать доменный автомат переходов: `BEFORE_WORKDAY -> WORKING -> BREAK -> WORKING -> FINISHED`; повтор `FINISHED -> WORKING` только по разрешению администратора.
-- [ ] Реализовать idempotency key для кнопок, защиту двойного клика и конфликтов вкладок.
-- [ ] Рассчитывать начало/конец дня, опоздание и длительность по часовому поясу группы, хранить timestamps в UTC.
-- [ ] Вынести overlay из дублирующего inline CSS и применить namespace классов виджета.
-- [ ] Реализовать состояния `Работаю`, `Перерыв`, `Закончил(а)`, включая затемнение и только допустимые кнопки.
-- [ ] Для скрытого пользователя не показывать UI, но продолжать серверный учёт.
-- [ ] Убрать demo fallback, который создаёт видимость работы при недоступном backend; показывать русское сообщение об ошибке и безопасное состояние.
+- [x] Создать доменный автомат переходов: `BEFORE_WORKDAY -> WORKING -> BREAK -> WORKING -> FINISHED`; повтор `FINISHED -> WORKING` только по разрешению администратора.
+- [x] Реализовать idempotency key для кнопок, защиту двойного клика и конфликтов вкладок.
+- [x] Рассчитывать начало/конец дня, опоздание и длительность по часовому поясу группы, хранить timestamps в UTC.
+- [x] Вынести overlay из дублирующего inline CSS и применить namespace классов виджета.
+- [x] Реализовать состояния `Работаю`, `Перерыв`, `Закончил(а)`, включая затемнение и только допустимые кнопки.
+- [x] Для скрытого пользователя не показывать UI, но продолжать серверный учёт.
+- [x] Убрать demo fallback: при недоступном backend полностью убирать кнопки и затемнение, оставляя amoCRM доступной без ложного статуса.
 
 **Файлы:**
 
@@ -512,9 +514,46 @@ flowchart TD
 - Локальная persistent БД проверена 2026-09-22: текущая ревизия `e1db632ded80` (до `010`), `users.hide_widget` пока отсутствует по ожидаемой причине; в ней есть 2 записи `work_sessions`. Перед обновлением этой БД нужна резервная копия. Другая persistent БД, уже stamped ранней локальной `010`, может не иметь `users.hide_widget`: до её deployment необходимы backup и schema preflight; при отсутствующей колонке развертывание остановить до отдельной проверенной forward repair migration. Свежий PostgreSQL cycle этого пути не доказывает.
 - Отложенные minor: параметризация downgrade-guard по всем новым колонкам, выбор historical membership при equal-timestamp ID tie, уже неконсистентная inactive group + inactive membership. Они не скрыты локальным зелёным gate.
 
+### Отчёт по фазе 4 (локальная готовность, не приёмка live amoCRM)
+
+#### Что сделано
+
+- Реализован серверный автомат рабочего дня с допустимыми переходами, запретом повторного старта без разрешения администратора и account/user scope.
+- Команды используют UUID idempotency key: двойной клик и повтор после потерянного ответа не создают второй переход; PostgreSQL защищает гонку уникальным ограничением.
+- Рабочий день, ночная смена и опоздание рассчитываются по часовому поясу и расписанию группы; хранение времени остаётся в UTC.
+- Добавлены пять authenticated timesheet routes и строгие JSON-контракты без доверия к browser identity.
+- Добавлены контроллер и overlay в нативном стиле amoCRM. Затемнение действует только в подтверждённых состояниях перерыва/завершения, удерживает фокус и изолирует клавиатурные действия.
+- При ошибке, зависании или исчезновении backend виджет убирает кнопки и затемнение: amoCRM остаётся доступной. Состояние проверяется раз в 30 секунд, запрос ограничен 10 секундами; частые focus-события не продлевают этот предел.
+- Рабочий stylesheet загружается реальным lifecycle до запуска UI; переход того же instance в настройки и `destroy` очищают controller, listeners, timers, styles и overlay.
+- Независимый общий review и две разрешённые пользователем scoped re-review закрыли все Critical/Important замечания.
+
+#### Созданные и изменённые файлы
+
+- Backend: созданы `backend/app/core/business_time.py`, `backend/app/models/timesheet_command.py`, `backend/app/schemas/timesheet.py`, `backend/app/services/timesheet_service.py`, `backend/app/api/v1/timesheet.py`, миграция `backend/migrations/versions/011_timesheet_commands.py`; обновлены `main.py`, модели рабочего дня и KPI.
+- Backend tests: созданы `backend/tests/unit/test_timesheet_transitions.py`, `test_timezone_schedule.py`, `backend/tests/api/test_timesheet.py`; расширены model, migration и authorized-route tests.
+- Widget: созданы `widget/overlay.js`, `widget/timesheet/controller.js`; обновлены `widget/script.js`, `styles.css`, `manifest.json` и i18n.
+- Browser/Node tests: созданы `frontend/tests/overlay.spec.js`, `timesheet-controller.test.js`, `widget-working.spec.js`; обновлены lifecycle/settings smoke tests.
+- Контракт и сборка: обновлены `docs/api-contract.md`, `build_widget.ps1`, `validate_widget_zip.py`, `test_widget_package.py`, `package.json` и lock-файл.
+- Пересобран корневой `widget.zip`; предыдущая версия сохранена как `widget-before-phase4-final-20260923-C977D60B.zip`.
+
+#### Что можно проверить
+
+- Из `backend/` с отдельной PostgreSQL в `TEST_POSTGRES_ADMIN_URL` выполнить `..\.venv312\Scripts\python.exe -m pytest -q --tb=short --disable-warnings` — последний результат `404 passed`, `0 skipped`; 425 существующих предупреждений не скрыты.
+- Из корня выполнить `npm run test:settings` — `42 passed`; `npm run test:timesheet` — `15 passed`.
+- Выполнить `npx playwright test frontend/tests/overlay.spec.js frontend/tests/widget-working.spec.js --workers=1 --reporter=line` — `11 passed` в Chrome.
+- Выполнить `.\.venv312\Scripts\python.exe -m pytest test_widget_package.py -q --tb=short` — `12 passed`; затем `.\.venv312\Scripts\python.exe .\validate_widget_zip.py .\widget.zip` — `18` точных runtime-файлов.
+- Новый `widget.zip` имеет SHA256 `EA9F368A2FF02E129BD5377511F86261D8A9C46DA40CF40A8E99FB0A494F3B16`. Для live-проверки его пока загружать не требуется: единый пошаговый сценарий будет дан после локальной реализации фаз 5–9.
+
+#### Блокеры и остаточные риски
+
+- Блокеров для начала фазы 5 нет; локальный gate фазы 4 зелёный.
+- Live amoCRM намеренно не проверен по решению пользователя. Локальный Chrome не доказывает порядок ранее зарегистрированных window/document capture handlers, реальную загрузку CSS SDK и CORS в аккаунте.
+- При уже показанном подтверждённом overlay сбой backend обнаруживается не мгновенно, а максимум примерно за 40 секунд: периодическая проверка 30 секунд плюс deadline 10 секунд. Значения можно настроить под инфраструктуру заказчика после измерений.
+- URL backend не зашит в архив: после переноса на сервер заказчика он задаётся в нативном поле `api_url` amoCRM.
+
 ## Текущий отчёт по фазам
 
-Фазы 0–2 завершены; фаза 3 локально реализована и принята для перехода к фазе 4 после backend/frontend/package/свежего PostgreSQL gate. Complete live amoCRM smoke и детальный acceptance checklist отложены до локальной реализации всех фаз; они не были выполнены и не считаются закрытыми. Preflight/repair уже stamped `010` БД также остаётся отдельным deployment gate.
+Фазы 0–2 завершены; фазы 3–4 локально реализованы и приняты для перехода к фазе 5 после backend/frontend/browser/package/PostgreSQL gate и независимых review. Complete live amoCRM smoke и детальный acceptance checklist отложены до локальной реализации всех фаз; они не были выполнены и не считаются закрытыми. Preflight/repair уже stamped `010` БД также остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -530,3 +569,4 @@ flowchart TD
 | 2026-09-22 | Убрана вторая кнопка сохранения; проверена локальная БД | Теперь сохранение идёт через стандартный `onSave` amoCRM; локальная БД на ревизии до `010`, содержит 2 рабочие записи и требует backup перед обновлением; live smoke остаётся открытым |
 | 2026-09-22 | Фаза 3 принята как локально реализованная; архив переименован в `widget.zip` | Пользователь отложил complete live amoCRM smoke и детальный acceptance checklist до локальной реализации всех фаз; staged validation и source non-mutation сохранены |
 | 2026-09-22 | Начата подготовка фазы 4; найден сбой на границе дат | Общий backend baseline: 350 passed, 18 skipped, 1 failed; расчёт «сегодня» использует локальную дату вместо согласованного часового пояса группы |
+| 2026-09-23 | Фаза 4 локально выполнена; статусы, idempotency, расписание, fail-open controller и overlay проверены | 404 backend, 42 settings, 15 controller, 11 browser и 12 package tests прошли; review закрыт; `widget.zip` содержит 18 точных runtime-файлов, live amoCRM отложен до завершения всех фаз |
