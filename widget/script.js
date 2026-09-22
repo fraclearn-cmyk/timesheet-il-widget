@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings', './timesheet/controller'], function($, SettingsController, TimesheetController) {
+define(['jquery', './settings/settings', './timesheet/controller', './overlay'], function($, SettingsController, TimesheetController, Overlay) {
     function apiUrl(widget) {
         var settings = widget.get_settings();
         return settings && settings.api_url ? String(settings.api_url).replace(/\/+$/, '') : null;
@@ -33,6 +33,10 @@ define(['jquery', './settings/settings', './timesheet/controller'], function($, 
         this.settingsStyle = null;
         this.timesheetController = null;
         this.removeFocusRefresh = null;
+        this.timesheetOverlay = Overlay.createOverlay(document);
+
+        this.clearTimesheetStatus = function() { widget.timesheetOverlay.clear(); };
+        this.renderTimesheetStatus = function(snapshot, command) { widget.timesheetOverlay.render(snapshot, command); };
 
         function removeSettings() {
             if (widget.settingsController) widget.settingsController.destroy();
@@ -88,6 +92,7 @@ define(['jquery', './settings/settings', './timesheet/controller'], function($, 
             bind_actions: function() { return true; },
             settings: function() { return true; },
             advancedSettings: function() {
+                if (typeof widget.system !== 'function' || widget.system().area !== 'advanced_settings') return false;
                 removeSettings();
                 var holder = document.getElementById('list_page_holder');
                 if (!holder) return false;
@@ -110,6 +115,7 @@ define(['jquery', './settings/settings', './timesheet/controller'], function($, 
                 return true;
             },
             onSave: function() {
+                if (typeof widget.system !== 'function' || widget.system().area !== 'advanced_settings') return true;
                 var controller = widget.settingsController;
                 return !controller ? true : (controller.snapshot ? controller.save() : controller.ready.then(function() { return controller.save(); }));
             },

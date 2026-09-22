@@ -34,10 +34,10 @@ function boot(options = {}) {
   let Widget;
   window.define = (ids, factory) => {
     moduleIds.push(...ids);
-    Widget = factory({}, window.SettingsController, require('../../widget/timesheet/controller'));
+    Widget = factory({}, window.SettingsController, require('../../widget/timesheet/controller'), require('../../widget/overlay'));
   };
   window.eval(widgetSource);
-  assert.deepEqual(moduleIds, ['jquery', './settings/settings', './timesheet/controller']);
+  assert.deepEqual(moduleIds, ['jquery', './settings/settings', './timesheet/controller', './overlay']);
   const requests = [];
   const widget = new Widget();
   widget.system = () => ({ area: options.area || 'advanced_settings' });
@@ -47,12 +47,6 @@ function boot(options = {}) {
     requests.push(request);
     if (request.method === 'GET') return options.load || Promise.resolve(snapshot());
     return options.save || Promise.resolve(snapshot());
-  };
-  widget.clearTimesheetStatus = () => { document.querySelectorAll('.timesheet-overlay, .timesheet-action').forEach((node) => node.remove()); };
-  widget.renderTimesheetStatus = (current, command) => {
-    widget.rendered = current;
-    widget.command = command;
-    document.body.insertAdjacentHTML('beforeend', '<div class="timesheet-overlay"><button class="timesheet-action"></button></div>');
   };
   return { dom, document, widget, requests };
 }
@@ -75,8 +69,8 @@ test('init in settings area does not start working overlay', () => {
   }
 });
 
-test('manifest declares only settings locations while working init remains unexposed', () => {
-  assert.deepEqual(manifest.locations, ['settings', 'advanced_settings']);
+test('manifest enables working locations', () => {
+  assert.deepEqual(manifest.locations, ['settings', 'advanced_settings', 'everywhere']);
 });
 
 test('settings script registers an AMD module for the widget dependency', () => {
@@ -179,6 +173,23 @@ test('repeated working init replaces its controller and focus refresh listener',
   dom.window.dispatchEvent(new dom.window.Event('focus'));
   await new Promise(setImmediate);
   assert.equal(requests.filter((request) => request.url.endsWith('/timesheet/my-status')).length, 3);
+});
+
+test('API outage after a visible break removes its overlay and work buttons', async () => {
+  let outage = false;
+  const { dom, document, widget } = boot({ area: 'lcard' });
+  widget.$authorizedAjax = () => outage ? Promise.reject(new Error('offline')) : Promise.resolve({
+    session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z', ended_at: null,
+    break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false,
+  });
+  widget.callbacks.init();
+  await new Promise(setImmediate);
+  assert.equal(document.querySelectorAll('.timesheet-overlay').length, 1);
+  outage = true;
+  dom.window.dispatchEvent(new dom.window.Event('focus'));
+  await new Promise(setImmediate);
+  assert.equal(document.querySelectorAll('.timesheet-overlay, .timesheet-action').length, 0);
+  widget.callbacks.destroy();
 });
 
 test('missing API URL shows a safe state without issuing a request', () => {

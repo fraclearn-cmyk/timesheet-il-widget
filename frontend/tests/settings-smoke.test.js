@@ -28,7 +28,8 @@ test('advanced settings smoke uses amoCRM onSave without an embedded save action
   window.AMOCRM = { constant: () => ({ id: 101, name: 'Anna' }) };
   window.eval(controllerSource);
   let Widget;
-  window.define = (_ids, factory) => { Widget = factory({}, window.SettingsController); };
+  window.define = (_ids, factory) => { Widget = factory({}, window.SettingsController,
+    require('../../widget/timesheet/controller'), require('../../widget/overlay')); };
   window.eval(widgetSource);
   const requests = [];
   const widget = new Widget();

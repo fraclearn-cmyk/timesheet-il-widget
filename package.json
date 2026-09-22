@@ -1,11 +1,14 @@
 {
   "private": true,
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test:settings": "node --test frontend/tests/settings-controller.test.js frontend/tests/widget-lifecycle.test.js frontend/tests/settings-smoke.test.js",
     "test:timesheet": "node --test frontend/tests/timesheet-controller.test.js"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "jsdom": "26.1.0"
   }
 }

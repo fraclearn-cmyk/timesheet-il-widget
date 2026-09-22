@@ -1,12 +1,12 @@
 # Build a fixed, runtime-only amoCRM widget package. Sources are never edited.
 param(
-    [string]$ApiUrl = "http://localhost:8000/api/v1"
+    [string]$ApiUrl = "https://example.com/api/v1"
 )
 
 $ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $runtime = @(
-    'manifest.json', 'script.js', 'styles.css',
+    'manifest.json', 'script.js', 'overlay.js', 'timesheet/controller.js', 'styles.css',
     'settings/settings.html', 'settings/settings.js', 'settings/settings.css',
     'i18n/ru.json', 'i18n/en.json',
     'images/icon.png', 'images/logo.png', 'images/logo_main.png',
@@ -48,9 +48,6 @@ try {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
         if ($name -match '\.(json|js|css|html)$') {
             $content = [System.IO.File]::ReadAllText($source, $utf8).TrimStart([char]0xFEFF)
-            if ($name -eq 'i18n/ru.json' -or $name -eq 'i18n/en.json') {
-                $content = $content.Replace('http://your-server.com/api/v1', $ApiUrl)
-            }
             [System.IO.File]::WriteAllText($target, $content, $utf8)
         } else {
             Copy-Item -LiteralPath $source -Destination $target
@@ -114,7 +111,7 @@ try {
         [System.IO.File]::Move($archiveTemp, $archiveFinal)
     }
     Write-Host "Built $archiveFinal ($($runtime.Count) runtime files)."
-    Write-Host 'The API URL is staged in i18n text only; enter and save it in the native amoCRM field.'
+    Write-Host 'Enter the operational API URL in the native amoCRM field.'
 } finally {
     $verifiedStage = [System.IO.Path]::GetFullPath($stage)
     if ($verifiedStage.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -and

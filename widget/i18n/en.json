@@ -48,7 +48,7 @@
     "enable_widget": "Enable widget",
     "backend_url": "Backend URL",
     "login": "API key or login",
-    "api_url_placeholder": "http://your-server.com/api/v1",
+    "api_url_placeholder": "https://example.com/api/v1",
     "auto_pause": "Auto-pause when closing card",
     "require_category": "Require activity category",
     "track_idle": "Track idle time",

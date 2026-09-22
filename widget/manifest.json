@@ -18,7 +18,8 @@
   },
   "locations": [
     "settings",
-    "advanced_settings"
+    "advanced_settings",
+    "everywhere"
   ],
   "settings": {
     "api_url": {

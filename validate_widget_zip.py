@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 RUNTIME_FILES = frozenset({
-    "manifest.json", "script.js", "styles.css",
+    "manifest.json", "script.js", "overlay.js", "timesheet/controller.js", "styles.css",
     "settings/settings.html", "settings/settings.js", "settings/settings.css",
     "i18n/ru.json", "i18n/en.json",
     "images/icon.png", "images/logo.png", "images/logo_main.png",
@@ -99,12 +99,18 @@ class WidgetValidator:
                         manifest = json.loads(text["manifest.json"])
                     except json.JSONDecodeError:
                         manifest = {}
-                    if manifest.get("locations") != ["settings", "advanced_settings"]:
-                        self.errors.append("manifest.json locations must be exactly settings, advanced_settings")
+                    if manifest.get("locations") != ["settings", "advanced_settings", "everywhere"]:
+                        self.errors.append("manifest.json locations must be exactly settings, advanced_settings, everywhere")
                     if not isinstance(manifest.get("advanced"), dict) or not manifest["advanced"].get("title"):
                         self.errors.append("manifest.json advanced.title is required")
                 if "script.js" in text and not re.search(r"advancedSettings\s*:\s*function", text["script.js"]):
                     self.errors.append("script.js must define advancedSettings callback")
+                if "script.js" in text:
+                    for dependency, member in (("./settings/settings", "settings/settings.js"),
+                                               ("./timesheet/controller", "timesheet/controller.js"),
+                                               ("./overlay", "overlay.js")):
+                        if dependency in text["script.js"] and member not in names:
+                            self.errors.append(f"Missing AMD dependency: {member}")
                 if "settings/settings.js" in text and "SettingsController" not in text["settings/settings.js"]:
                     self.errors.append("settings/settings.js is not the runtime editor")
         except (OSError, zipfile.BadZipFile, RuntimeError, ValueError) as exc:

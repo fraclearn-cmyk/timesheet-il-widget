@@ -13,7 +13,7 @@ from validate_widget_zip import WidgetValidator
 
 ROOT = Path(__file__).resolve().parent
 RUNTIME = {
-    "manifest.json", "script.js", "styles.css",
+    "manifest.json", "script.js", "overlay.js", "timesheet/controller.js", "styles.css",
     "settings/settings.html", "settings/settings.js", "settings/settings.css",
     "i18n/ru.json", "i18n/en.json",
     "images/icon.png", "images/logo.png", "images/logo_main.png",
@@ -134,7 +134,8 @@ class WidgetPackageTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             with zipfile.ZipFile(work / "widget.zip") as archive:
                 self.assertEqual(set(archive.namelist()), RUNTIME)
-                self.assertIn(b"https://api.example.test/api/v1", archive.read("i18n/en.json"))
+                self.assertIn(b"https://example.com/api/v1", archive.read("i18n/en.json"))
+                self.assertNotIn(b"https://api.example.test/api/v1", archive.read("i18n/en.json"))
                 self.assertFalse(archive.read("i18n/en.json").startswith(b"\xef\xbb\xbf"))
             for name, content in before.items():
                 self.assertEqual((work / name).read_bytes(), content, name)
@@ -162,7 +163,8 @@ class WidgetPackageTests(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
             with zipfile.ZipFile(work / "widget.zip") as archive:
-                self.assertIn(b"https://second.example.test/api/v1", archive.read("i18n/en.json"))
+                self.assertIn(b"https://example.com/api/v1", archive.read("i18n/en.json"))
+                self.assertNotIn(b"https://second.example.test/api/v1", archive.read("i18n/en.json"))
             self.assertNotEqual((work / "widget.zip").read_bytes(), previous_bytes)
             self.assertTrue(WidgetValidator(work / "widget.zip").validate())
             self.assertEqual(list(work.glob(".widget-stage-*")), [])

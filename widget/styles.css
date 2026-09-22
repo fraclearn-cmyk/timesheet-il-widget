@@ -3,6 +3,43 @@
  * amoCRM Widget для учёта рабочего времени
  */
 
+.timesheet-overlay,
+.timesheet-actions {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    font-family: 'Open Sans', Arial, sans-serif;
+}
+.timesheet-overlay__shade {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, .72);
+    pointer-events: auto;
+}
+.timesheet-overlay__panel {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    gap: 12px;
+    padding: 20px;
+    border-radius: 8px;
+    background: white;
+    z-index: 1;
+}
+.timesheet-actions { pointer-events: none; }
+.timesheet-actions .timesheet-overlay__panel { top: auto; bottom: 16px; }
+.timesheet-action {
+    pointer-events: auto;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 5px;
+    background: #2469a8;
+    color: white;
+    cursor: pointer;
+}
+
 /* Widget Container */
 .timesheet-widget {
     font-family: 'Open Sans', Arial, sans-serif;
