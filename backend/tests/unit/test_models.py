@@ -206,6 +206,92 @@ def test_legacy_consumers_query_canonical_fields_and_correct_account(db, monkeyp
     assert load_workbook(department_output).active.cell(5, 9).value == "Checked"
 
 
+def test_kpi_includes_after_midnight_session_in_overnight_group_workday(db, monkeypatch):
+    """A local-midnight cutoff would omit this session from the night workday."""
+    from datetime import time
+
+    from app.models import GroupMember, WorkSession
+    from app.services.kpi_service import KPIService
+    import app.services.kpi_service as kpi_service
+
+    group = WidgetGroup(
+        account_id=100,
+        name="Night",
+        timezone="Europe/Minsk",
+        work_start_time=time(22),
+        work_end_time=time(6),
+    )
+    db.add(group)
+    db.flush()
+    db.add(GroupMember(account_id=100, group_id=group.id, user_id=7, track_time=True))
+    db.add(
+        WorkSession(
+            amocrm_account_id=100,
+            amocrm_user_id=700,
+            user_name="One",
+            start_time=datetime(2026, 9, 21, 22),  # 01:00 local on Sep 22
+            total_work_time=3600,
+        )
+    )
+    db.commit()
+    monkeypatch.setattr(kpi_service, "utc_now", lambda: datetime(2026, 9, 22, 1))
+
+    assert KPIService(db).calculate_user_kpi(7, 700).hours_today == 1
+
+
+def test_kpi_charts_use_group_business_date_instead_of_machine_calendar(db, monkeypatch):
+    """UTC-start-date chart grouping would label this Minsk work as Sep 21."""
+    from datetime import time
+
+    from app.models import Department, GroupMember, WorkSession
+    from app.services.kpi_service import KPIService
+    import app.services.kpi_service as kpi_service
+
+    fixed_now = datetime(2026, 9, 21, 23)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+
+    group = WidgetGroup(
+        account_id=100,
+        name="Minsk",
+        timezone="Europe/Minsk",
+        work_start_time=time(9),
+        work_end_time=time(18),
+    )
+    db.add(group)
+    db.flush()
+    db.add(
+        Department(
+            id=2, name="Minsk sales", work_start_time=time(9), work_end_time=time(18)
+        )
+    )
+    db.get(User, 7).department_id = 2
+    db.add(GroupMember(account_id=100, group_id=group.id, user_id=7, track_time=True))
+    db.add(
+        WorkSession(
+            amocrm_account_id=100,
+            amocrm_user_id=700,
+            user_name="One",
+            start_time=datetime(2026, 9, 21, 22),  # 01:00 Minsk on Sep 22
+            total_work_time=3600,
+        )
+    )
+    db.commit()
+    monkeypatch.setattr(kpi_service, "utc_now", lambda: fixed_now)
+    monkeypatch.setattr(kpi_service, "datetime", FixedDateTime)
+
+    service = KPIService(db)
+    user_chart = service.get_chart_data("700", days=1, account_id=100)
+    assert user_chart.labels == ["2026-09-22"]
+    assert user_chart.datasets[0]["data"] == [1.0]
+    assert service.get_department_chart_data(2, days=1).model_dump()["labels"] == [
+        "2026-09-22"
+    ]
+    assert service.get_department_chart_data(2, days=1).datasets[0]["data"] == [1.0]
+
 def test_team_reads_normalized_activity_model(db):
     from app.services.team_service import TeamService
     from app.models import CrmEvent

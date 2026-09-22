@@ -20,8 +20,10 @@ class KPIService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _calendar_for(self, user: User) -> tuple[str, time, time]:
+    def _calendar_for(self, user: User | None) -> tuple[str, time, time]:
         """Return a user's active group calendar, or the explicit UTC legacy one."""
+        if user is None:
+            return "UTC", time(9), time(18)
         group = (
             self.db.query(WidgetGroup)
             .join(
@@ -41,25 +43,36 @@ class KPIService:
             return "UTC", time(9), time(18)
         return group.timezone, group.work_start_time, group.work_end_time
 
-    def _period_bounds(self, user: User, now: datetime) -> tuple[datetime, datetime, datetime, datetime, datetime, datetime, date]:
+    def _period_days(self, user: User, now: datetime) -> tuple[date, date, date]:
         zone, start, end = self._calendar_for(user)
         day = business_date(now, zone, start, end)
-        today_start, today_end = local_period_utc_bounds(day, zone)
-        week_start, _ = local_period_utc_bounds(day - timedelta(days=day.weekday()), zone)
-        month_start, _ = local_period_utc_bounds(day.replace(day=1), zone)
-        return today_start, today_end, week_start, today_end, month_start, today_end, day
+        return day, day - timedelta(days=day.weekday()), day.replace(day=1)
 
-    def _sessions_since(self, user: User, start: datetime, end: datetime):
-        return (
+    def _sessions_for_business_days(
+        self, user: User, first_day: date, end_day: date
+    ) -> list[WorkSession]:
+        """Return sessions whose group workday is in [first_day, end_day)."""
+        zone, start, end = self._calendar_for(user)
+        first_utc, _ = local_period_utc_bounds(first_day, zone)
+        # A night shift's session may begin after local midnight but still
+        # belong to the preceding business day, so fetch one local day beyond
+        # the target range and classify it below.
+        end_utc, _ = local_period_utc_bounds(end_day + timedelta(days=1), zone)
+        sessions = (
             self.db.query(WorkSession)
             .filter(
                 WorkSession.amocrm_user_id == user.amocrm_user_id,
                 WorkSession.amocrm_account_id == user.amocrm_account_id,
-                WorkSession.start_time >= start,
-                WorkSession.start_time < end,
+                WorkSession.start_time >= first_utc,
+                WorkSession.start_time < end_utc,
             )
             .all()
         )
+        return [
+            session
+            for session in sessions
+            if first_day <= business_date(session.start_time, zone, start, end) < end_day
+        ]
 
     def calculate_user_kpi(self, user_id: int, amocrm_user_id: str) -> KPIMetrics:
         """Calculate KPI for a user"""
@@ -68,26 +81,24 @@ class KPIService:
         if user is None or user.amocrm_user_id != int(amocrm_user_id):
             raise ValueError("Mismatched user identity")
 
-        (
-            today_start,
-            today_end,
-            week_start,
-            week_end,
-            month_start,
-            month_end,
-            calendar_day,
-        ) = self._period_bounds(user, now)
+        calendar_day, week_start_day, month_start_day = self._period_days(user, now)
 
         # Today hours
-        today_sessions = self._sessions_since(user, today_start, today_end)
+        today_sessions = self._sessions_for_business_days(
+            user, calendar_day, calendar_day + timedelta(days=1)
+        )
         hours_today = sum(s.total_work_time for s in today_sessions) / 3600
 
         # Week hours
-        week_sessions = self._sessions_since(user, week_start, week_end)
+        week_sessions = self._sessions_for_business_days(
+            user, week_start_day, calendar_day + timedelta(days=1)
+        )
         hours_week = sum(s.total_work_time for s in week_sessions) / 3600
 
         # Month hours
-        month_sessions = self._sessions_since(user, month_start, month_end)
+        month_sessions = self._sessions_for_business_days(
+            user, month_start_day, calendar_day + timedelta(days=1)
+        )
         hours_month = sum(s.total_work_time for s in month_sessions) / 3600
 
         # Average per day (month)
@@ -176,18 +187,22 @@ class KPIService:
         month_sessions = []
         calendar_days = []
         for user in users:
-            (
-                today_start,
-                today_end,
-                week_start,
-                week_end,
-                month_start,
-                month_end,
-                calendar_day,
-            ) = self._period_bounds(user, now)
-            today_sessions.extend(self._sessions_since(user, today_start, today_end))
-            week_sessions.extend(self._sessions_since(user, week_start, week_end))
-            month_sessions.extend(self._sessions_since(user, month_start, month_end))
+            calendar_day, week_start_day, month_start_day = self._period_days(user, now)
+            today_sessions.extend(
+                self._sessions_for_business_days(
+                    user, calendar_day, calendar_day + timedelta(days=1)
+                )
+            )
+            week_sessions.extend(
+                self._sessions_for_business_days(
+                    user, week_start_day, calendar_day + timedelta(days=1)
+                )
+            )
+            month_sessions.extend(
+                self._sessions_for_business_days(
+                    user, month_start_day, calendar_day + timedelta(days=1)
+                )
+            )
             calendar_days.append(calendar_day.day)
 
         hours_today = sum(s.total_work_time for s in today_sessions) / 3600
@@ -233,31 +248,40 @@ class KPIService:
         self, user_id: str, days: int = 7, *, account_id=None
     ) -> ChartData:
         """Get chart data for user (last N days)"""
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days - 1)
         if account_id is None:
             from app.services.session_service import SessionService
 
             account_id = SessionService(self.db)._legacy_user(user_id).amocrm_account_id
+        user = (
+            self.db.query(User)
+            .filter(
+                User.amocrm_user_id == int(user_id),
+                User.amocrm_account_id == account_id,
+            )
+            .one_or_none()
+        )
+        zone, start, end = self._calendar_for(user)
+        end_date = business_date(utc_now(), zone, start, end)
+        start_date = end_date - timedelta(days=days - 1)
 
-        # Get sessions for period
+        first_utc, _ = local_period_utc_bounds(start_date, zone)
+        end_utc, _ = local_period_utc_bounds(end_date + timedelta(days=2), zone)
         sessions = (
             self.db.query(WorkSession)
             .filter(
                 WorkSession.amocrm_user_id == user_id,
                 WorkSession.amocrm_account_id == account_id,
-                WorkSession.start_time
-                >= datetime.combine(start_date, datetime.min.time()),
-                WorkSession.start_time
-                <= datetime.combine(end_date, datetime.max.time()),
+                WorkSession.start_time >= first_utc,
+                WorkSession.start_time < end_utc,
             )
             .all()
         )
 
-        # Group by date
         data_by_date: Dict[date, float] = {}
         for session in sessions:
-            session_date = session.start_time.date()
+            session_date = business_date(session.start_time, zone, start, end)
+            if not start_date <= session_date <= end_date:
+                continue
             hours = session.total_work_time / 3600
             data_by_date[session_date] = data_by_date.get(session_date, 0) + hours
 
@@ -292,8 +316,7 @@ class KPIService:
         visible_internal_user_ids: set[int] | None = None,
     ) -> ChartData:
         """Get chart data for department"""
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days - 1)
+        now = utc_now()
 
         # Get users
         user_query = self.db.query(User).filter(User.department_id == department_id)
@@ -307,27 +330,18 @@ class KPIService:
         if not user_ids:
             return ChartData(labels=[], datasets=[])
 
-        # Get sessions
-        sessions = (
-            self.db.query(WorkSession)
-            .filter(
-                tuple_(WorkSession.amocrm_account_id, WorkSession.amocrm_user_id).in_(
-                    user_ids
-                ),
-                WorkSession.start_time
-                >= datetime.combine(start_date, datetime.min.time()),
-                WorkSession.start_time
-                <= datetime.combine(end_date, datetime.max.time()),
-            )
-            .all()
-        )
-
-        # Group by date
+        end_date = max(self._period_days(user, now)[0] for user in users)
+        start_date = end_date - timedelta(days=days - 1)
         data_by_date: Dict[date, float] = {}
-        for session in sessions:
-            session_date = session.start_time.date()
-            hours = session.total_work_time / 3600
-            data_by_date[session_date] = data_by_date.get(session_date, 0) + hours
+        for user in users:
+            sessions = self._sessions_for_business_days(
+                user, start_date, end_date + timedelta(days=1)
+            )
+            zone, start, end = self._calendar_for(user)
+            for session in sessions:
+                session_date = business_date(session.start_time, zone, start, end)
+                hours = session.total_work_time / 3600
+                data_by_date[session_date] = data_by_date.get(session_date, 0) + hours
 
         # Generate labels and values
         labels = []
