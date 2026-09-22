@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from app.models.group_member import GroupMember
+from app.models.widget_group import WidgetGroup
 
 
 BASE = "/api/v1/timesheet"
@@ -45,6 +46,11 @@ def test_command_requires_uuid_and_rejects_browser_identity(scoped_client):
         assert command(client, "start-work", **{field: value}).status_code in {404, 422}
     assert client.get(f"{BASE}/my-status", params={"user_id": 101}).status_code == 404
     assert client.get(f"{BASE}/my-status", headers={"X-Account-Id": "11"}).status_code == 401
+
+
+def test_command_rejects_benign_extra_json_field(scoped_client):
+    response = command(scoped_client("employee"), "start-work", note="ignored?")
+    assert response.status_code == 422
 
 
 def test_disabled_tracking_and_hidden_widget(scoped_client, db):
@@ -98,3 +104,15 @@ def test_invalid_transition_has_stable_conflict_code(scoped_client):
     response = command(scoped_client("employee"), "end-break")
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "STATUS_TRANSITION_INVALID"
+
+
+def test_finished_session_exposes_group_restart_permission(scoped_client, db):
+    group = db.query(WidgetGroup).filter_by(id=10).one()
+    group.allow_restart_session = True
+    db.commit()
+    client = scoped_client("employee")
+    assert command(client, "start-work").status_code == 200
+    finished = command(client, "finish-work")
+    assert finished.status_code == 200
+    assert finished.json()["restart_allowed"] is True
+    assert client.get(f"{BASE}/my-status").json()["restart_allowed"] is True

@@ -76,26 +76,6 @@ amoCRM на **каждом** запросе. Любой privileged route (нас
 reports и export) обязан выполнять эту server-side проверку до local RBAC policy; browser
 `account_id`, `user_id`, `role` и ранее закэшированные права не могут её заменить.
 
-## Рабочие статусы
-
-`GET /api/v1/timesheet/my-status` возвращает:
-
-```json
-{
-  "session_id": "ws_123",
-  "status": "working",
-  "started_at": "2026-09-11T08:00:00Z",
-  "ended_at": null,
-  "break_seconds": 0
-}
-```
-
-`POST /api/v1/timesheet/start-work`, `/start-break`, `/end-break`, `/finish-work`
-принимают `{ "idempotency_key": "uuid" }` и возвращают поля выше плюс `message`.
-Допустимые статусы: `not_started`, `working`, `on_break`, `finished`. Неразрешённый
-переход возвращает `STATUS_TRANSITION_INVALID`; повтор с тем же idempotency key возвращает
-первый результат.
-
 ## Настройки
 
 `GET /api/v1/settings` и `PUT /api/v1/settings` работают с настройками аккаунта и групп;
@@ -278,6 +258,7 @@ activity intervals и raw CRM events в XLSX не включаются.
 }
 ```
 
+`session_id` — целочисленный ID сессии либо `null` до начала работы.
 `status` — `not_started`, `working`, `on_break` или `finished`. Время
 `started_at`/`ended_at` выдаётся в UTC с суффиксом `Z` либо `null`.
 `track_time=false` отключает команды учёта (HTTP 403 `TRACK_TIME_DISABLED`).
