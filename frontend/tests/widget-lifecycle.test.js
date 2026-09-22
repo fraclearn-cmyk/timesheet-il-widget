@@ -34,10 +34,10 @@ function boot(options = {}) {
   let Widget;
   window.define = (ids, factory) => {
     moduleIds.push(...ids);
-    Widget = factory({ ajax() { throw new Error('working AJAX not expected'); } }, window.SettingsController);
+    Widget = factory({}, window.SettingsController, require('../../widget/timesheet/controller'));
   };
   window.eval(widgetSource);
-  assert.deepEqual(moduleIds, ['jquery', './settings/settings']);
+  assert.deepEqual(moduleIds, ['jquery', './settings/settings', './timesheet/controller']);
   const requests = [];
   const widget = new Widget();
   widget.system = () => ({ area: options.area || 'advanced_settings' });
@@ -48,17 +48,19 @@ function boot(options = {}) {
     if (request.method === 'GET') return options.load || Promise.resolve(snapshot());
     return options.save || Promise.resolve(snapshot());
   };
-  widget.createOverlay = () => { widget.overlayCreated = true; };
-  widget.updateOverlayState = () => {};
-  widget.startUpdateTimer = () => {};
-  widget.removeOverlay = () => { document.querySelector('#timesheet-overlay')?.remove(); };
+  widget.clearTimesheetStatus = () => { document.querySelectorAll('.timesheet-overlay, .timesheet-action').forEach((node) => node.remove()); };
+  widget.renderTimesheetStatus = (current, command) => {
+    widget.rendered = current;
+    widget.command = command;
+    document.body.insertAdjacentHTML('beforeend', '<div class="timesheet-overlay"><button class="timesheet-action"></button></div>');
+  };
   return { dom, document, widget, requests };
 }
 
-test('init keeps settings editor out of working area', () => {
+test('working init without API URL remains fail-open and keeps settings editor out', () => {
   const { document, widget, requests } = boot({ apiUrl: null, area: 'lcard' });
   widget.callbacks.init();
-  assert.equal(widget.overlayCreated, true);
+  assert.equal(document.querySelector('.timesheet-overlay'), null);
   assert.equal(document.querySelector('.timesheet-settings'), null);
   assert.equal(requests.length, 0);
 });
@@ -138,7 +140,7 @@ test('amoCRM onSave is the only editor save action and adopts the canonical resp
   assert.equal(widget.settingsController.serialize().revision, 4);
 });
 
-test('destroy removes settings only and leaves amoCRM content and working overlay owner intact', async () => {
+test('destroy removes settings without deleting amoCRM-owned DOM', async () => {
   const { document, widget } = boot();
   widget.callbacks.advancedSettings();
   await widget.settingsController.ready;
@@ -146,7 +148,23 @@ test('destroy removes settings only and leaves amoCRM content and working overla
   assert.equal(document.querySelector('.timesheet-settings'), null);
   assert.equal(document.querySelector('link[href="/widgets/timesheet/settings/settings.css?v=3.0.2"]'), null);
   assert.ok(document.querySelector('#amo-owned'));
-  assert.equal(document.querySelector('#timesheet-overlay'), null);
+  assert.ok(document.querySelector('#timesheet-overlay'));
+});
+
+test('working init uses authorized timesheet API without browser identity and refreshes on focus', async () => {
+  const { dom, document, widget, requests } = boot({ area: 'lcard', load: Promise.resolve({
+    session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z', ended_at: null,
+    break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false,
+  }) });
+  widget.callbacks.init();
+  await new Promise(setImmediate);
+  assert.equal(requests[0].url, 'https://api.example.test/api/v1/timesheet/my-status');
+  assert.equal(requests[0].method, 'GET');
+  assert.equal('data' in requests[0], false);
+  assert.equal(document.querySelectorAll('.timesheet-overlay').length, 1);
+  dom.window.dispatchEvent(new dom.window.Event('focus'));
+  await new Promise(setImmediate);
+  assert.equal(requests.filter((request) => request.url.endsWith('/timesheet/my-status')).length, 2);
 });
 
 test('missing API URL shows a safe state without issuing a request', () => {
