@@ -2,12 +2,16 @@
 
 from sqlalchemy.orm import Session
 from sqlalchemy import tuple_
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time
 from typing import Dict
 
 from app.models.work_session import WorkSession
 from app.models.user import User
+from app.models.group_member import GroupMember
+from app.models.widget_group import WidgetGroup
 from app.schemas.kpi import KPIMetrics, ChartData
+from app.core.business_time import business_date, local_period_utc_bounds
+from app.core.time_utils import utc_now
 
 
 class KPIService:
@@ -16,54 +20,78 @@ class KPIService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _calendar_for(self, user: User) -> tuple[str, time, time]:
+        """Return a user's active group calendar, or the explicit UTC legacy one."""
+        group = (
+            self.db.query(WidgetGroup)
+            .join(
+                GroupMember,
+                (GroupMember.group_id == WidgetGroup.id)
+                & (GroupMember.account_id == WidgetGroup.account_id),
+            )
+            .filter(
+                GroupMember.account_id == user.amocrm_account_id,
+                GroupMember.user_id == user.id,
+                GroupMember.is_active.is_(True),
+                WidgetGroup.is_active.is_(True),
+            )
+            .one_or_none()
+        )
+        if group is None:
+            return "UTC", time(9), time(18)
+        return group.timezone, group.work_start_time, group.work_end_time
+
+    def _period_bounds(self, user: User, now: datetime) -> tuple[datetime, datetime, datetime, datetime, datetime, datetime, date]:
+        zone, start, end = self._calendar_for(user)
+        day = business_date(now, zone, start, end)
+        today_start, today_end = local_period_utc_bounds(day, zone)
+        week_start, _ = local_period_utc_bounds(day - timedelta(days=day.weekday()), zone)
+        month_start, _ = local_period_utc_bounds(day.replace(day=1), zone)
+        return today_start, today_end, week_start, today_end, month_start, today_end, day
+
+    def _sessions_since(self, user: User, start: datetime, end: datetime):
+        return (
+            self.db.query(WorkSession)
+            .filter(
+                WorkSession.amocrm_user_id == user.amocrm_user_id,
+                WorkSession.amocrm_account_id == user.amocrm_account_id,
+                WorkSession.start_time >= start,
+                WorkSession.start_time < end,
+            )
+            .all()
+        )
+
     def calculate_user_kpi(self, user_id: int, amocrm_user_id: str) -> KPIMetrics:
         """Calculate KPI for a user"""
-        now = datetime.now()
-        today_start = datetime.combine(now.date(), datetime.min.time())
-        week_start = today_start - timedelta(days=now.weekday())
-        month_start = datetime(now.year, now.month, 1)
+        now = utc_now()
         user = self.db.get(User, user_id)
         if user is None or user.amocrm_user_id != int(amocrm_user_id):
             raise ValueError("Mismatched user identity")
 
+        (
+            today_start,
+            today_end,
+            week_start,
+            week_end,
+            month_start,
+            month_end,
+            calendar_day,
+        ) = self._period_bounds(user, now)
+
         # Today hours
-        today_sessions = (
-            self.db.query(WorkSession)
-            .filter(
-                WorkSession.amocrm_user_id == amocrm_user_id,
-                WorkSession.amocrm_account_id == user.amocrm_account_id,
-                WorkSession.start_time >= today_start,
-            )
-            .all()
-        )
+        today_sessions = self._sessions_since(user, today_start, today_end)
         hours_today = sum(s.total_work_time for s in today_sessions) / 3600
 
         # Week hours
-        week_sessions = (
-            self.db.query(WorkSession)
-            .filter(
-                WorkSession.amocrm_user_id == amocrm_user_id,
-                WorkSession.amocrm_account_id == user.amocrm_account_id,
-                WorkSession.start_time >= week_start,
-            )
-            .all()
-        )
+        week_sessions = self._sessions_since(user, week_start, week_end)
         hours_week = sum(s.total_work_time for s in week_sessions) / 3600
 
         # Month hours
-        month_sessions = (
-            self.db.query(WorkSession)
-            .filter(
-                WorkSession.amocrm_user_id == amocrm_user_id,
-                WorkSession.amocrm_account_id == user.amocrm_account_id,
-                WorkSession.start_time >= month_start,
-            )
-            .all()
-        )
+        month_sessions = self._sessions_since(user, month_start, month_end)
         hours_month = sum(s.total_work_time for s in month_sessions) / 3600
 
         # Average per day (month)
-        days_in_month = (now - month_start).days + 1
+        days_in_month = calendar_day.day
         avg_hours = hours_month / days_in_month if days_in_month > 0 else 0
 
         # Late counts
@@ -116,10 +144,7 @@ class KPIService:
         visible_internal_user_ids: set[int] | None = None,
     ) -> KPIMetrics:
         """Calculate KPI for a department"""
-        now = datetime.now()
-        today_start = datetime.combine(now.date(), datetime.min.time())
-        week_start = today_start - timedelta(days=now.weekday())
-        month_start = datetime(now.year, now.month, 1)
+        now = utc_now()
 
         # Get all users in department
         user_query = self.db.query(User).filter(User.department_id == department_id)
@@ -145,46 +170,32 @@ class KPIService:
                 online_now=0,
             )
 
-        # Aggregate sessions
-        week_sessions = (
-            self.db.query(WorkSession)
-            .filter(
-                tuple_(WorkSession.amocrm_account_id, WorkSession.amocrm_user_id).in_(
-                    user_ids
-                ),
-                WorkSession.start_time >= week_start,
-            )
-            .all()
-        )
-
-        month_sessions = (
-            self.db.query(WorkSession)
-            .filter(
-                tuple_(WorkSession.amocrm_account_id, WorkSession.amocrm_user_id).in_(
-                    user_ids
-                ),
-                WorkSession.start_time >= month_start,
-            )
-            .all()
-        )
-
-        today_sessions = (
-            self.db.query(WorkSession)
-            .filter(
-                tuple_(WorkSession.amocrm_account_id, WorkSession.amocrm_user_id).in_(
-                    user_ids
-                ),
-                WorkSession.start_time >= today_start,
-            )
-            .all()
-        )
+        # Each employee's periods are defined by that employee's active group.
+        today_sessions = []
+        week_sessions = []
+        month_sessions = []
+        calendar_days = []
+        for user in users:
+            (
+                today_start,
+                today_end,
+                week_start,
+                week_end,
+                month_start,
+                month_end,
+                calendar_day,
+            ) = self._period_bounds(user, now)
+            today_sessions.extend(self._sessions_since(user, today_start, today_end))
+            week_sessions.extend(self._sessions_since(user, week_start, week_end))
+            month_sessions.extend(self._sessions_since(user, month_start, month_end))
+            calendar_days.append(calendar_day.day)
 
         hours_today = sum(s.total_work_time for s in today_sessions) / 3600
         hours_week = sum(s.total_work_time for s in week_sessions) / 3600
         hours_month = sum(s.total_work_time for s in month_sessions) / 3600
 
-        days_in_month = (now - month_start).days + 1
-        avg_hours = hours_month / (len(users) * days_in_month) if users else 0
+        employee_days = sum(calendar_days)
+        avg_hours = hours_month / employee_days if employee_days else 0
 
         late_week = sum(1 for s in week_sessions if s.is_late)
         late_month = sum(1 for s in month_sessions if s.is_late)

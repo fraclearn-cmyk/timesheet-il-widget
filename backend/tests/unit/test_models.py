@@ -162,10 +162,11 @@ def test_legacy_session_routes_use_external_ids_and_persist_transitions(db):
     assert sessions.get_session(created.id, db, context).id == created.id
 
 
-def test_legacy_consumers_query_canonical_fields_and_correct_account(db):
+def test_legacy_consumers_query_canonical_fields_and_correct_account(db, monkeypatch):
     from app.models import WorkComment, Department
     from app.services.report_service import ReportService
     from app.services.kpi_service import KPIService
+    import app.services.kpi_service as kpi_service
     from app.services.excel_service import ExcelService
     from openpyxl import load_workbook
     from datetime import time
@@ -178,6 +179,10 @@ def test_legacy_consumers_query_canonical_fields_and_correct_account(db):
     db.commit()
     first = SessionService(db).create_session("100", 700, "One")
     second = SessionService(db).create_session("200", 700, "Two")
+    fixed_now = datetime(2026, 9, 22, 12)
+    first.start_time = fixed_now
+    second.start_time = fixed_now
+    monkeypatch.setattr(kpi_service, "utc_now", lambda: fixed_now)
     first.total_work_time = 3600
     second.total_work_time = 7200
     db.add(
