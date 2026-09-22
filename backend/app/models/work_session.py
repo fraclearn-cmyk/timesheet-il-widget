@@ -5,6 +5,9 @@ from sqlalchemy import (
     DateTime,
     Enum as SQLEnum,
     Boolean,
+    Date,
+    Index,
+    text,
     ForeignKeyConstraint,
     CheckConstraint,
 )
@@ -40,6 +43,7 @@ class WorkSession(Base):
             "active_duration >= 0 AND unconfirmed_duration >= 0 AND break_duration >= 0 AND idle_duration >= 0",
             name="ck_work_sessions_durations",
         ),
+        Index("uq_work_sessions_open_account_user", "amocrm_account_id", "amocrm_user_id", unique=True, postgresql_where=text("end_time IS NULL"), sqlite_where=text("end_time IS NULL")),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -51,6 +55,7 @@ class WorkSession(Base):
 
     start_time = Column(DateTime, nullable=False, default=utc_now)
     end_time = Column(DateTime, nullable=True)
+    business_date = Column(Date, nullable=True)
 
     current_status = Column(
         SQLEnum(

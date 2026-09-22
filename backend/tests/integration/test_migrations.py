@@ -23,6 +23,36 @@ from app.core.database import Base
 from app.models import ActivityInterval
 
 
+def test_011_backfills_group_business_date_and_rejects_duplicate_open_sessions(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "010")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
+        conn.execute(text("INSERT INTO widget_groups (id,account_id,name,name_key,timezone,work_start_time,work_end_time,is_active,allow_restart_session,created_at,updated_at) VALUES (10,100,'Night','night','Europe/Minsk','22:00','06:00',true,false,now(),now())"))
+        conn.execute(text("INSERT INTO group_members (id,account_id,group_id,user_id,track_time,hide_widget,is_active,created_at,updated_at) VALUES (20,100,10,7,true,false,true,now(),now())"))
+        conn.execute(text("INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,end_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-21 23:00:00','2026-09-22 02:00:00','finished',now(),now())"))
+    command.upgrade(config, "011")
+    with engine.connect() as conn:
+        assert str(conn.scalar(text("SELECT business_date FROM work_sessions WHERE id=1"))) == "2026-09-22"
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO timesheet_commands (account_id,amocrm_user_id,key,action,response,created_at) VALUES (100,700,'11111111-1111-4111-8111-111111111111','start-work','{}',now())"))
+    with pytest.raises(RuntimeError, match="phase-4 data"):
+        command.downgrade(config, "010")
+
+
+def test_011_rejects_preexisting_duplicate_open_sessions_without_rewriting(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "010")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
+        conn.execute(text("INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-21 08:00:00','working',now(),now()), (2,100,700,'One','2026-09-22 08:00:00','working',now(),now())"))
+    with pytest.raises(RuntimeError, match="duplicate open work_sessions"):
+        command.upgrade(config, "011")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "010"
+        assert conn.scalar(text("SELECT count(*) FROM work_sessions")) == 2
+
+
 @pytest.fixture
 def migrated_db(monkeypatch):
     admin_url = os.getenv("TEST_POSTGRES_ADMIN_URL")
@@ -69,6 +99,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
         "call_events",
         "work_comments",
         "oauth_connections",
+        "timesheet_commands",
     ]
     for table_name in target_tables:
         actual = {c["name"]: c for c in inspect(engine).get_columns(table_name)}
@@ -80,7 +111,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
                 column.name,
             )
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "010"
+        assert conn.scalar(text("select version_num from alembic_version")) == "011"
     assert "amocrm_user_id" in {
         c["name"] for c in inspect(engine).get_columns("work_sessions")
     }
@@ -317,7 +348,7 @@ def test_category_account_ownership_refuses_lossy_007_downgrade(migrated_db):
     ):
         command.downgrade(config, "006")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "010"
+        assert conn.scalar(text("select version_num from alembic_version")) == "011"
 
 
 def test_category_account_name_scope_allows_duplicate_names_per_account(migrated_db):
@@ -408,7 +439,7 @@ def test_downgrade_refuses_to_erase_membership_history(migrated_db):
     with pytest.raises(RuntimeError, match="membership history"):
         command.downgrade(config, "004")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "010"
+        assert conn.scalar(text("select version_num from alembic_version")) == "011"
         assert conn.scalar(text("select count(*) from group_members")) == 2
 
 
@@ -460,7 +491,7 @@ def test_department_account_names_and_downgrade_are_data_safe(migrated_db):
     with pytest.raises(RuntimeError, match="department account ownership"):
         command.downgrade(config, "008")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "010"
+        assert conn.scalar(text("select version_num from alembic_version")) == "011"
         assert conn.scalar(text("select count(*) from departments")) == 2
 
 

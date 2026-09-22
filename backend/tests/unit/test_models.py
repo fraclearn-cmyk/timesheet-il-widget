@@ -332,6 +332,8 @@ def test_employee_report_event_count_stays_in_account_and_period(db):
         amocrm_user_id=700,
         user_name="One",
         start_time=first.start_time - timedelta(days=2),
+        end_time=first.start_time - timedelta(days=2) + timedelta(hours=1),
+        current_status=WorkStatus.FINISHED,
     )
     db.add(old)
     db.flush()
