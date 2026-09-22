@@ -167,6 +167,20 @@ test('working init uses authorized timesheet API without browser identity and re
   assert.equal(requests.filter((request) => request.url.endsWith('/timesheet/my-status')).length, 2);
 });
 
+test('repeated working init replaces its controller and focus refresh listener', async () => {
+  const { dom, widget, requests } = boot({ area: 'lcard', load: Promise.resolve({
+    session_id: 7, status: 'working', started_at: '2026-09-22T08:00:00Z', ended_at: null,
+    break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false,
+  }) });
+  widget.callbacks.init();
+  await new Promise(setImmediate);
+  widget.callbacks.init();
+  await new Promise(setImmediate);
+  dom.window.dispatchEvent(new dom.window.Event('focus'));
+  await new Promise(setImmediate);
+  assert.equal(requests.filter((request) => request.url.endsWith('/timesheet/my-status')).length, 3);
+});
+
 test('missing API URL shows a safe state without issuing a request', () => {
   const { document, widget, requests } = boot({ apiUrl: null });
   widget.callbacks.advancedSettings();

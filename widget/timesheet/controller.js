@@ -13,7 +13,7 @@
             (value.ended_at === null || typeof value.ended_at === 'string');
     }
     function createTimesheetController(options) {
-        var confirmed = null, pending = null, inFlight = null, cancelRetry = null, destroyed = false;
+        var confirmed = null, pending = null, inFlight = null, cancelRetry = null, destroyed = false, generation = 0;
         function clearRetry() { if (cancelRetry) cancelRetry(); cancelRetry = null; }
         function retry() {
             clearRetry();
@@ -32,9 +32,12 @@
         }
         function load() {
             if (destroyed) return Promise.resolve();
+            var currentGeneration = ++generation;
             return Promise.resolve().then(function() {
                 return options.request({ url: '/timesheet/my-status', method: 'GET', dataType: 'json' });
-            }).then(function(snapshot) { if (!destroyed) accept(snapshot); }, function() { if (!destroyed) failOpen(); });
+            }).then(function(snapshot) { if (!destroyed && currentGeneration === generation) accept(snapshot); }, function() {
+                if (!destroyed && currentGeneration === generation) failOpen();
+            });
         }
         function command(action) {
             if (destroyed || !paths[action] || (!confirmed && !pending) ||
@@ -43,20 +46,21 @@
             if (pending && pending.action !== action) return Promise.resolve();
             if (!pending) pending = { action: action, key: options.uuid() };
             var current = pending;
+            var currentGeneration = ++generation;
             inFlight = Promise.resolve().then(function() {
                 return options.request({ url: '/timesheet/' + action, method: 'POST', dataType: 'json',
                     contentType: 'application/json', data: JSON.stringify({ idempotency_key: current.key }) });
             }).then(function(snapshot) {
-                if (destroyed) return;
+                if (destroyed || currentGeneration !== generation) return;
                 if (accept(snapshot)) pending = null;
             }, function(error) {
-                if (destroyed) return;
+                if (destroyed || currentGeneration !== generation) return;
                 if (error && error.status === 409) { pending = null; failOpen(); return load(); }
                 failOpen();
             }).finally(function() { inFlight = null; });
             return inFlight;
         }
-        function destroy() { destroyed = true; clearRetry(); confirmed = null; pending = null; options.clear(); }
+        function destroy() { destroyed = true; generation++; clearRetry(); confirmed = null; pending = null; options.clear(); }
         return { load: load, command: command, destroy: destroy };
     }
     return { createTimesheetController: createTimesheetController };

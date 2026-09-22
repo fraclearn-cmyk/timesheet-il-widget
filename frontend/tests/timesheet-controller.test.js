@@ -44,11 +44,32 @@ test('invalid snapshot clears previously confirmed UI', async () => {
   await f.controller.load(); await f.controller.load();
   assert.equal(f.document.querySelectorAll('.timesheet-overlay, .timesheet-action').length, 0);
 });
+test('older GET success cannot restore UI after a newer outage clears it', async () => {
+  let resolveOlder;
+  const older = new Promise((resolve) => { resolveOlder = resolve; });
+  const f = fixture([older, Promise.reject(new Error('offline'))]);
+  const first = f.controller.load();
+  await Promise.resolve();
+  await f.controller.load();
+  assert.equal(f.document.querySelectorAll('.timesheet-overlay, .timesheet-action').length, 0);
+  resolveOlder(status('on_break'));
+  await first;
+  assert.equal(f.document.querySelectorAll('.timesheet-overlay, .timesheet-action').length, 0);
+});
 test('lost POST response reuses UUID and never shows local success', async () => {
   const f = fixture([status('not_started'), Promise.reject(new Error('lost')), status('working')]);
   await f.controller.load(); await f.controller.command('start-work');
   assert.equal(f.document.querySelectorAll('.timesheet-overlay, .timesheet-action').length, 0);
   await f.controller.command('start-work');
+  assert.equal(JSON.parse(f.calls[1].data).idempotency_key, JSON.parse(f.calls[2].data).idempotency_key);
+  assert.equal(f.document.querySelectorAll('.timesheet-overlay').length, 1);
+});
+test('scheduled lost-POST retry reuses its UUID before rendering confirmed status', async () => {
+  const f = fixture([status('not_started'), Promise.reject(new Error('lost')), status('working')]);
+  await f.controller.load();
+  await f.controller.command('start-work');
+  f.jobs.shift()();
+  await Promise.resolve(); await Promise.resolve();
   assert.equal(JSON.parse(f.calls[1].data).idempotency_key, JSON.parse(f.calls[2].data).idempotency_key);
   assert.equal(f.document.querySelectorAll('.timesheet-overlay').length, 1);
 });

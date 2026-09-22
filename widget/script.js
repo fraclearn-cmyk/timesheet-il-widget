@@ -48,9 +48,16 @@ define(['jquery', './settings/settings', './timesheet/controller'], function($, 
                 widget.renderTimesheetStatus(snapshot, function(action) { return widget.timesheetController.command(action); });
             }
         }
+        function stopTimesheet() {
+            if (widget.removeFocusRefresh) widget.removeFocusRefresh();
+            widget.removeFocusRefresh = null;
+            if (widget.timesheetController) widget.timesheetController.destroy();
+            widget.timesheetController = null;
+            clearWorkingUi();
+        }
         function startTimesheet() {
             var baseUrl = apiUrl(widget);
-            clearWorkingUi();
+            stopTimesheet();
             if (!baseUrl || typeof widget.$authorizedAjax !== 'function') return;
             widget.timesheetController = TimesheetController.createTimesheetController({
                 request: function(request) {
@@ -108,11 +115,7 @@ define(['jquery', './settings/settings', './timesheet/controller'], function($, 
             },
             destroy: function() {
                 removeSettings();
-                if (widget.removeFocusRefresh) widget.removeFocusRefresh();
-                widget.removeFocusRefresh = null;
-                if (widget.timesheetController) widget.timesheetController.destroy();
-                widget.timesheetController = null;
-                clearWorkingUi();
+                stopTimesheet();
                 return true;
             }
         };
