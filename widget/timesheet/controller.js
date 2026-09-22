@@ -14,6 +14,7 @@
     }
     function createTimesheetController(options) {
         var confirmed = null, pending = null, inFlight = null, cancelRetry = null, destroyed = false, generation = 0;
+        var loading = null, loadGeneration = 0;
         var deadlines = new Set();
         function clearRetry() { if (cancelRetry) cancelRetry(); cancelRetry = null; }
         function retry(delay) {
@@ -52,12 +53,18 @@
             if (destroyed) return Promise.resolve();
             // A focus/health refresh must never supersede an unconfirmed command.
             if (pending) return command(pending.action);
+            // Share the active GET so focus cannot renew its availability deadline.
+            if (loading && loadGeneration === generation) return loading;
             clearRetry();
             var currentGeneration = ++generation;
-            return request({ url: '/timesheet/my-status', method: 'GET', dataType: 'json' })
+            loadGeneration = currentGeneration;
+            loading = request({ url: '/timesheet/my-status', method: 'GET', dataType: 'json' })
             .then(function(snapshot) { if (!destroyed && currentGeneration === generation) accept(snapshot); }, function() {
                 if (!destroyed && currentGeneration === generation) failOpen();
+            }).finally(function() {
+                if (currentGeneration === loadGeneration) loading = null;
             });
+            return loading;
         }
         function command(action) {
             if (destroyed || !paths[action] || (!confirmed && !pending) ||

@@ -9,6 +9,7 @@ const status = (name = 'on_break', extra = {}) => ({ session_id: name === 'not_s
 function fixture(responses) {
   const dom = new JSDOM('<body><main id="amo">content</main></body>');
   const calls = []; const jobs = [];
+  let now = 0;
   const render = (snapshot) => { dom.window.document.body.insertAdjacentHTML('beforeend',
     `<div class="timesheet-overlay"><button class="timesheet-action">${snapshot.status}</button></div>`); };
   const clear = () => dom.window.document.querySelectorAll('.timesheet-overlay, .timesheet-action')
@@ -16,10 +17,21 @@ function fixture(responses) {
   const controller = createTimesheetController({
     request: (options) => { calls.push(options); const answer = responses.shift();
       return typeof answer === 'function' ? answer(options) : answer; },
-    render, clear, schedule: (fn, delay) => { fn.delay = delay; jobs.push(fn); return () => { const i = jobs.indexOf(fn); if (i >= 0) jobs.splice(i, 1); }; },
+    render, clear, schedule: (fn, delay) => { fn.delay = delay; fn.at = now + delay; jobs.push(fn); return () => { const i = jobs.indexOf(fn); if (i >= 0) jobs.splice(i, 1); }; },
     uuid: () => '123e4567-e89b-42d3-a456-426614174000',
   });
-  return { controller, document: dom.window.document, calls, jobs };
+  async function advance(milliseconds) {
+    const target = now + milliseconds;
+    while (jobs.some((job) => job.at <= target)) {
+      jobs.sort((a, b) => a.at - b.at);
+      const job = jobs.shift();
+      now = job.at;
+      job();
+      await flush();
+    }
+    now = target;
+  }
+  return { controller, document: dom.window.document, calls, jobs, advance };
 }
 const flush = () => new Promise(setImmediate);
 function fire(f, delay) {
@@ -51,6 +63,31 @@ test('hung GET clears prior UI at deadline and ignores its late success', async 
   assert.equal(f.document.querySelectorAll('.timesheet-overlay').length, 0);
   fire(f, 5000); await flush();
   assert.equal(f.document.querySelector('.timesheet-action').textContent, 'working');
+});
+
+test('repeated focus during hung periodic GET cannot postpone bounded fail-open', async () => {
+  let finish;
+  const hung = new Promise((resolve) => { finish = resolve; });
+  const responses = [status(), hung, hung, hung];
+  const f = fixture(responses);
+  await f.controller.load();
+  await f.advance(30000); // Periodic probe starts at t=30s.
+  await f.advance(4000);
+  f.controller.load(); await flush(); // Focus at t=34s.
+  await f.advance(4000);
+  f.controller.load(); await flush(); // Focus at t=38s.
+  await f.advance(1999);
+  assert.equal(f.document.querySelectorAll('.timesheet-overlay').length, 1);
+  await f.advance(1); // The first probe's deadline is still t=40s.
+  assert.equal(f.document.querySelectorAll('.timesheet-overlay, .timesheet-action').length, 0);
+  assert.equal(f.calls.length, 2);
+  finish(status()); await flush();
+  assert.equal(f.document.querySelectorAll('.timesheet-overlay').length, 0);
+  responses.splice(0, responses.length, status('working'));
+  await f.advance(5000);
+  assert.equal(f.document.querySelector('.timesheet-action').textContent, 'working');
+  f.controller.destroy();
+  assert.equal(f.jobs.length, 0);
 });
 
 test('hung POST clears UI at deadline and retries identical UUID despite focus', async () => {
@@ -103,13 +140,14 @@ test('invalid snapshot clears previously confirmed UI', async () => {
   await f.controller.load(); await f.controller.load();
   assert.equal(f.document.querySelectorAll('.timesheet-overlay, .timesheet-action').length, 0);
 });
-test('older GET success cannot restore UI after a newer outage clears it', async () => {
+test('older GET success cannot restore UI after a newer command outage clears it', async () => {
   let resolveOlder;
   const older = new Promise((resolve) => { resolveOlder = resolve; });
-  const f = fixture([older, Promise.reject(new Error('offline'))]);
+  const f = fixture([status('working'), older, () => Promise.reject(new Error('offline'))]);
+  await f.controller.load();
   const first = f.controller.load();
   await Promise.resolve();
-  await f.controller.load();
+  await f.controller.command('start-break');
   assert.equal(f.document.querySelectorAll('.timesheet-overlay, .timesheet-action').length, 0);
   resolveOlder(status('on_break'));
   await first;

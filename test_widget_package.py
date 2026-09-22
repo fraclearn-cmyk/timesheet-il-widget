@@ -159,14 +159,15 @@ class WidgetPackageTests(unittest.TestCase):
             first = subprocess.run(command + ["https://first.example.test/api/v1"], cwd=work,
                                    capture_output=True, text=True)
             self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
-            previous_bytes = (work / "widget.zip").read_bytes()
+            replacement_script = (work / "widget" / "script.js").read_bytes() + b"\n// Replacement fixture revision.\n"
+            (work / "widget" / "script.js").write_bytes(replacement_script)
             second = subprocess.run(command + ["https://second.example.test/api/v1"], cwd=work,
                                     capture_output=True, text=True)
             self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
             with zipfile.ZipFile(work / "widget.zip") as archive:
+                self.assertEqual(archive.read("script.js"), replacement_script)
                 self.assertIn(b"https://example.com/api/v1", archive.read("i18n/en.json"))
                 self.assertNotIn(b"https://second.example.test/api/v1", archive.read("i18n/en.json"))
-            self.assertNotEqual((work / "widget.zip").read_bytes(), previous_bytes)
             self.assertTrue(WidgetValidator(work / "widget.zip").validate())
             self.assertEqual(list(work.glob(".widget-stage-*")), [])
             self.assertEqual(list(work.glob(".widget-package-*.zip")), [])
