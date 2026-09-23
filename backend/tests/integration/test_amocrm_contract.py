@@ -434,3 +434,34 @@ def test_marks_unsupported_call_payload_incomplete() -> None:
         "duration_seconds": None,
         "raw_payload": payload,
     }
+
+
+def test_phase_zero_timeline_wrapper_preserves_unknown_event_shape() -> None:
+    """The compatibility boundary must retain its legacy incomplete vocabulary."""
+    payload = {
+        "id": "event-17",
+        "type": "future_catalog_type",
+        "created_at": 1_790_154_000,
+        "created_by": 456,
+        "entity_id": 1001,
+        "entity_type": "lead",
+        "_links": {
+            "self": {"href": "https://example.amocrm.ru/api/v4/events/event-17"}
+        },
+        "_embedded": {
+            "entity": {
+                "id": 1001,
+                "_links": {
+                    "self": {
+                        "href": "https://example.amocrm.ru/api/v4/leads/1001"
+                    }
+                },
+            }
+        },
+    }
+
+    event = normalize_timeline_event(payload)
+
+    assert event["kind"] == "incomplete_event"
+    assert event["event_type"] == "unknown_event"
+    assert event["raw_payload"] == payload

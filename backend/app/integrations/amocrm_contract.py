@@ -115,34 +115,64 @@ def _tokens_from_response(response: httpx.Response) -> AmoCRMTokens:
 
 def normalize_timeline_event(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Return confirmed activity only for a fully attributed amoCRM event."""
-    normalized = _validated_timeline_event(payload)
-    if normalized is None:
+    validated = _validated_timeline_event(payload)
+    expected_origin = _validated_event_origin(payload, validated)
+    from app.services.event_normalizer import normalize_crm_event
+
+    normalized = normalize_crm_event(
+        payload,
+        expected_account_id=(
+            payload["account_id"]
+            if _is_positive_int(payload.get("account_id"))
+            else 1
+        ),
+        expected_origin=expected_origin or "https://invalid.invalid",
+        known_types={str(validated["type"])} if validated is not None else (),
+    )
+    if not normalized.is_complete:
         return _incomplete_event(
             payload, source="crm_event", event_type="unknown_event"
         )
 
     return {
-        "external_id": str(normalized["id"]),
+        "external_id": normalized.external_id,
         "kind": "confirmed",
         "source": "crm_event",
-        "event_type": normalized["type"],
-        "occurred_at": datetime.fromtimestamp(normalized["created_at"], UTC)
+        "event_type": normalized.normalized_type,
+        "occurred_at": normalized.occurred_at.replace(tzinfo=UTC)
         .isoformat()
         .replace("+00:00", "Z"),
-        "author_amocrm_id": normalized["created_by"],
-        "object_type": normalized["entity_type"],
-        "object_id": normalized["entity_id"],
-        "object_url": normalized["object_url"],
+        "author_amocrm_id": normalized.author_amocrm_user_id,
+        "object_type": normalized.object_type,
+        "object_id": normalized.object_id,
+        "object_url": normalized.card_url,
         "raw_payload": dict(payload),
     }
 
 
 def normalize_call_event(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Keep an unverified call payload without inferring call attributes."""
+    from app.services.event_normalizer import normalize_call_event as normalize_call
+
+    normalized = normalize_call(
+        payload,
+        expected_account_id=1,
+        expected_origin="https://compat.amocrm.ru",
+        source_verified=False,
+    )
     return {
-        **_incomplete_event(payload, source="call", event_type="unknown_call"),
-        "direction": None,
-        "duration_seconds": None,
+        "external_id": normalized.external_id,
+        "kind": "incomplete_event",
+        "source": normalized.source,
+        "event_type": normalized.normalized_type,
+        "occurred_at": None,
+        "author_amocrm_id": None,
+        "object_type": None,
+        "object_id": None,
+        "object_url": None,
+        "direction": normalized.direction,
+        "duration_seconds": normalized.duration_seconds,
+        "raw_payload": dict(payload),
     }
 
 
@@ -296,6 +326,77 @@ def _observed_entity_url(payload: Mapping[str, Any]) -> str | None:
     if entity_origin is None or entity_origin != event_origin:
         return None
     return object_url
+
+
+def _validated_embedded_entity_url(
+    payload: Mapping[str, Any], *, expected_origin: str, parent_resource: str
+) -> str | None:
+    """Validate exact parent/entity API links against one trusted tenant."""
+    try:
+        trusted_origin = _trusted_tenant_origin(expected_origin)
+    except AmoCRMAccountURLInvalid:
+        return None
+    resources = {
+        "contact": "contacts",
+        "company": "companies",
+        "lead": "leads",
+        "task": "tasks",
+    }
+    external_id = payload.get("id")
+    entity_id = payload.get("entity_id")
+    entity_type = payload.get("entity_type")
+    if (
+        not (
+            _is_positive_int(external_id)
+            or isinstance(external_id, str)
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", external_id)
+        )
+        or not _is_positive_int(entity_id)
+        or entity_type not in resources
+        or parent_resource not in {"events", "calls"}
+    ):
+        return None
+
+    embedded = payload.get("_embedded")
+    entity = embedded.get("entity") if isinstance(embedded, Mapping) else None
+    if (
+        not isinstance(entity, Mapping)
+        or entity.get("id") != entity_id
+        or not _is_positive_int(entity.get("id"))
+    ):
+        return None
+
+    object_url = _self_href(entity)
+    entity_origin = _resource_origin(
+        object_url, f"/api/v4/{resources[entity_type]}/{entity_id}"
+    )
+    parent_origin = _resource_origin(
+        _self_href(payload), f"/api/v4/{parent_resource}/{external_id}"
+    )
+    if entity_origin != trusted_origin or parent_origin != trusted_origin:
+        return None
+    return object_url if isinstance(object_url, str) else None
+
+
+def _validated_event_origin(
+    payload: Mapping[str, Any], normalized: Mapping[str, Any] | None
+) -> str | None:
+    if normalized is None:
+        return None
+    object_url = normalized["object_url"]
+    entity_type = normalized["entity_type"]
+    entity_id = normalized["entity_id"]
+    if str(entity_type).endswith("s"):
+        expected_path = f"/{entity_type}/detail/{entity_id}"
+    else:
+        resources = {
+            "contact": "contacts",
+            "company": "companies",
+            "lead": "leads",
+            "task": "tasks",
+        }
+        expected_path = f"/api/v4/{resources[str(entity_type)]}/{entity_id}"
+    return _resource_origin(object_url, expected_path)
 
 
 def _resource_origin(url: object, expected_path: str) -> str | None:

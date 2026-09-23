@@ -189,6 +189,21 @@ duplicate/new string ID в three polls за 0/2/6 секунд; это не яв
 Live `GET /api/v4/calls?limit=1&page=1` вернул 405, так что call reader contract и
 `source=call` остаются недоступными до отдельной проверки.
 
+Нормализация событий fail-closed: тип, которого нет в account-scoped
+каталоге, сохраняется как `original_event_type`, но получает
+`event_type=unknown` и `incomplete_event`. Неполный или непроверенный
+звонок получает `event_type=unknown_call`; `direction` и
+`duration_seconds` при этом всегда `null`. Звонок может стать
+полным только после отдельной live-проверки источника и при
+наличии всех фактов: external ID, аккаунт, положительный автор,
+направление `incoming|outgoing`, фактическая неотрицательная
+длительность, UTC-время и проверенная ссылка на сущность.
+
+Полное CRM-событие без собственной длительности создаёт точку:
+`started_at == ended_at`, `duration_source=point`. Сырой envelope хранится
+30 дней; очистка удаляет только истёкшие raw payload и не удаляет
+нормализованные события, интервалы или cursors.
+
 Mouse/keyboard без CRM event образует только нейтральный интервал, например:
 
 ```json
