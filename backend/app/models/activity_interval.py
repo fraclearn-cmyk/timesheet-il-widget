@@ -26,6 +26,10 @@ class ActivityInterval(Base):
             name="ck_activity_intervals_source",
         ),
         CheckConstraint(
+            "duration_source IN ('point','observed','calculated')",
+            name="ck_activity_intervals_duration_source",
+        ),
+        CheckConstraint(
             "(source = 'unconfirmed_input' AND kind = 'unconfirmed') OR (source IN ('crm_event','call') AND kind = 'confirmed' AND work_session_id IS NOT NULL)",
             name="ck_activity_intervals_kind",
         ),
@@ -126,13 +130,14 @@ class ActivityInterval(Base):
             if source == "crm_event" and not evidence.is_complete:
                 raise ValueError("Incomplete CRM evidence")
             if source == "call" and (
-                evidence.direction not in {"incoming", "outgoing"}
+                not evidence.is_complete
+                or evidence.direction not in {"incoming", "outgoing"}
                 or evidence.duration_seconds is None
                 or evidence.duration_seconds < 0
                 or (ended_at - started_at).total_seconds() != evidence.duration_seconds
             ):
                 raise ValueError(
-                    "Call interval requires measured call duration and direction"
+                    "Call interval requires complete evidence with measured duration and direction"
                 )
             if not started_at <= utc(evidence.occurred_at) <= ended_at:
                 raise ValueError("Evidence timestamp outside interval")
@@ -144,6 +149,10 @@ class ActivityInterval(Base):
             ended_at=ended_at,
             kind="confirmed" if confirmed else "unconfirmed",
             source=source,
-            duration_source="calculated" if source == "crm_event" else "observed",
+            duration_source=(
+                "point"
+                if source == "crm_event" and started_at == ended_at
+                else "calculated" if source == "crm_event" else "observed"
+            ),
             event_type=getattr(evidence, "event_type", None),
         )

@@ -111,6 +111,119 @@ def test_011_partial_unique_index_rejects_second_open_session(migrated_db):
             conn.execute(text("INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (100,700,'One','2026-09-22 07:00:00','working',now(),now())"))
 
 
+def test_012_clean_upgrade_downgrade_upgrade(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "011")
+    command.upgrade(config, "012")
+
+    assert {
+        "ingestion_cursors",
+        "raw_ingestion_events",
+        "event_type_catalog",
+        "presence_batches",
+    }.issubset(set(inspect(engine).get_table_names()))
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "012"
+
+    command.downgrade(config, "011")
+    assert not {
+        "ingestion_cursors",
+        "raw_ingestion_events",
+        "event_type_catalog",
+        "presence_batches",
+    }.intersection(set(inspect(engine).get_table_names()))
+    assert "raw_event_id" not in {
+        column["name"] for column in inspect(engine).get_columns("crm_events")
+    }
+    command.upgrade(config, "012")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "012"
+
+
+def test_012_preserves_legacy_event_rows_and_backfills_original_type(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "011")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users "
+                "(id,amocrm_user_id,amocrm_account_id,name) "
+                "VALUES (7,700,100,'One')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO crm_events "
+                "(id,account_id,external_id,author_amocrm_user_id,user_id,event_type,"
+                "occurred_at,payload,is_complete,created_at) "
+                "VALUES (1,100,'crm-1',700,7,'lead_added','2026-09-23 08:00:00',"
+                "'{\"legacy\": true}',1,now())"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO call_events "
+                "(id,account_id,source_event_id,author_amocrm_user_id,user_id,direction,"
+                "occurred_at,duration_seconds,payload,created_at) "
+                "VALUES (1,100,'call-1',700,7,'incoming','2026-09-23 09:00:00',30,"
+                "'{\"legacy\": true}',now())"
+            )
+        )
+
+    command.upgrade(config, "012")
+    with engine.connect() as conn:
+        assert conn.execute(
+            text(
+                "SELECT original_event_type,raw_event_id,payload "
+                "FROM crm_events WHERE id=1"
+            )
+        ).one() == ("lead_added", None, {"legacy": True})
+        assert conn.execute(
+            text(
+                "SELECT raw_event_id,is_complete,payload "
+                "FROM call_events WHERE id=1"
+            )
+        ).one() == (None, 0, {"legacy": True})
+
+    command.downgrade(config, "011")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT external_id FROM crm_events WHERE id=1")) == "crm-1"
+        assert conn.scalar(text("SELECT source_event_id FROM call_events WHERE id=1")) == "call-1"
+    command.upgrade(config, "012")
+    with engine.connect() as conn:
+        assert conn.scalar(
+            text("SELECT original_event_type FROM crm_events WHERE id=1")
+        ) == "lead_added"
+
+
+def test_012_downgrade_refuses_to_erase_ingestion_data(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "012")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO oauth_connections "
+                "(account_id,account_url,encrypted_access_token,encrypted_refresh_token,"
+                "is_active,created_at,updated_at) "
+                "VALUES (100,'https://example.invalid','access','refresh',true,now(),now())"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO raw_ingestion_events "
+                "(account_id,source,dedup_key,payload,received_at,expires_at,normalization_status) "
+                "VALUES (100,'crm_event',:dedup,'{}',now(),now() + interval '30 days','pending')"
+            ),
+            {"dedup": "a" * 64},
+        )
+
+    with pytest.raises(RuntimeError, match="phase-5 ingestion data"):
+        command.downgrade(config, "011")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "012"
+        assert conn.scalar(text("SELECT count(*) FROM raw_ingestion_events")) == 1
+
+
 @pytest.fixture
 def migrated_db(monkeypatch):
     admin_url = os.getenv("TEST_POSTGRES_ADMIN_URL")
@@ -158,6 +271,10 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
         "work_comments",
         "oauth_connections",
         "timesheet_commands",
+        "ingestion_cursors",
+        "raw_ingestion_events",
+        "event_type_catalog",
+        "presence_batches",
     ]
     for table_name in target_tables:
         actual = {c["name"]: c for c in inspect(engine).get_columns(table_name)}
@@ -169,7 +286,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
                 column.name,
             )
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "011"
+        assert conn.scalar(text("select version_num from alembic_version")) == "012"
     assert "amocrm_user_id" in {
         c["name"] for c in inspect(engine).get_columns("work_sessions")
     }
@@ -406,7 +523,7 @@ def test_category_account_ownership_refuses_lossy_007_downgrade(migrated_db):
     ):
         command.downgrade(config, "006")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "011"
+        assert conn.scalar(text("select version_num from alembic_version")) == "012"
 
 
 def test_category_account_name_scope_allows_duplicate_names_per_account(migrated_db):
@@ -497,7 +614,7 @@ def test_downgrade_refuses_to_erase_membership_history(migrated_db):
     with pytest.raises(RuntimeError, match="membership history"):
         command.downgrade(config, "004")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "011"
+        assert conn.scalar(text("select version_num from alembic_version")) == "012"
         assert conn.scalar(text("select count(*) from group_members")) == 2
 
 
@@ -549,7 +666,7 @@ def test_department_account_names_and_downgrade_are_data_safe(migrated_db):
     with pytest.raises(RuntimeError, match="department account ownership"):
         command.downgrade(config, "008")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "011"
+        assert conn.scalar(text("select version_num from alembic_version")) == "012"
         assert conn.scalar(text("select count(*) from departments")) == 2
 
 

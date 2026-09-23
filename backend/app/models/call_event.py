@@ -8,6 +8,8 @@ from sqlalchemy import (
     String,
     ForeignKeyConstraint,
     CheckConstraint,
+    ForeignKey,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -19,6 +21,12 @@ class CallEvent(Base):
 
     __tablename__ = "call_events"
     __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "source_event_id",
+            "occurred_at",
+            name="uq_call_events_account_source_occurred",
+        ),
         ForeignKeyConstraint(
             ["account_id", "user_id"],
             ["users.amocrm_account_id", "users.id"],
@@ -31,6 +39,13 @@ class CallEvent(Base):
         CheckConstraint(
             "user_id IS NULL OR (author_amocrm_user_id IS NOT NULL AND author_amocrm_user_id > 0)",
             name="ck_call_events_author",
+        ),
+        CheckConstraint(
+            "is_complete IN (0,1) AND "
+            "(is_complete = 0 OR "
+            "(user_id IS NOT NULL AND direction IN ('incoming','outgoing') "
+            "AND duration_seconds IS NOT NULL))",
+            name="ck_call_events_completeness",
         ),
     )
 
@@ -47,4 +62,8 @@ class CallEvent(Base):
     object_id = Column(Integer, nullable=True)
     card_url = Column(String(1000), nullable=True)
     payload = Column(JSON, nullable=True)
+    raw_event_id = Column(
+        Integer, ForeignKey("raw_ingestion_events.id"), nullable=True, index=True
+    )
+    is_complete = Column(Integer, nullable=False, default=0, server_default="0")
     created_at = Column(DateTime, nullable=False, default=utc_now)

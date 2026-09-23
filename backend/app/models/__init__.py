@@ -18,6 +18,10 @@ from app.models.call_event import CallEvent
 from app.models.activity_interval import ActivityInterval
 from app.models.oauth_connection import OAuthConnection
 from app.models.timesheet_command import TimesheetCommand
+from app.models.ingestion_cursor import IngestionCursor
+from app.models.raw_ingestion_event import RawIngestionEvent
+from app.models.event_type_catalog import EventTypeCatalog
+from app.models.presence_batch import PresenceBatch
 
 __all__ = [
     "User",
@@ -41,4 +45,8 @@ __all__ = [
     "ActivityInterval",
     "OAuthConnection",
     "TimesheetCommand",
+    "IngestionCursor",
+    "RawIngestionEvent",
+    "EventTypeCatalog",
+    "PresenceBatch",
 ]

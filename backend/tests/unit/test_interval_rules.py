@@ -139,7 +139,7 @@ def test_system_or_mismatched_external_author_cannot_be_attributed(raw_author):
         )
 
 
-def test_measured_call_is_confirmed_but_unknown_duration_is_not():
+def test_only_complete_measured_call_is_confirmed():
     from app.models import CallEvent
 
     call = CallEvent(
@@ -151,6 +151,15 @@ def test_measured_call_is_confirmed_but_unknown_duration_is_not():
         occurred_at=START,
         duration_seconds=30,
     )
+    with pytest.raises(ValueError, match="complete"):
+        factory()(
+            session(),
+            started_at=START,
+            ended_at=START + timedelta(seconds=30),
+            source="call",
+            evidence=call,
+        )
+    call.is_complete = 1
     interval = factory()(
         session(),
         started_at=START,
