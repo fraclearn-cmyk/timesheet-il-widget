@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
+
+from app.integrations.amocrm_contract import (
+    AmoCRMAccountURLInvalid,
+    _trusted_tenant_origin,
+)
 
 
 class AmoCRMClientError(RuntimeError):
@@ -20,6 +27,12 @@ class AmoCRMRateLimited(AmoCRMClientError):
 
 class AmoCRMUnavailable(AmoCRMClientError):
     """A timeout or transient upstream response exhausted the retry budget."""
+
+
+@dataclass(frozen=True)
+class AmoCRMEventPage:
+    items: Sequence[Mapping[str, Any]]
+    next_url: str | None
 
 
 class AmoCRMClient:
@@ -48,6 +61,14 @@ class AmoCRMClient:
         self, url: str, *, headers: Mapping[str, str] | None = None
     ) -> Mapping[str, Any]:
         """Return JSON, retrying only transient failures a bounded number of times."""
+        payload = await self._get_json(url, headers=headers)
+        if payload is None:
+            raise AmoCRMClientError("amoCRM returned an unexpected empty response")
+        return payload
+
+    async def _get_json(
+        self, url: str, *, headers: Mapping[str, str] | None = None
+    ) -> Mapping[str, Any] | None:
         for attempt in range(self._max_retries + 1):
             try:
                 response = await self._http.get(
@@ -71,11 +92,93 @@ class AmoCRMClient:
                 await self._sleep(attempt)
                 continue
             response.raise_for_status()
+            if response.status_code == 204:
+                return None
             payload = response.json()
             if not isinstance(payload, Mapping):
                 raise AmoCRMClientError("amoCRM returned an unexpected JSON payload")
             return payload
         raise AssertionError("retry loop must return or raise")
+
+    async def list_events_page(
+        self,
+        account_url: str,
+        access_token: str,
+        *,
+        created_from: int,
+        page_url: str | None = None,
+    ) -> AmoCRMEventPage:
+        """Read one bounded events page and accept only same-tenant next links."""
+        origin = self._trusted_origin(account_url)
+        if page_url is None:
+            url = str(
+                httpx.URL(
+                    f"{origin}/api/v4/events",
+                    params={
+                        "limit": "100",
+                        "filter[created_at][from]": str(created_from),
+                    },
+                )
+            )
+        else:
+            url = self._validated_event_page_url(origin, page_url, requested=True)
+
+        payload = await self._get_json(
+            url, headers={"Authorization": f"Bearer {access_token}"}
+        )
+        if payload is None:
+            return AmoCRMEventPage(items=(), next_url=None)
+        embedded = payload.get("_embedded")
+        items = embedded.get("events") if isinstance(embedded, Mapping) else None
+        if not isinstance(items, list) or not all(
+            isinstance(item, Mapping) for item in items
+        ):
+            raise AmoCRMClientError("amoCRM returned an unexpected events payload")
+        if len(items) > self._max_items:
+            raise AmoCRMClientError("amoCRM event pagination exceeded item budget")
+
+        links = payload.get("_links")
+        next_link = links.get("next") if isinstance(links, Mapping) else None
+        next_value = next_link.get("href") if isinstance(next_link, Mapping) else None
+        next_url = None
+        if next_value is not None:
+            if not isinstance(next_value, str):
+                raise AmoCRMClientError("amoCRM returned an untrusted next link")
+            next_url = self._validated_event_page_url(origin, next_value)
+        return AmoCRMEventPage(items=tuple(items), next_url=next_url)
+
+    async def list_event_types(
+        self, account_url: str, access_token: str
+    ) -> Sequence[tuple[str, str | None]]:
+        """Return the account-scoped amoCRM event catalog as key/label pairs."""
+        origin = self._trusted_origin(account_url)
+        payload = await self._get_json(
+            f"{origin}/api/v4/events/types",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if payload is None:
+            return ()
+        embedded = payload.get("_embedded")
+        entries = (
+            embedded.get("events_types") if isinstance(embedded, Mapping) else None
+        )
+        if not isinstance(entries, list):
+            raise AmoCRMClientError("amoCRM returned an unexpected event type catalog")
+        result: list[tuple[str, str | None]] = []
+        for entry in entries:
+            if not isinstance(entry, Mapping) or not isinstance(entry.get("key"), str):
+                raise AmoCRMClientError(
+                    "amoCRM returned an unexpected event type catalog"
+                )
+            label = entry.get("lang")
+            if label is not None and not isinstance(label, str):
+                raise AmoCRMClientError(
+                    "amoCRM returned an unexpected event type catalog"
+                )
+            result.append((entry["key"], label))
+        if len(result) > self._max_items:
+            raise AmoCRMClientError("amoCRM event type catalog exceeded item budget")
+        return tuple(result)
 
     async def get_account(
         self, account_url: str, access_token: str
@@ -135,3 +238,44 @@ class AmoCRMClient:
                 except (TypeError, ValueError):
                     pass
         return self._backoff * (2**attempt)
+
+    @staticmethod
+    def _trusted_origin(account_url: str) -> str:
+        try:
+            return _trusted_tenant_origin(account_url)
+        except AmoCRMAccountURLInvalid as error:
+            raise AmoCRMClientError("amoCRM account URL is not trusted") from error
+
+    def _validated_event_page_url(
+        self, origin: str, candidate: str, *, requested: bool = False
+    ) -> str:
+        message = (
+            "amoCRM event page URL is not trusted"
+            if requested
+            else ("amoCRM returned an untrusted next link")
+        )
+        try:
+            parsed = urlsplit(candidate)
+            port = parsed.port
+        except ValueError as error:
+            raise AmoCRMClientError(message) from error
+        expected = urlsplit(origin)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != expected.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or port is not None
+            or parsed.path != "/api/v4/events"
+            or parsed.fragment
+        ):
+            raise AmoCRMClientError(message)
+        pages = parse_qs(parsed.query).get("page", [])
+        if pages:
+            try:
+                page_number = int(pages[-1])
+            except ValueError as error:
+                raise AmoCRMClientError(message) from error
+            if page_number < 1 or page_number > self._max_pages:
+                raise AmoCRMClientError("amoCRM event pagination exceeded page budget")
+        return candidate

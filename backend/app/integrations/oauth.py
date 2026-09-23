@@ -84,6 +84,10 @@ class OAuthService:
             self._cipher.decrypt(connection.encrypted_refresh_token),
         )
 
+    def load_access_token(self, connection: OAuthConnection) -> str:
+        """Decrypt only the bearer token, immediately before an API request."""
+        return self._cipher.decrypt(connection.encrypted_access_token)
+
     def _store_tokens(
         self, account_url: str, account: object, tokens: AmoCRMTokens
     ) -> OAuthConnection:
