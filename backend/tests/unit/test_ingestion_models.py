@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.core.database import Base
 from app.models import (
     ActivityInterval,
     CallEvent,
+    CrmEvent,
     EventTypeCatalog,
     IngestionCursor,
     OAuthConnection,
@@ -28,6 +29,11 @@ def utc(year, month, day, hour=0, minute=0):
 @pytest.fixture
 def db():
     engine = create_engine("sqlite://")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         session.add_all(
@@ -251,6 +257,45 @@ def test_call_source_identity_is_account_and_time_scoped_and_incomplete_by_defau
         ]
     )
     db.commit()
+
+
+def test_raw_expiry_preserves_normalized_events_and_clears_references(db):
+    crm_raw = raw_event(dedup_key="c" * 64)
+    call_raw = raw_event(source="call", dedup_key="d" * 64)
+    db.add_all([crm_raw, call_raw])
+    db.flush()
+    crm = CrmEvent(
+        account_id=1,
+        external_id="crm-expiry",
+        author_amocrm_user_id=100,
+        user_id=10,
+        event_type="lead_added",
+        original_event_type="lead_added",
+        occurred_at=utc(2026, 9, 23),
+        is_complete=1,
+        raw_event_id=crm_raw.id,
+    )
+    call = CallEvent(
+        account_id=1,
+        source_event_id="call-expiry",
+        author_amocrm_user_id=100,
+        user_id=10,
+        direction="incoming",
+        occurred_at=utc(2026, 9, 23),
+        duration_seconds=30,
+        raw_event_id=call_raw.id,
+    )
+    db.add_all([crm, call])
+    db.commit()
+
+    db.delete(crm_raw)
+    db.delete(call_raw)
+    db.commit()
+    db.refresh(crm)
+    db.refresh(call)
+
+    assert crm.raw_event_id is None
+    assert call.raw_event_id is None
 
 
 @pytest.mark.parametrize("duration_source", ["point", "observed", "calculated"])

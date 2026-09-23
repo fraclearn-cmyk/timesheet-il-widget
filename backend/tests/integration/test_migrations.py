@@ -224,6 +224,67 @@ def test_012_downgrade_refuses_to_erase_ingestion_data(migrated_db):
         assert conn.scalar(text("SELECT count(*) FROM raw_ingestion_events")) == 1
 
 
+def test_012_raw_expiry_preserves_normalized_events_and_clears_references(
+    migrated_db,
+):
+    config, engine = migrated_db
+    command.upgrade(config, "012")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO oauth_connections "
+                "(account_id,account_url,encrypted_access_token,encrypted_refresh_token,"
+                "is_active,created_at,updated_at) "
+                "VALUES (100,'https://example.invalid','access','refresh',true,now(),now())"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) "
+                "VALUES (7,700,100,'One')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO raw_ingestion_events "
+                "(id,account_id,source,external_id,occurred_at,dedup_key,payload,"
+                "received_at,expires_at,normalization_status) VALUES "
+                "(1,100,'crm_event','crm-1','2026-09-23 08:00:00',:crm_dedup,'{}',"
+                "now(),now() + interval '30 days','complete'),"
+                "(2,100,'call','call-1','2026-09-23 09:00:00',:call_dedup,'{}',"
+                "now(),now() + interval '30 days','incomplete')"
+            ),
+            {"crm_dedup": "a" * 64, "call_dedup": "b" * 64},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO crm_events "
+                "(account_id,external_id,author_amocrm_user_id,user_id,event_type,"
+                "original_event_type,occurred_at,is_complete,raw_event_id,created_at) "
+                "VALUES (100,'crm-1',700,7,'lead_added','lead_added',"
+                "'2026-09-23 08:00:00',1,1,now())"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO call_events "
+                "(account_id,source_event_id,author_amocrm_user_id,user_id,direction,"
+                "occurred_at,duration_seconds,is_complete,raw_event_id,created_at) "
+                "VALUES (100,'call-1',700,7,'incoming','2026-09-23 09:00:00',"
+                "30,0,2,now())"
+            )
+        )
+
+        conn.execute(text("DELETE FROM raw_ingestion_events WHERE id IN (1,2)"))
+
+        assert conn.execute(
+            text("SELECT external_id,raw_event_id FROM crm_events")
+        ).one() == ("crm-1", None)
+        assert conn.execute(
+            text("SELECT source_event_id,raw_event_id FROM call_events")
+        ).one() == ("call-1", None)
+
+
 @pytest.fixture
 def migrated_db(monkeypatch):
     admin_url = os.getenv("TEST_POSTGRES_ADMIN_URL")

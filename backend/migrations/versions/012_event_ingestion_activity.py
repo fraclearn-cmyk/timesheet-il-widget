@@ -166,6 +166,7 @@ def upgrade() -> None:
         "raw_ingestion_events",
         ["raw_event_id"],
         ["id"],
+        ondelete="SET NULL",
     )
     op.execute("UPDATE crm_events SET original_event_type=event_type")
 
@@ -181,6 +182,7 @@ def upgrade() -> None:
         "raw_ingestion_events",
         ["raw_event_id"],
         ["id"],
+        ondelete="SET NULL",
     )
     op.create_unique_constraint(
         "uq_call_events_account_source_occurred",

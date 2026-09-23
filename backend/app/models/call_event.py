@@ -63,7 +63,10 @@ class CallEvent(Base):
     card_url = Column(String(1000), nullable=True)
     payload = Column(JSON, nullable=True)
     raw_event_id = Column(
-        Integer, ForeignKey("raw_ingestion_events.id"), nullable=True, index=True
+        Integer,
+        ForeignKey("raw_ingestion_events.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     is_complete = Column(Integer, nullable=False, default=0, server_default="0")
     created_at = Column(DateTime, nullable=False, default=utc_now)

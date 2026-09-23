@@ -53,7 +53,10 @@ class CrmEvent(Base):
     card_url = Column(String(1000), nullable=True)
     payload = Column(JSON, nullable=True)
     raw_event_id = Column(
-        Integer, ForeignKey("raw_ingestion_events.id"), nullable=True, index=True
+        Integer,
+        ForeignKey("raw_ingestion_events.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     original_event_type = Column(String(100), nullable=True)
     is_complete = Column(Integer, nullable=False, default=0, server_default="0")
