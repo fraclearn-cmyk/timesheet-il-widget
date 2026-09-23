@@ -141,6 +141,15 @@ class EventIngestionService:
 
             cursor = self._db.get(IngestionCursor, account_id)
             last_created_at = cursor.last_created_at if cursor is not None else None
+            page_url = cursor.continuation_url if cursor is not None else None
+            if cursor is not None and (
+                (cursor.pending_last_created_at is None)
+                != (cursor.pending_last_event_id is None)
+                or (page_url is None and cursor.pending_last_created_at is not None)
+            ):
+                raise AmoCRMClientError(
+                    "amoCRM ingestion checkpoint has an invalid watermark"
+                )
             self._db.commit()
             created_from = 0
             if last_created_at is not None:
@@ -153,15 +162,9 @@ class EventIngestionService:
                     ),
                 )
 
-            page_url: str | None = None
             pages = 0
             total_items = 0
-            traversal_watermark: tuple[datetime, str] | None = None
             while True:
-                if pages >= self._max_pages:
-                    raise AmoCRMClientError(
-                        "amoCRM event pagination exceeded page budget"
-                    )
                 page = await self._authorized_request(
                     connection,
                     refresh_state,
@@ -174,10 +177,10 @@ class EventIngestionService:
                 )
                 pages += 1
                 total_items += len(page.items)
-                if total_items > self._max_items:
-                    raise AmoCRMClientError(
-                        "amoCRM event pagination exceeded item budget"
-                    )
+                final_page = page.next_url is None
+                budget_reached = not final_page and (
+                    pages >= self._max_pages or total_items >= self._max_items
+                )
 
                 with self._db.begin():
                     self._require_and_renew_lease(account_id, run_owner)
@@ -188,36 +191,28 @@ class EventIngestionService:
                         items=page.items,
                         now=now,
                     )
-                    if outcome.watermark is not None and (
-                        traversal_watermark is None
-                        or outcome.watermark > traversal_watermark
-                    ):
-                        traversal_watermark = outcome.watermark
-
-                page_url = page.next_url
-                if page_url is None:
-                    break
-
-            with self._db.begin():
-                self._require_and_renew_lease(account_id, run_owner)
-                cursor = self._db.scalar(
-                    select(IngestionCursor).where(
-                        IngestionCursor.account_id == account_id,
-                        IngestionCursor.lease_owner == run_owner,
+                    cursor = self._db.scalar(
+                        select(IngestionCursor).where(
+                            IngestionCursor.account_id == account_id,
+                            IngestionCursor.lease_owner == run_owner,
+                        )
                     )
-                )
-                if cursor is None:
-                    raise _LeaseLost("account ingestion lease was lost")
-                if traversal_watermark is not None and self._is_newer_watermark(
-                    cursor, traversal_watermark
-                ):
-                    cursor.last_created_at, cursor.last_event_id = traversal_watermark
-                cursor.last_success_at = now
-                cursor.next_poll_at = now + self._POLL_INTERVAL
-                cursor.failure_count = 0
-                cursor.lease_owner = None
-                cursor.lease_until = None
-            return True
+                    if cursor is None:
+                        raise _LeaseLost("account ingestion lease was lost")
+                    self._merge_pending_watermark(cursor, outcome.watermark)
+                    cursor.continuation_url = page.next_url
+                    if final_page:
+                        self._publish_pending_watermark(cursor)
+                        cursor.last_success_at = now
+                    if final_page or budget_reached:
+                        cursor.next_poll_at = now + self._POLL_INTERVAL
+                        cursor.failure_count = 0
+                        cursor.lease_owner = None
+                        cursor.lease_until = None
+
+                if final_page or budget_reached:
+                    return True
+                page_url = page.next_url
         except _OAuthRejected as error:
             disable_oauth = True
             failure = error
@@ -566,6 +561,39 @@ class EventIngestionService:
         if cursor.last_created_at is None or cursor.last_event_id is None:
             return True
         return watermark > (cursor.last_created_at, cursor.last_event_id)
+
+    @staticmethod
+    def _merge_pending_watermark(
+        cursor: IngestionCursor, watermark: tuple[datetime, str] | None
+    ) -> None:
+        if watermark is None:
+            return
+        pending = None
+        if (
+            cursor.pending_last_created_at is not None
+            and cursor.pending_last_event_id is not None
+        ):
+            pending = (
+                cursor.pending_last_created_at,
+                cursor.pending_last_event_id,
+            )
+        if pending is None or watermark > pending:
+            cursor.pending_last_created_at, cursor.pending_last_event_id = watermark
+
+    @staticmethod
+    def _publish_pending_watermark(cursor: IngestionCursor) -> None:
+        if (
+            cursor.pending_last_created_at is not None
+            and cursor.pending_last_event_id is not None
+        ):
+            pending = (
+                cursor.pending_last_created_at,
+                cursor.pending_last_event_id,
+            )
+            if EventIngestionService._is_newer_watermark(cursor, pending):
+                cursor.last_created_at, cursor.last_event_id = pending
+        cursor.pending_last_created_at = None
+        cursor.pending_last_event_id = None
 
     @staticmethod
     def _naive_utc(value: datetime) -> datetime:

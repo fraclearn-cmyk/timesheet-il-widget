@@ -276,6 +276,6 @@ class AmoCRMClient:
                 page_number = int(pages[-1])
             except ValueError as error:
                 raise AmoCRMClientError(message) from error
-            if page_number < 1 or page_number > self._max_pages:
-                raise AmoCRMClientError("amoCRM event pagination exceeded page budget")
+            if page_number < 1:
+                raise AmoCRMClientError(message)
         return candidate

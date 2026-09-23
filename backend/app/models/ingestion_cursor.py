@@ -16,6 +16,10 @@ class IngestionCursor(Base):
             "(length(webhook_key_hash) = 64 AND webhook_key_hash = lower(webhook_key_hash))",
             name="ck_ingestion_cursors_webhook_hash",
         ),
+        CheckConstraint(
+            "(pending_last_created_at IS NULL) = (pending_last_event_id IS NULL)",
+            name="ck_ingestion_cursors_pending_watermark_pair",
+        ),
     )
 
     account_id = Column(
@@ -23,6 +27,9 @@ class IngestionCursor(Base):
     )
     last_created_at = Column(DateTime, nullable=True)
     last_event_id = Column(String(255), nullable=True)
+    continuation_url = Column(String, nullable=True)
+    pending_last_created_at = Column(DateTime, nullable=True)
+    pending_last_event_id = Column(String(255), nullable=True)
     catalog_refreshed_at = Column(DateTime, nullable=True)
     next_poll_at = Column(DateTime, nullable=False, index=True)
     last_success_at = Column(DateTime, nullable=True)

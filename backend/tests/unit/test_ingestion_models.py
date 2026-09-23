@@ -107,11 +107,15 @@ def test_raw_event_rejects_unknown_normalization_status(db, status):
 
 def test_cursor_defaults_and_lease_timestamps_round_trip_as_utc_naive(db):
     lease_until = utc(2026, 9, 23, 12)
+    pending_at = utc(2026, 9, 23, 10, 30)
     cursor = IngestionCursor(
         account_id=1,
         next_poll_at=utc(2026, 9, 23, 11),
         lease_owner="worker-1",
         lease_until=lease_until,
+        continuation_url="https://one.example.invalid/api/v4/events?page=2",
+        pending_last_created_at=pending_at,
+        pending_last_event_id="pending-event",
         webhook_key_hash="b" * 64,
         encrypted_webhook_key="encrypted-hook-key",
     )
@@ -123,6 +127,9 @@ def test_cursor_defaults_and_lease_timestamps_round_trip_as_utc_naive(db):
     assert stored.failure_count == 0
     assert stored.lease_until == lease_until.replace(tzinfo=None)
     assert stored.next_poll_at == utc(2026, 9, 23, 11).replace(tzinfo=None)
+    assert stored.continuation_url.endswith("page=2")
+    assert stored.pending_last_created_at == pending_at.replace(tzinfo=None)
+    assert stored.pending_last_event_id == "pending-event"
     assert stored.webhook_key_hash == "b" * 64
     assert stored.encrypted_webhook_key == "encrypted-hook-key"
 

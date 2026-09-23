@@ -152,6 +152,33 @@ class PagingClient:
         return page_type(items=items, next_url=next_url)
 
 
+class ResumablePagingClient(PagingClient):
+    """Deterministic opaque pagination that can be shared across service restarts."""
+
+    def __init__(self, pages: list[list[Mapping[str, Any]]]) -> None:
+        super().__init__(pages)
+
+    async def list_events_page(
+        self,
+        account_url: str,
+        access_token: str,
+        *,
+        created_from: int,
+        page_url: str | None = None,
+    ):
+        page_type = importlib.import_module(
+            "app.integrations.amocrm_client"
+        ).AmoCRMEventPage
+        self.event_calls.append((created_from, page_url, access_token))
+        page_number = 1 if page_url is None else int(page_url.rsplit("=", 1)[1])
+        next_url = (
+            f"{ACCOUNT_URL}/api/v4/events?limit=100&page={page_number + 1}"
+            if page_number < len(self.pages)
+            else None
+        )
+        return page_type(items=self.pages[page_number - 1], next_url=next_url)
+
+
 class BlockingEventsClient(PagingClient):
     def __init__(self, items: list[Mapping[str, Any]]) -> None:
         super().__init__([items])
@@ -180,7 +207,7 @@ class BlockingEventsClient(PagingClient):
 class LaterPageFailureClient(PagingClient):
     def __init__(self) -> None:
         super().__init__([[event("newer", created_at=EVENT_TIME + 100)]])
-        self.traversal = 0
+        self.failed_later_page = False
 
     async def list_events_page(
         self,
@@ -195,12 +222,12 @@ class LaterPageFailureClient(PagingClient):
         ).AmoCRMEventPage
         self.event_calls.append((created_from, page_url, access_token))
         if page_url is None:
-            self.traversal += 1
             return page_type(
                 items=(event("newer", created_at=EVENT_TIME + 100),),
                 next_url=f"{ACCOUNT_URL}/api/v4/events?limit=100&page=2",
             )
-        if self.traversal == 1:
+        if not self.failed_later_page:
+            self.failed_later_page = True
             raise RuntimeError("synthetic later-page failure")
         return page_type(
             items=(event("older", created_at=EVENT_TIME + 10),),
@@ -291,6 +318,7 @@ def test_event_page_uses_bounded_query_and_returns_trusted_next_link() -> None:
         "https://other.amocrm.ru/api/v4/events?page=2",
         "https://example.amocrm.ru/api/v4/users?page=2",
         "https://example.amocrm.ru/api/v4/events?page=2#fragment",
+        "https://example.amocrm.ru/api/v4/events?page=0",
     ],
 )
 def test_event_page_rejects_untrusted_returned_next_link(next_url: str) -> None:
@@ -336,7 +364,7 @@ def test_event_page_rejects_untrusted_requested_page_before_sending_token() -> N
     assert calls == 0
 
 
-def test_event_page_caps_page_and_item_budgets() -> None:
+def test_event_page_caps_item_budget() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -349,15 +377,32 @@ def test_event_page_caps_page_and_item_budgets() -> None:
             client = AmoCRMClient(http, max_pages=2, max_items=1)
             with pytest.raises(AmoCRMClientError, match="item budget"):
                 await client.list_events_page(ACCOUNT_URL, "token", created_from=1)
-            with pytest.raises(AmoCRMClientError, match="page budget"):
-                await client.list_events_page(
-                    ACCOUNT_URL,
-                    "token",
-                    created_from=1,
-                    page_url=f"{ACCOUNT_URL}/api/v4/events?page=3",
-                )
 
     run(scenario())
+
+
+def test_event_page_accepts_high_same_tenant_checkpoint_for_bounded_resume() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"_embedded": {"events": []}},
+            request=request,
+        )
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            return await AmoCRMClient(http, max_pages=2).list_events_page(
+                ACCOUNT_URL,
+                "token",
+                created_from=1,
+                page_url=f"{ACCOUNT_URL}/api/v4/events?limit=100&page=101",
+            )
+
+    assert run(scenario()).items == ()
+    assert len(requests) == 1
 
 
 def test_event_page_returns_empty_final_page_for_204() -> None:
@@ -575,6 +620,9 @@ def test_later_page_failure_keeps_traversal_boundary_for_newer_first_retry(
         )
         db.expire_all()
         assert client.event_calls[2][0] == EVENT_TIME - 102
+        assert client.event_calls[2][1] == (
+            f"{ACCOUNT_URL}/api/v4/events?limit=100&page=2"
+        )
         assert {row.external_id for row in db.query(RawIngestionEvent)} == {
             "newer",
             "older",
@@ -588,6 +636,249 @@ def test_later_page_failure_keeps_traversal_boundary_for_newer_first_retry(
             EVENT_TIME + 100, UTC
         ).replace(tzinfo=None)
         assert cursor.last_event_id == "newer"
+
+
+def test_page_budget_checkpoint_resumes_across_processes_and_publishes_aggregate(
+    migrated_db,
+) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    seed_time = datetime.fromtimestamp(EVENT_TIME - 100, UTC).replace(tzinfo=None)
+    page_two_url = f"{ACCOUNT_URL}/api/v4/events?limit=100&page=2"
+    page_three_url = f"{ACCOUNT_URL}/api/v4/events?limit=100&page=3"
+    client = ResumablePagingClient(
+        [
+            [
+                event("valid-high", created_at=EVENT_TIME + 100),
+                event(
+                    "foreign-future",
+                    created_at=EVENT_TIME + 10_000,
+                    account_id=999,
+                ),
+            ],
+            [event("valid-low", created_at=EVENT_TIME + 10)],
+            [event("valid-middle", created_at=EVENT_TIME + 50)],
+        ]
+    )
+    with Session(engine) as db:
+        add_account(db)
+        db.add_all(
+            [
+                User(
+                    id=7,
+                    amocrm_user_id=456,
+                    amocrm_account_id=ACCOUNT_ID,
+                    name="Author",
+                ),
+                IngestionCursor(
+                    account_id=ACCOUNT_ID,
+                    last_created_at=seed_time,
+                    last_event_id="seed",
+                    next_poll_at=now,
+                ),
+                EventTypeCatalog(
+                    account_id=ACCOUNT_ID,
+                    event_key="lead_status_changed",
+                    label="Lead status changed",
+                    refreshed_at=now,
+                ),
+            ]
+        )
+        db.commit()
+
+    expected_checkpoints = (page_two_url, page_three_url, None)
+    for index, expected_checkpoint in enumerate(expected_checkpoints):
+        with Session(engine) as db:
+            service = build_service(
+                db,
+                client,
+                owner=f"process-{index}",
+                max_pages=1,
+            )
+            assert run(
+                service.ingest_account(
+                    account_id=ACCOUNT_ID,
+                    now=now + timedelta(minutes=index),
+                )
+            )
+            db.expire_all()
+            cursor = db.get(IngestionCursor, ACCOUNT_ID)
+            assert cursor.continuation_url == expected_checkpoint
+            if expected_checkpoint is not None:
+                assert cursor.last_created_at == seed_time
+                assert cursor.last_event_id == "seed"
+
+    assert [call[1] for call in client.event_calls] == [
+        None,
+        page_two_url,
+        page_three_url,
+    ]
+    with Session(engine) as db:
+        assert {row.external_id for row in db.query(RawIngestionEvent)} == {
+            "valid-high",
+            "foreign-future",
+            "valid-low",
+            "valid-middle",
+        }
+        assert db.query(RawIngestionEvent).count() == 4
+        assert db.query(CrmEvent).count() == 4
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert cursor.pending_last_created_at is None
+        assert cursor.pending_last_event_id is None
+        assert cursor.last_created_at == datetime.fromtimestamp(
+            EVENT_TIME + 100, UTC
+        ).replace(tzinfo=None)
+        assert cursor.last_event_id == "valid-high"
+
+
+def test_item_budget_checkpoint_stops_at_page_boundary_and_resumes(
+    migrated_db,
+) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    page_two_url = f"{ACCOUNT_URL}/api/v4/events?limit=100&page=2"
+    client = ResumablePagingClient(
+        [[event("item-one")], [event("item-two", created_at=EVENT_TIME + 1)]]
+    )
+    with Session(engine) as db:
+        add_account(db)
+        db.add(
+            EventTypeCatalog(
+                account_id=ACCOUNT_ID,
+                event_key="lead_status_changed",
+                label="Lead status changed",
+                refreshed_at=now,
+            )
+        )
+        db.commit()
+
+        assert run(
+            build_service(db, client, max_items=1).ingest_account(
+                account_id=ACCOUNT_ID, now=now
+            )
+        )
+        db.expire_all()
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert cursor.continuation_url == page_two_url
+        assert cursor.last_created_at is None
+
+        assert run(
+            build_service(db, client, max_items=1).ingest_account(
+                account_id=ACCOUNT_ID, now=now + timedelta(minutes=1)
+            )
+        )
+        db.expire_all()
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert cursor.continuation_url is None
+        assert cursor.last_event_id == "item-two"
+        assert db.query(RawIngestionEvent).count() == 2
+        assert [call[1] for call in client.event_calls] == [None, page_two_url]
+
+
+def test_invalid_persisted_continuation_fails_closed_without_skipping(
+    migrated_db, caplog
+) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    invalid_url = "https://attacker.invalid/api/v4/events?page=2"
+    requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(200, json={}, request=request)
+
+    with Session(engine) as db:
+        add_account(db)
+        db.add_all(
+            [
+                IngestionCursor(
+                    account_id=ACCOUNT_ID,
+                    next_poll_at=now,
+                    catalog_refreshed_at=now,
+                    continuation_url=invalid_url,
+                    pending_last_created_at=now,
+                    pending_last_event_id="pending",
+                ),
+                EventTypeCatalog(
+                    account_id=ACCOUNT_ID,
+                    event_key="lead_status_changed",
+                    label="Lead status changed",
+                    refreshed_at=now,
+                ),
+            ]
+        )
+        db.commit()
+
+        async def scenario() -> bool:
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as http:
+                return await build_service(db, AmoCRMClient(http)).ingest_account(
+                    account_id=ACCOUNT_ID, now=now
+                )
+
+        ingestion_logger = logging.getLogger("app.services.event_ingestion_service")
+        logger_was_disabled = ingestion_logger.disabled
+        ingestion_logger.disabled = False
+        ingestion_logger.addHandler(caplog.handler)
+        try:
+            assert not run(scenario())
+        finally:
+            ingestion_logger.removeHandler(caplog.handler)
+            ingestion_logger.disabled = logger_was_disabled
+
+        db.expire_all()
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert requests == 0
+        assert cursor.continuation_url == invalid_url
+        assert cursor.pending_last_created_at == now
+        assert cursor.pending_last_event_id == "pending"
+        assert cursor.last_created_at is None
+        assert cursor.failure_count == 1
+        records = [
+            record
+            for record in caplog.records
+            if record.name == "app.services.event_ingestion_service"
+        ]
+        assert [record.error_code for record in records] == ["amocrm_transport_error"]
+
+
+def test_orphaned_pending_watermark_fails_closed_without_starting_new_traversal(
+    migrated_db,
+) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    pending_time = datetime.fromtimestamp(EVENT_TIME + 100, UTC).replace(tzinfo=None)
+    client = PagingClient([[event("must-not-be-requested")]])
+    with Session(engine) as db:
+        add_account(db)
+        db.add(
+            IngestionCursor(
+                account_id=ACCOUNT_ID,
+                next_poll_at=now,
+                catalog_refreshed_at=now,
+                pending_last_created_at=pending_time,
+                pending_last_event_id="orphaned",
+            )
+        )
+        db.commit()
+
+        assert not run(
+            build_service(db, client).ingest_account(account_id=ACCOUNT_ID, now=now)
+        )
+
+        db.expire_all()
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert client.event_calls == []
+        assert cursor.last_created_at is None
+        assert cursor.pending_last_created_at == pending_time
+        assert cursor.pending_last_event_id == "orphaned"
+        assert cursor.failure_count == 1
 
 
 def test_concurrent_raw_duplicate_insert_is_conflict_safe(migrated_db) -> None:
@@ -706,6 +997,69 @@ def test_expired_lease_takeover_fences_old_poll_before_page_persistence(
         cursor = db.get(IngestionCursor, ACCOUNT_ID)
         assert cursor.lease_owner == "worker-new-run"
         assert cursor.lease_until == now + timedelta(seconds=240)
+
+
+def test_takeover_fences_old_worker_from_mutating_persisted_checkpoint(
+    migrated_db,
+) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    pending_time = datetime.fromtimestamp(EVENT_TIME + 5, UTC).replace(tzinfo=None)
+    page_two_url = f"{ACCOUNT_URL}/api/v4/events?limit=100&page=2"
+    client = BlockingEventsClient([event("old-worker-final")])
+    with Session(engine) as setup:
+        add_account(setup)
+        setup.add_all(
+            [
+                IngestionCursor(
+                    account_id=ACCOUNT_ID,
+                    next_poll_at=now,
+                    continuation_url=page_two_url,
+                    pending_last_created_at=pending_time,
+                    pending_last_event_id="pending-before-takeover",
+                ),
+                EventTypeCatalog(
+                    account_id=ACCOUNT_ID,
+                    event_key="lead_status_changed",
+                    label="Lead status changed",
+                    refreshed_at=now,
+                ),
+            ]
+        )
+        setup.commit()
+
+    def poll_as_old_owner() -> bool:
+        with Session(engine) as db:
+            return run(
+                build_service(
+                    db,
+                    client,
+                    owner="worker-old",
+                    lease_clock=lambda: now,
+                ).ingest_account(account_id=ACCOUNT_ID, now=now)
+            )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(poll_as_old_owner)
+        assert client.started.wait(timeout=10)
+        with Session(engine) as takeover_db:
+            takeover = build_service(takeover_db, PagingClient([[]]), owner="new")
+            assert takeover.acquire_lease(
+                ACCOUNT_ID,
+                "worker-new-run",
+                now + timedelta(seconds=120),
+            )
+        client.release.set()
+        assert future.result(timeout=10) is False
+
+    with Session(engine) as db:
+        assert db.query(RawIngestionEvent).count() == 0
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert cursor.continuation_url == page_two_url
+        assert cursor.pending_last_created_at == pending_time
+        assert cursor.pending_last_event_id == "pending-before-takeover"
+        assert cursor.lease_owner == "worker-new-run"
 
 
 def test_same_configured_owner_cannot_start_two_account_polls(migrated_db) -> None:

@@ -20,6 +20,9 @@ def upgrade() -> None:
         sa.Column("account_id", sa.Integer(), nullable=False),
         sa.Column("last_created_at", sa.DateTime(), nullable=True),
         sa.Column("last_event_id", sa.String(255), nullable=True),
+        sa.Column("continuation_url", sa.String(), nullable=True),
+        sa.Column("pending_last_created_at", sa.DateTime(), nullable=True),
+        sa.Column("pending_last_event_id", sa.String(255), nullable=True),
         sa.Column("catalog_refreshed_at", sa.DateTime(), nullable=True),
         sa.Column("next_poll_at", sa.DateTime(), nullable=False),
         sa.Column("last_success_at", sa.DateTime(), nullable=True),
@@ -34,6 +37,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "webhook_key_hash IS NULL OR " "webhook_key_hash ~ '^[0-9a-f]{64}$'",
             name="ck_ingestion_cursors_webhook_hash",
+        ),
+        sa.CheckConstraint(
+            "(pending_last_created_at IS NULL) = (pending_last_event_id IS NULL)",
+            name="ck_ingestion_cursors_pending_watermark_pair",
         ),
         sa.ForeignKeyConstraint(["account_id"], ["oauth_connections.account_id"]),
         sa.PrimaryKeyConstraint("account_id"),

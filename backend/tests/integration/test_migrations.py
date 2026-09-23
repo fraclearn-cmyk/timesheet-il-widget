@@ -122,6 +122,13 @@ def test_012_clean_upgrade_downgrade_upgrade(migrated_db):
         "event_type_catalog",
         "presence_batches",
     }.issubset(set(inspect(engine).get_table_names()))
+    assert {
+        "continuation_url",
+        "pending_last_created_at",
+        "pending_last_event_id",
+    }.issubset(
+        {column["name"] for column in inspect(engine).get_columns("ingestion_cursors")}
+    )
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "012"
 
