@@ -20,6 +20,7 @@ def upgrade() -> None:
         sa.Column("account_id", sa.Integer(), nullable=False),
         sa.Column("last_created_at", sa.DateTime(), nullable=True),
         sa.Column("last_event_id", sa.String(255), nullable=True),
+        sa.Column("catalog_refreshed_at", sa.DateTime(), nullable=True),
         sa.Column("next_poll_at", sa.DateTime(), nullable=False),
         sa.Column("last_success_at", sa.DateTime(), nullable=True),
         sa.Column("failure_count", sa.Integer(), nullable=False, server_default="0"),

@@ -4,17 +4,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import logging
 from typing import Any, Awaitable, Callable, Collection, Mapping, Sequence, TypeVar
+from uuid import uuid4
 
 import httpx
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.time_utils import utc_now
 from app.integrations.amocrm_client import (
     AmoCRMClient,
     AmoCRMClientError,
+    AmoCRMRateLimited,
 )
 from app.integrations.oauth import OAuthService
 from app.models.crm_event import CrmEvent
@@ -27,6 +32,7 @@ from app.services.event_normalizer import canonical_payload_hash, normalize_crm_
 
 
 _T = TypeVar("_T")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -36,6 +42,10 @@ class _PageOutcome:
 
 
 class _OAuthRejected(AmoCRMClientError):
+    pass
+
+
+class _LeaseLost(RuntimeError):
     pass
 
 
@@ -57,6 +67,7 @@ class EventIngestionService:
         owner: str,
         max_pages: int = 100,
         max_items: int = 10_000,
+        lease_clock: Callable[[], datetime] | None = None,
     ) -> None:
         if not owner or len(owner) > 128:
             raise ValueError("lease owner must contain 1 to 128 characters")
@@ -68,6 +79,7 @@ class EventIngestionService:
         self._owner = owner
         self._max_pages = max_pages
         self._max_items = max_items
+        self._lease_clock = lease_clock or utc_now
 
     def acquire_lease(
         self,
@@ -76,7 +88,7 @@ class EventIngestionService:
         now: datetime,
         lease_seconds: int = 120,
     ) -> bool:
-        """Atomically create, take over, or renew one account lease."""
+        """Atomically create or take over one account lease."""
         if not owner or len(owner) > 128 or lease_seconds < 1:
             raise ValueError("lease owner and duration must be valid")
         now = self._naive_utc(now)
@@ -95,7 +107,6 @@ class EventIngestionService:
                 where=or_(
                     IngestionCursor.lease_until.is_(None),
                     IngestionCursor.lease_until <= now,
-                    IngestionCursor.lease_owner == owner,
                 ),
             )
             .returning(IngestionCursor.account_id)
@@ -111,19 +122,21 @@ class EventIngestionService:
     async def ingest_account(self, *, account_id: int, now: datetime) -> bool:
         """Poll and persist one account, returning false on lease/upstream failure."""
         now = self._naive_utc(now)
-        if not self.acquire_lease(account_id, self._owner, now):
+        run_owner = self._run_owner()
+        if not self.acquire_lease(account_id, run_owner, now):
             return False
 
         disable_oauth = False
+        failure: Exception | None = None
         try:
             connection = self._db.get(OAuthConnection, account_id)
             if connection is None or not connection.is_active:
-                self._release_lease(account_id, now)
+                self._release_lease(account_id, run_owner, now)
                 return False
             account_url = connection.account_url
             refresh_state = {"used": False}
             known_types = await self._load_catalog(
-                connection, account_url, now, refresh_state
+                connection, account_url, now, refresh_state, run_owner
             )
 
             cursor = self._db.get(IngestionCursor, account_id)
@@ -143,6 +156,7 @@ class EventIngestionService:
             page_url: str | None = None
             pages = 0
             total_items = 0
+            traversal_watermark: tuple[datetime, str] | None = None
             while True:
                 if pages >= self._max_pages:
                     raise AmoCRMClientError(
@@ -166,6 +180,7 @@ class EventIngestionService:
                     )
 
                 with self._db.begin():
+                    self._require_and_renew_lease(account_id, run_owner)
                     outcome = self._persist_page(
                         account_id=account_id,
                         account_url=account_url,
@@ -173,37 +188,50 @@ class EventIngestionService:
                         items=page.items,
                         now=now,
                     )
-                    cursor = self._db.get(IngestionCursor, account_id)
-                    if cursor is None:
-                        raise RuntimeError(
-                            "ingestion cursor disappeared during polling"
-                        )
-                    if outcome.watermark is not None and self._is_newer_watermark(
-                        cursor, outcome.watermark
+                    if outcome.watermark is not None and (
+                        traversal_watermark is None
+                        or outcome.watermark > traversal_watermark
                     ):
-                        cursor.last_created_at, cursor.last_event_id = outcome.watermark
+                        traversal_watermark = outcome.watermark
 
                 page_url = page.next_url
                 if page_url is None:
                     break
 
             with self._db.begin():
-                cursor = self._db.get(IngestionCursor, account_id)
+                self._require_and_renew_lease(account_id, run_owner)
+                cursor = self._db.scalar(
+                    select(IngestionCursor).where(
+                        IngestionCursor.account_id == account_id,
+                        IngestionCursor.lease_owner == run_owner,
+                    )
+                )
                 if cursor is None:
-                    raise RuntimeError("ingestion cursor disappeared after polling")
+                    raise _LeaseLost("account ingestion lease was lost")
+                if traversal_watermark is not None and self._is_newer_watermark(
+                    cursor, traversal_watermark
+                ):
+                    cursor.last_created_at, cursor.last_event_id = traversal_watermark
                 cursor.last_success_at = now
                 cursor.next_poll_at = now + self._POLL_INTERVAL
                 cursor.failure_count = 0
                 cursor.lease_owner = None
                 cursor.lease_until = None
             return True
-        except _OAuthRejected:
+        except _OAuthRejected as error:
             disable_oauth = True
-        except Exception:
-            pass
+            failure = error
+        except _LeaseLost as error:
+            self._db.rollback()
+            self._log_failure(account_id, error)
+            return False
+        except Exception as error:
+            failure = error
 
         self._db.rollback()
-        self._record_failure(account_id, now, disable_oauth=disable_oauth)
+        if failure is not None:
+            self._log_failure(account_id, failure)
+        self._record_failure(account_id, run_owner, now, disable_oauth=disable_oauth)
         return False
 
     def purge_expired_raw(self, now: datetime, batch_size: int = 1000) -> int:
@@ -239,12 +267,12 @@ class EventIngestionService:
         account_url: str,
         now: datetime,
         refresh_state: dict[str, bool],
+        run_owner: str,
     ) -> Collection[str]:
-        latest = self._db.scalar(
-            select(func.max(EventTypeCatalog.refreshed_at)).where(
-                EventTypeCatalog.account_id == connection.account_id
-            )
-        )
+        cursor = self._db.get(IngestionCursor, connection.account_id)
+        if cursor is None:
+            raise _LeaseLost("account ingestion cursor disappeared")
+        latest = cursor.catalog_refreshed_at
         if latest is not None and latest > now - self._CATALOG_MAX_AGE:
             known = set(
                 self._db.scalars(
@@ -262,6 +290,11 @@ class EventIngestionService:
             lambda token: self._client.list_event_types(account_url, token),
         )
         with self._db.begin():
+            self._require_and_renew_lease(connection.account_id, run_owner)
+            cursor = self._db.get(IngestionCursor, connection.account_id)
+            if cursor is None or cursor.lease_owner != run_owner:
+                raise _LeaseLost("account ingestion lease was lost")
+            cursor.catalog_refreshed_at = now
             self._db.execute(
                 delete(EventTypeCatalog).where(
                     EventTypeCatalog.account_id == connection.account_id
@@ -409,7 +442,8 @@ class EventIngestionService:
                     self._db.execute(normalized_statement)
 
             if (
-                normalized.external_id is not None
+                normalized.error_code != "account_mismatch"
+                and normalized.external_id is not None
                 and normalized.occurred_at is not None
             ):
                 candidate = (normalized.occurred_at, normalized.external_id)
@@ -418,12 +452,25 @@ class EventIngestionService:
         return _PageOutcome(inserted=inserted, watermark=watermark)
 
     def _record_failure(
-        self, account_id: int, now: datetime, *, disable_oauth: bool
-    ) -> None:
+        self,
+        account_id: int,
+        run_owner: str,
+        now: datetime,
+        *,
+        disable_oauth: bool,
+    ) -> bool:
         try:
-            cursor = self._db.get(IngestionCursor, account_id)
+            cursor = self._db.scalar(
+                select(IngestionCursor)
+                .where(
+                    IngestionCursor.account_id == account_id,
+                    IngestionCursor.lease_owner == run_owner,
+                )
+                .with_for_update()
+            )
             if cursor is None:
-                return
+                self._db.commit()
+                return False
             cursor.failure_count += 1
             seconds = min(
                 60 * (2 ** min(cursor.failure_count - 1, 10)),
@@ -437,17 +484,73 @@ class EventIngestionService:
                 if connection is not None:
                     connection.is_active = False
             self._db.commit()
+            return True
         except Exception:
             self._db.rollback()
             raise
 
-    def _release_lease(self, account_id: int, now: datetime) -> None:
-        cursor = self._db.get(IngestionCursor, account_id)
+    def _release_lease(self, account_id: int, run_owner: str, now: datetime) -> bool:
+        cursor = self._db.scalar(
+            select(IngestionCursor)
+            .where(
+                IngestionCursor.account_id == account_id,
+                IngestionCursor.lease_owner == run_owner,
+            )
+            .with_for_update()
+        )
         if cursor is not None:
             cursor.lease_owner = None
             cursor.lease_until = None
             cursor.next_poll_at = now + self._POLL_INTERVAL
         self._db.commit()
+        return cursor is not None
+
+    def _require_and_renew_lease(self, account_id: int, run_owner: str) -> None:
+        lease_at = self._naive_utc(self._lease_clock())
+        statement = (
+            IngestionCursor.__table__.update()
+            .where(
+                IngestionCursor.account_id == account_id,
+                IngestionCursor.lease_owner == run_owner,
+            )
+            .values(lease_until=lease_at + timedelta(seconds=120))
+            .returning(IngestionCursor.account_id)
+        )
+        if self._db.execute(statement).scalar_one_or_none() is None:
+            raise _LeaseLost("account ingestion lease was lost")
+
+    def _run_owner(self) -> str:
+        return f"{self._owner[:95]}:{uuid4().hex}"
+
+    @staticmethod
+    def _log_failure(account_id: int, error: Exception) -> None:
+        error_code = EventIngestionService._failure_code(error)
+        level = (
+            logging.ERROR
+            if error_code in {"database_error", "unexpected_error"}
+            else logging.WARNING
+        )
+        logger.log(
+            level,
+            "amoCRM ingestion failed",
+            extra={"account_id": account_id, "error_code": error_code},
+        )
+
+    @staticmethod
+    def _failure_code(error: Exception) -> str:
+        if isinstance(error, _LeaseLost):
+            return "lease_lost"
+        if isinstance(error, _OAuthRejected):
+            return "oauth_rejected"
+        if isinstance(error, AmoCRMRateLimited):
+            return "amocrm_rate_limited"
+        if isinstance(error, AmoCRMClientError):
+            return "amocrm_transport_error"
+        if isinstance(error, httpx.HTTPError):
+            return "amocrm_http_error"
+        if isinstance(error, SQLAlchemyError):
+            return "database_error"
+        return "unexpected_error"
 
     def _dialect_insert(self, model):
         if self._db.bind is not None and self._db.bind.dialect.name == "postgresql":

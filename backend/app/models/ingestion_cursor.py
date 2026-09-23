@@ -23,6 +23,7 @@ class IngestionCursor(Base):
     )
     last_created_at = Column(DateTime, nullable=True)
     last_event_id = Column(String(255), nullable=True)
+    catalog_refreshed_at = Column(DateTime, nullable=True)
     next_poll_at = Column(DateTime, nullable=False, index=True)
     last_success_at = Column(DateTime, nullable=True)
     failure_count = Column(Integer, nullable=False, default=0, server_default="0")
