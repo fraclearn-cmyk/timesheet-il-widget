@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import ast
+import json
 from copy import deepcopy
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
+from app.integrations.amocrm_contract import (
+    normalize_call_event as normalize_legacy_call_event,
+)
+from app.integrations.amocrm_contract import (
+    normalize_timeline_event as normalize_legacy_timeline_event,
+)
 from app.services.event_normalizer import (
     NormalizedActivityEvent,
     canonical_payload_hash,
@@ -18,7 +27,7 @@ ACCOUNT_ORIGIN = "https://example.amocrm.ru"
 OCCURRED_AT = datetime(2026, 9, 23, 9, 0)
 OCCURRED_AT_TIMESTAMP = 1_790_154_000
 
-OFFICIAL_CATALOG_CASES = (
+OBSERVED_MINIMUM_CONTEXTS = (
     ("contact_added", "contact", "contacts"),
     ("company_added", "company", "companies"),
     ("lead_added", "lead", "leads"),
@@ -27,6 +36,16 @@ OFFICIAL_CATALOG_CASES = (
     ("common_note_added", "lead", "leads"),
     ("name_field_changed", "lead", "leads"),
 )
+
+# Synthetic projection of one account-scoped /api/v4/events/types response.
+# Its returned keys are authoritative only for this test account snapshot.
+CATALOG_SNAPSHOT = json.loads(
+    (Path(__file__).parent / "fixtures" / "amocrm_event_types_snapshot.json").read_text(
+        encoding="utf-8"
+    )
+)
+ACCOUNT_CATALOG_ENTRIES = CATALOG_SNAPSHOT["_embedded"]["events_types"]
+ACCOUNT_CATALOG_KEYS = tuple(entry["key"] for entry in ACCOUNT_CATALOG_ENTRIES)
 
 
 def crm_payload(
@@ -77,12 +96,12 @@ def call_payload() -> dict:
 
 
 @pytest.mark.parametrize(
-    ("event_type", "entity_type", "resource"), OFFICIAL_CATALOG_CASES
+    ("event_type", "entity_type", "resource"), OBSERVED_MINIMUM_CONTEXTS
 )
-def test_normalizes_each_known_catalog_event(
+def test_normalizes_each_observed_minimum_event_context(
     event_type: str, entity_type: str, resource: str
 ) -> None:
-    """Dropping a catalog key must not silently discard valid CRM evidence."""
+    """The built-in minimum must retain each context observed in phase 0."""
     payload = crm_payload(
         event_type=event_type, entity_type=entity_type, resource=resource
     )
@@ -91,7 +110,7 @@ def test_normalizes_each_known_catalog_event(
         payload,
         expected_account_id=ACCOUNT_ID,
         expected_origin=ACCOUNT_ORIGIN,
-        known_types={case[0] for case in OFFICIAL_CATALOG_CASES},
+        known_types={case[0] for case in OBSERVED_MINIMUM_CONTEXTS},
     )
 
     assert result == NormalizedActivityEvent(
@@ -109,6 +128,37 @@ def test_normalizes_each_known_catalog_event(
         is_complete=True,
         error_code=None,
     )
+
+
+def test_account_catalog_fixture_matches_official_response_shape() -> None:
+    """The synthetic account snapshot is consistent, not a global type list."""
+    assert CATALOG_SNAPSHOT["_total_items"] == len(ACCOUNT_CATALOG_ENTRIES)
+    assert CATALOG_SNAPSHOT["_links"]["self"]["href"] == (
+        f"{ACCOUNT_ORIGIN}/api/v4/events/types"
+    )
+    assert all(
+        set(entry) == {"key", "type", "lang"} for entry in ACCOUNT_CATALOG_ENTRIES
+    )
+    assert {case[0] for case in OBSERVED_MINIMUM_CONTEXTS} < set(ACCOUNT_CATALOG_KEYS)
+
+
+@pytest.mark.parametrize("catalog_key", ACCOUNT_CATALOG_KEYS)
+def test_normalizes_every_key_returned_by_account_catalog_snapshot(
+    catalog_key: str,
+) -> None:
+    """Dropping any server-returned catalog key would lose valid account evidence."""
+    payload = crm_payload(event_type=catalog_key)
+
+    result = normalize_crm_event(
+        payload,
+        expected_account_id=ACCOUNT_ID,
+        expected_origin=ACCOUNT_ORIGIN,
+        known_types=ACCOUNT_CATALOG_KEYS,
+    )
+
+    assert result.normalized_type == catalog_key
+    assert result.original_type == catalog_key
+    assert result.is_complete is True
 
 
 def test_unknown_type_is_preserved_but_incomplete() -> None:
@@ -277,6 +327,10 @@ def test_verified_complete_call_preserves_only_observed_call_facts() -> None:
     ("source_verified", "field", "value"),
     [
         (False, None, None),
+        (1, None, None),
+        ("true", None, None),
+        ("yes", None, None),
+        ({"verified": True}, None, None),
         (True, "id", ""),
         (True, "account_id", 109),
         (True, "created_by", 0),
@@ -288,7 +342,7 @@ def test_verified_complete_call_preserves_only_observed_call_facts() -> None:
     ],
 )
 def test_unverified_or_incomplete_call_does_not_expose_guessed_facts(
-    source_verified: bool, field: str | None, value: object
+    source_verified: object, field: str | None, value: object
 ) -> None:
     """Any missing call fact must erase direction and duration from usable evidence."""
     payload = deepcopy(call_payload())
@@ -299,7 +353,7 @@ def test_unverified_or_incomplete_call_does_not_expose_guessed_facts(
         payload,
         expected_account_id=ACCOUNT_ID,
         expected_origin=ACCOUNT_ORIGIN,
-        source_verified=source_verified,
+        source_verified=source_verified,  # type: ignore[arg-type]
     )
 
     assert result.source == "call"
@@ -308,3 +362,30 @@ def test_unverified_or_incomplete_call_does_not_expose_guessed_facts(
     assert result.direction is None
     assert result.duration_seconds is None
     assert result.error_code is not None
+
+
+def test_legacy_wrappers_are_marked_compatibility_only() -> None:
+    """A caller must be able to distinguish shape adapters from strict evidence."""
+    assert normalize_legacy_timeline_event.__legacy_compatibility_only__ is True
+    assert normalize_legacy_call_event.__legacy_compatibility_only__ is True
+
+
+def test_production_modules_do_not_import_legacy_normalizers() -> None:
+    """Persistence code must use the strict service with trusted server context."""
+    app_root = Path(__file__).parents[2] / "app"
+    forbidden = {"normalize_timeline_event", "normalize_call_event"}
+    offenders: list[str] = []
+
+    for module_path in app_root.rglob("*.py"):
+        if module_path.name == "amocrm_contract.py":
+            continue
+        tree = ast.parse(module_path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module == "app.integrations.amocrm_contract"
+                and forbidden.intersection(alias.name for alias in node.names)
+            ):
+                offenders.append(str(module_path.relative_to(app_root)))
+
+    assert offenders == []

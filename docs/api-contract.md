@@ -198,6 +198,16 @@ Live `GET /api/v4/calls?limit=1&page=1` вернул 405, так что call rea
 наличии всех фактов: external ID, аккаунт, положительный автор,
 направление `incoming|outgoing`, фактическая неотрицательная
 длительность, UTC-время и проверенная ссылка на сущность.
+Семь типов, наблюдавшихся в phase-0, — только встроенный минимум,
+а не полный каталог amoCRM. После успешного `GET /api/v4/events/types`
+авторитетен весь вернутый account-scoped snapshot.
+
+Одноаргументные `app.integrations.amocrm_contract.normalize_timeline_event`
+и `normalize_call_event` сохранены только как phase-0 compatibility parsers.
+Их результат не является авторизационным доказательством и не может
+сохраняться. Production ingestion обязан вызывать строгие functions из
+`app.services.event_normalizer` с server-side account ID, trusted tenant origin и
+account-scoped catalog.
 
 Полное CRM-событие без собственной длительности создаёт точку:
 `started_at == ended_at`, `duration_source=point`. Сырой envelope хранится

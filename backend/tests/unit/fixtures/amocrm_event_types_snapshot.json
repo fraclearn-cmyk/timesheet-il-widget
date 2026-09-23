@@ -1,0 +1,22 @@
+{
+  "_total_items": 10,
+  "_links": {
+    "self": {
+      "href": "https://example.amocrm.ru/api/v4/events/types"
+    }
+  },
+  "_embedded": {
+    "events_types": [
+      {"key": "contact_added", "type": 2, "lang": "Contact added"},
+      {"key": "company_added", "type": 3, "lang": "Company added"},
+      {"key": "lead_added", "type": 1, "lang": "Lead added"},
+      {"key": "entity_linked", "type": 4, "lang": "Entity linked"},
+      {"key": "task_added", "type": 5, "lang": "Task added"},
+      {"key": "common_note_added", "type": 6, "lang": "Note added"},
+      {"key": "name_field_changed", "type": 8, "lang": "Name changed"},
+      {"key": "lead_deleted", "type": 7, "lang": "Lead deleted"},
+      {"key": "task_completed", "type": 9, "lang": "Task completed"},
+      {"key": "entity_unlinked", "type": 10, "lang": "Entity unlinked"}
+    ]
+  }
+}

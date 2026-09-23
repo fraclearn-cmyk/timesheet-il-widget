@@ -160,7 +160,7 @@ def normalize_call_event(
         original_type=original_type,
     )
 
-    if not source_verified:
+    if source_verified is not True:
         return _incomplete(base, "unverified_call_source", external_id=external_id)
     if external_id is None:
         return _incomplete(base, "invalid_external_id", external_id=None)

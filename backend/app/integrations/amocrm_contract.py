@@ -1,4 +1,9 @@
-"""Small, strict adapter for the amoCRM contracts validated in phase 0."""
+"""Small adapter for the amoCRM contracts validated in phase 0.
+
+The one-argument normalization functions are compatibility-only shape parsers.
+Production ingestion must use ``app.services.event_normalizer`` with trusted
+server-side account context; legacy parser output is not persistence evidence.
+"""
 
 from __future__ import annotations
 
@@ -114,7 +119,7 @@ def _tokens_from_response(response: httpx.Response) -> AmoCRMTokens:
 
 
 def normalize_timeline_event(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Return confirmed activity only for a fully attributed amoCRM event."""
+    """Compatibility-only phase-0 shape parser; never use for persistence."""
     validated = _validated_timeline_event(payload)
     expected_origin = _validated_event_origin(payload, validated)
     from app.services.event_normalizer import normalize_crm_event
@@ -151,7 +156,7 @@ def normalize_timeline_event(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def normalize_call_event(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Keep an unverified call payload without inferring call attributes."""
+    """Compatibility-only phase-0 call parser; never use for persistence."""
     from app.services.event_normalizer import normalize_call_event as normalize_call
 
     normalized = normalize_call(
@@ -174,6 +179,10 @@ def normalize_call_event(payload: Mapping[str, Any]) -> dict[str, Any]:
         "duration_seconds": normalized.duration_seconds,
         "raw_payload": dict(payload),
     }
+
+
+normalize_timeline_event.__legacy_compatibility_only__ = True  # type: ignore[attr-defined]
+normalize_call_event.__legacy_compatibility_only__ = True  # type: ignore[attr-defined]
 
 
 def _incomplete_event(
