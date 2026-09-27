@@ -14,6 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from app.core.time_utils import utc_now
 import enum
+from datetime import timezone
 from app.core.database import Base
 
 
@@ -101,6 +102,47 @@ class WorkSession(Base):
     activity_sessions = relationship(
         "ActivitySession", back_populates="work_session", cascade="all, delete-orphan"
     )
+    activity_intervals = relationship(
+        "ActivityInterval",
+        back_populates="work_session",
+        cascade="all, delete-orphan",
+    )
+
+    @staticmethod
+    def _utc_naive(value):
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+    def contains_working_interval(self, started_at, ended_at):
+        """Return whether the whole closed interval belongs to one WORKING span."""
+        started_at = self._utc_naive(started_at)
+        ended_at = self._utc_naive(ended_at)
+        session_start = self._utc_naive(self.start_time)
+        session_end = self._utc_naive(self.end_time) if self.end_time else None
+        if ended_at < started_at or started_at < session_start:
+            return False
+        if session_end is not None and ended_at > session_end:
+            return False
+
+        transitions = sorted(
+            self.status_transitions,
+            key=lambda transition: self._utc_naive(transition.timestamp),
+        )
+        if not transitions:
+            return self.current_status == WorkStatus.WORKING
+
+        status = WorkStatus.WORKING.value
+        for transition in transitions:
+            timestamp = self._utc_naive(transition.timestamp)
+            if timestamp <= started_at:
+                status = transition.to_status
+                continue
+            if timestamp < ended_at and transition.to_status != WorkStatus.WORKING.value:
+                return False
+            if timestamp >= ended_at:
+                break
+        return status == WorkStatus.WORKING.value
 
     def __repr__(self):
         return f"<WorkSession(id={self.id}, amocrm_user_id={self.amocrm_user_id}, status={self.current_status})>"

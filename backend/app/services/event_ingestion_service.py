@@ -29,6 +29,7 @@ from app.models.oauth_connection import OAuthConnection
 from app.models.raw_ingestion_event import RawIngestionEvent
 from app.models.user import User
 from app.services.event_normalizer import canonical_payload_hash, normalize_crm_event
+from app.services.activity_interval_service import ActivityIntervalService
 
 
 _T = TypeVar("_T")
@@ -353,6 +354,8 @@ class EventIngestionService:
     ) -> _PageOutcome:
         inserted = 0
         watermark: tuple[datetime, str] | None = None
+        prepared = []
+        users_to_lock: dict[int, User] = {}
         for payload in items:
             normalized = normalize_crm_event(
                 payload,
@@ -368,6 +371,21 @@ class EventIngestionService:
                         User.amocrm_user_id == normalized.author_amocrm_user_id,
                     )
                 )
+                if user is not None:
+                    users_to_lock[user.id] = user
+            prepared.append((payload, normalized, user))
+
+        # Every transaction that can retain more than one user lock uses the
+        # same ascending order. This matches stale-presence cleanup and avoids
+        # reversed amoCRM payload order forming a PostgreSQL wait cycle.
+        for user_id in sorted(users_to_lock):
+            self._db.execute(
+                select(User.id)
+                .where(User.id == user_id, User.amocrm_account_id == account_id)
+                .with_for_update()
+            ).scalar_one()
+
+        for payload, normalized, user in prepared:
             is_complete = normalized.is_complete and user is not None
             error_code = normalized.error_code
             if normalized.is_complete and user is None:
@@ -433,8 +451,17 @@ class EventIngestionService:
                         .on_conflict_do_nothing(
                             index_elements=[CrmEvent.account_id, CrmEvent.external_id]
                         )
+                        .returning(CrmEvent.id)
                     )
-                    self._db.execute(normalized_statement)
+                    normalized_id = self._db.execute(
+                        normalized_statement
+                    ).scalar_one_or_none()
+                    if normalized_id is not None and is_complete:
+                        persisted = self._db.get(CrmEvent, normalized_id)
+                        if persisted is not None:
+                            ActivityIntervalService(self._db).attach_crm_event(
+                                persisted
+                            )
 
             if (
                 normalized.error_code != "account_mismatch"

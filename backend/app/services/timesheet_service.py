@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.business_time import business_date, shift_start_utc, minutes_late
 from app.core.time_utils import utc_now
 from app.models import GroupMember, StatusTransition, TimesheetCommand, WidgetGroup, WorkSession, WorkStatus
+from app.services.activity_interval_service import ActivityIntervalService
 
 
 class TimesheetConflict(ValueError):
@@ -136,6 +137,10 @@ class TimesheetService:
                 transition = StatusTransition(work_session_id=work.id, from_status=previous_status, to_status=target.value, timestamp=now, duration=elapsed)
             self.db.add(transition)
             self.db.flush()
+            if action in {"start-break", "finish-work"}:
+                ActivityIntervalService(self.db).close_for_status_transition(
+                    work, at=now
+                )
             result = self._snapshot(context, now, membership, work)
             self.db.add(TimesheetCommand(account_id=context.account_id, amocrm_user_id=context.user.amocrm_user_id,
                                          key=str(key), action=action, response=asdict(result)))

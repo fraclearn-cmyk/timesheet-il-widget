@@ -7,25 +7,29 @@ tests skip, allowing contract/unit tests on machines without PostgreSQL.
 
 import os
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, Event
+from time import sleep
 from pathlib import Path
 from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import User, WorkSession, WorkStatus, GroupMember, WidgetGroup, CrmEvent
+from app.models import User, WorkSession, WorkStatus, GroupMember, WidgetGroup, CrmEvent, CallEvent, PresenceBatch, StatusTransition, OAuthConnection
 from app.core.database import Base
 from app.models import ActivityInterval
 from app.core.access_policy import RequestContext
 from app.services.timesheet_service import TimesheetConflict, TimesheetService
-from datetime import datetime
+from app.services.activity_interval_service import ActivityIntervalService
+from app.services.event_ingestion_service import EventIngestionService
+from datetime import datetime, timezone
+from datetime import timedelta
 
 
 def test_011_backfills_group_business_date_and_rejects_duplicate_open_sessions(migrated_db):
@@ -321,6 +325,330 @@ def migrated_db(monkeypatch):
         admin.dispose()
 
 
+@pytest.mark.parametrize("replay", [True, False], ids=["same_uuid", "distinct_packets"])
+def test_013_concurrent_presence_serializes_replay_and_merge(migrated_db, replay):
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    started_at = datetime(2026, 9, 23, 8)
+    command_id = uuid4()
+    with Session(engine) as db:
+        db.add(User(id=7, amocrm_account_id=100, amocrm_user_id=700, name="One"))
+        work = WorkSession(
+            amocrm_account_id=100, amocrm_user_id=700, user_name="One",
+            start_time=started_at, business_date=started_at.date(),
+            current_status=WorkStatus.WORKING,
+        )
+        db.add(work)
+        db.flush()
+        db.add(StatusTransition(work_session_id=work.id, to_status="working", timestamp=started_at))
+        db.commit()
+
+    first_written = Event()
+    second_started = Event()
+    release_first = Event()
+
+    def submit(*, first: bool):
+        with Session(engine) as db:
+            user = db.get(User, 7)
+            if not first:
+                second_started.set()
+            interval = ActivityIntervalService(db).record_presence(
+                account_id=100,
+                user=user,
+                command_id=command_id if first or replay else uuid4(),
+                window_started_at=started_at if first or replay else started_at + timedelta(seconds=20),
+                last_seen_at=started_at + timedelta(seconds=10 if first or replay else 30),
+                signal_count=8,
+                received_at=started_at + timedelta(seconds=31),
+            )
+            if first:
+                first_written.set()
+                assert release_first.wait(10)
+            db.commit()
+            return interval.id if interval is not None else None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(submit, first=True)
+        assert first_written.wait(10)
+        second = pool.submit(submit, first=False)
+        assert second_started.wait(10)
+        sleep(0.2)
+        release_first.set()
+        assert first.result(timeout=10) == second.result(timeout=10)
+
+    with Session(engine) as db:
+        assert db.query(PresenceBatch).count() == (1 if replay else 2)
+        intervals = db.query(ActivityInterval).all()
+        assert len(intervals) == 1
+        assert intervals[0].started_at == started_at
+        assert intervals[0].ended_at == started_at + timedelta(seconds=10 if replay else 30)
+
+
+@pytest.mark.parametrize("evidence", ["presence", "call"])
+def test_013_activity_waits_for_finish_before_validating_working_span(migrated_db, evidence):
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    started_at = datetime(2026, 9, 23, 8)
+    with Session(engine) as db:
+        db.add(User(id=7, amocrm_account_id=100, amocrm_user_id=700, name="One"))
+        db.add(WidgetGroup(id=10, account_id=100, name="Sales", timezone="UTC"))
+        db.flush()
+        db.add(GroupMember(account_id=100, user_id=7, group_id=10, track_time=True, is_active=True))
+        db.commit()
+        context = RequestContext(100, db.get(User, 7))
+        TimesheetService(db).apply(context, "start-work", uuid4(), started_at)
+        db.add(CallEvent(
+            account_id=100, source_event_id="call-racing-finish",
+            author_amocrm_user_id=700, user_id=7, direction="outgoing",
+            occurred_at=started_at + timedelta(seconds=20),
+            duration_seconds=20, is_complete=1,
+        ))
+        db.commit()
+
+    finish_ready = Event()
+    presence_started = Event()
+    release_finish = Event()
+
+    def finish():
+        with Session(engine) as db:
+            def hold_commit(_):
+                finish_ready.set()
+                assert release_finish.wait(10)
+
+            event.listen(db, "before_commit", hold_commit, once=True)
+            context = RequestContext(100, db.get(User, 7))
+            TimesheetService(db).apply(
+                context, "finish-work", uuid4(), started_at + timedelta(seconds=30)
+            )
+
+    def incoming_activity():
+        with Session(engine) as db:
+            presence_started.set()
+            service = ActivityIntervalService(db)
+            if evidence == "call":
+                interval = service.attach_call(
+                    db.query(CallEvent).filter_by(source_event_id="call-racing-finish").one()
+                )
+            else:
+                interval = service.record_presence(
+                    account_id=100,
+                    user=db.get(User, 7),
+                    command_id=uuid4(),
+                    window_started_at=started_at + timedelta(seconds=20),
+                    last_seen_at=started_at + timedelta(seconds=40),
+                    signal_count=8,
+                    received_at=started_at + timedelta(seconds=41),
+                )
+            db.commit()
+            return interval
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        finishing = pool.submit(finish)
+        assert finish_ready.wait(10)
+        incoming = pool.submit(incoming_activity)
+        assert presence_started.wait(10)
+        sleep(0.2)
+        release_finish.set()
+        finishing.result(timeout=10)
+        assert incoming.result(timeout=10) is None
+
+    with Session(engine) as db:
+        assert db.query(PresenceBatch).count() == (1 if evidence == "presence" else 0)
+        assert db.query(ActivityInterval).count() == 0
+
+
+@pytest.mark.parametrize("order", ["presence_first", "finish_first"])
+def test_013_future_presence_never_crosses_concurrent_finish(migrated_db, order):
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    started_at = datetime(2026, 9, 23, 8)
+    finish_at = started_at + timedelta(seconds=30)
+    with Session(engine) as db:
+        db.add(User(id=7, amocrm_account_id=100, amocrm_user_id=700, name="One"))
+        db.add(WidgetGroup(id=10, account_id=100, name="Sales", timezone="UTC"))
+        db.flush()
+        db.add(GroupMember(account_id=100, user_id=7, group_id=10, track_time=True, is_active=True))
+        db.commit()
+        TimesheetService(db).apply(
+            RequestContext(100, db.get(User, 7)),
+            "start-work",
+            uuid4(),
+            started_at,
+        )
+
+    first_ready = Event()
+    second_started = Event()
+    release_first = Event()
+
+    def submit_presence():
+        with Session(engine) as db:
+            if order == "finish_first":
+                second_started.set()
+            try:
+                ActivityIntervalService(db).record_presence(
+                    account_id=100,
+                    user=db.get(User, 7),
+                    command_id=uuid4(),
+                    window_started_at=started_at + timedelta(seconds=20),
+                    last_seen_at=started_at + timedelta(seconds=40),
+                    signal_count=8,
+                    received_at=finish_at,
+                )
+            except ValueError:
+                rejected = True
+            else:
+                rejected = False
+            if order == "presence_first":
+                first_ready.set()
+                assert release_first.wait(10)
+            if rejected:
+                db.rollback()
+            else:
+                db.commit()
+            return rejected
+
+    def finish():
+        with Session(engine) as db:
+            if order == "finish_first":
+                def hold_commit(_):
+                    first_ready.set()
+                    assert release_first.wait(10)
+
+                event.listen(db, "before_commit", hold_commit, once=True)
+            else:
+                second_started.set()
+            TimesheetService(db).apply(
+                RequestContext(100, db.get(User, 7)),
+                "finish-work",
+                uuid4(),
+                finish_at,
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(submit_presence if order == "presence_first" else finish)
+        assert first_ready.wait(10)
+        second = pool.submit(finish if order == "presence_first" else submit_presence)
+        assert second_started.wait(10)
+        sleep(0.2)
+        release_first.set()
+        assert first.result(timeout=10) is not False
+        second_result = second.result(timeout=10)
+        if order == "finish_first":
+            assert second_result is True
+
+    with Session(engine) as db:
+        assert db.query(ActivityInterval).count() == 0
+        work = db.query(WorkSession).one()
+        late = ActivityIntervalService(db).record_presence(
+            account_id=100,
+            user=db.get(User, 7),
+            command_id=uuid4(),
+            window_started_at=started_at + timedelta(seconds=5),
+            last_seen_at=started_at + timedelta(seconds=10),
+            signal_count=8,
+            received_at=finish_at + timedelta(seconds=1),
+        )
+        db.commit()
+        assert late is not None
+        assert late.closed_at == finish_at
+        assert late.ended_at <= work.end_time
+
+
+def test_013_ingestion_locks_multiple_users_in_global_order(migrated_db, monkeypatch):
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    started_at = datetime(2026, 9, 23, 8)
+    with Session(engine) as db:
+        db.add(
+            OAuthConnection(
+                account_id=100,
+                account_url="https://example.amocrm.ru",
+                encrypted_access_token="test",
+                encrypted_refresh_token="test",
+            )
+        )
+        for user_id, amocrm_user_id in [(7, 700), (8, 800)]:
+            db.add(User(id=user_id, amocrm_account_id=100, amocrm_user_id=amocrm_user_id, name=str(user_id)))
+            work = WorkSession(
+                amocrm_account_id=100,
+                amocrm_user_id=amocrm_user_id,
+                user_name=str(user_id),
+                start_time=started_at,
+                business_date=started_at.date(),
+                current_status=WorkStatus.WORKING,
+            )
+            db.add(work)
+            db.flush()
+            db.add(StatusTransition(work_session_id=work.id, to_status="working", timestamp=started_at))
+        db.commit()
+
+    original_lock = ActivityIntervalService._lock_user
+
+    def slow_after_each_user_lock(self, user):
+        original_lock(self, user)
+        self.db.execute(text("SELECT pg_sleep(0.2)"))
+
+    monkeypatch.setattr(ActivityIntervalService, "_lock_user", slow_after_each_user_lock)
+    start_together = Barrier(2)
+
+    def payload(event_id, author):
+        return {
+            "id": event_id,
+            "type": "lead_status_changed",
+            "created_at": int(
+                (started_at + timedelta(seconds=10))
+                .replace(tzinfo=timezone.utc)
+                .timestamp()
+            ),
+            "created_by": author,
+            "account_id": 100,
+            "entity_id": author,
+            "entity_type": "lead",
+            "_links": {"self": {"href": f"https://example.amocrm.ru/api/v4/events/{event_id}"}},
+            "_embedded": {
+                "account": {"id": 100},
+                "entity": {
+                    "id": author,
+                    "_links": {"self": {"href": f"https://example.amocrm.ru/api/v4/leads/{author}"}},
+                },
+            },
+        }
+
+    def persist_page(authors, prefix):
+        with Session(engine) as db:
+            start_together.wait(10)
+            with db.begin():
+                return EventIngestionService(db, object(), object(), owner=prefix)._persist_page(
+                    account_id=100,
+                    account_url="https://example.amocrm.ru",
+                    known_types={"lead_status_changed"},
+                    items=[payload(f"{prefix}-{author}", author) for author in authors],
+                    now=started_at + timedelta(seconds=20),
+                )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        forward = pool.submit(persist_page, [700, 800], "forward")
+        reverse = pool.submit(persist_page, [800, 700], "reverse")
+        assert forward.result(timeout=15).inserted == 2
+        assert reverse.result(timeout=15).inserted == 2
+
+    with Session(engine) as db:
+        assert db.query(ActivityInterval).count() == 4
+
+
+def test_013_downgrade_preserves_recorded_presence_closures(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
+        conn.execute(text("INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-23 08:00:00','working',now(),now())"))
+        conn.execute(text("INSERT INTO activity_intervals (account_id,user_id,work_session_id,started_at,ended_at,kind,source,duration_source,closed_at,created_at) VALUES (100,7,1,'2026-09-23 08:00:00','2026-09-23 08:00:10','unconfirmed','unconfirmed_input','observed','2026-09-23 08:05:10',now())"))
+    with pytest.raises(RuntimeError, match="recorded presence closure data"):
+        command.downgrade(config, "012")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM activity_intervals WHERE closed_at IS NOT NULL")) == 1
+
+
 def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
     config, engine = migrated_db
     command.upgrade(config, "head")
@@ -354,7 +682,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
                 column.name,
             )
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "012"
+        assert conn.scalar(text("select version_num from alembic_version")) == "013"
     assert "amocrm_user_id" in {
         c["name"] for c in inspect(engine).get_columns("work_sessions")
     }
@@ -591,7 +919,7 @@ def test_category_account_ownership_refuses_lossy_007_downgrade(migrated_db):
     ):
         command.downgrade(config, "006")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "012"
+        assert conn.scalar(text("select version_num from alembic_version")) == "013"
 
 
 def test_category_account_name_scope_allows_duplicate_names_per_account(migrated_db):
@@ -682,7 +1010,7 @@ def test_downgrade_refuses_to_erase_membership_history(migrated_db):
     with pytest.raises(RuntimeError, match="membership history"):
         command.downgrade(config, "004")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "012"
+        assert conn.scalar(text("select version_num from alembic_version")) == "013"
         assert conn.scalar(text("select count(*) from group_members")) == 2
 
 
@@ -734,7 +1062,7 @@ def test_department_account_names_and_downgrade_are_data_safe(migrated_db):
     with pytest.raises(RuntimeError, match="department account ownership"):
         command.downgrade(config, "008")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "012"
+        assert conn.scalar(text("select version_num from alembic_version")) == "013"
         assert conn.scalar(text("select count(*) from departments")) == 2
 
 

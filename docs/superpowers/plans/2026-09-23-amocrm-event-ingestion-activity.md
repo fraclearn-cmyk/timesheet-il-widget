@@ -55,7 +55,7 @@
 - Consumes: existing `Base`, account-scoped `User`, `WorkSession`, `CrmEvent`, `CallEvent`, `ActivityInterval`; migration head `011`.
 - Produces: `IngestionCursor`, `RawIngestionEvent`, `EventTypeCatalog`, `PresenceBatch`; migration head `012`; database uniqueness used by Tasks 3–5.
 
-- [ ] **Step 1: Write failing model tests for defaults, constraints and account scope**
+- [x] **Step 1: Write failing model tests for defaults, constraints and account scope**
 
 ```python
 def test_raw_event_dedup_is_account_and_source_scoped(db):
@@ -72,13 +72,13 @@ def test_raw_event_dedup_is_account_and_source_scoped(db):
 
 Also assert a different account or source accepts the same hash, lease timestamps are UTC-naive, `PresenceBatch` UUID is unique per account/user, `CallEvent` has account-scoped source uniqueness/completeness, and `ActivityInterval.duration_source` accepts only `point|observed|calculated`.
 
-- [ ] **Step 2: Run model tests to verify RED**
+- [x] **Step 2: Run model tests to verify RED**
 
 Run from `backend/`: `..\.venv312\Scripts\python.exe -m pytest tests/unit/test_ingestion_models.py -q --tb=short`
 
 Expected: collection/import failure because the four models do not exist.
 
-- [ ] **Step 3: Implement focused SQLAlchemy models**
+- [x] **Step 3: Implement focused SQLAlchemy models**
 
 Use these table contracts:
 
@@ -131,15 +131,15 @@ class PresenceBatch(Base):
 
 Keep existing legacy fields readable. Add `CrmEvent.raw_event_id`, `original_event_type`; add `CallEvent.raw_event_id`, `is_complete`; enforce PostgreSQL uniqueness for `(account_id, source_event_id, occurred_at)`. Replace payload ownership gradually: existing nullable payload columns remain for compatibility but new ingestion writes raw data only to `RawIngestionEvent`.
 
-- [ ] **Step 4: Create migration 012 with safe populated upgrade/downgrade**
+- [x] **Step 4: Create migration 012 with safe populated upgrade/downgrade**
 
 Use `revision = "012"` and `down_revision = "011"`. Create all four tables, indexes, foreign keys and checks. Backfill `crm_events.original_event_type = event_type`; do not fabricate raw envelopes. Downgrade raises `RuntimeError` when any new table contains rows or new FK fields are populated, then removes only phase-5 schema.
 
-- [ ] **Step 5: Extend migration tests**
+- [x] **Step 5: Extend migration tests**
 
 Add clean and populated `011 -> 012 -> 011 -> 012` coverage on PostgreSQL. Assert one Alembic head, old CRM/call rows survive upgrade, and destructive downgrade refuses new ingestion rows.
 
-- [ ] **Step 6: Run GREEN gates**
+- [x] **Step 6: Run GREEN gates**
 
 Run:
 
@@ -151,7 +151,7 @@ Run:
 
 Expected: all pass; exactly one `012 (head)`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add backend/app/models backend/migrations/versions/012_event_ingestion_activity.py backend/tests/unit/test_ingestion_models.py backend/tests/unit/test_models.py backend/tests/integration/test_migrations.py
@@ -173,7 +173,7 @@ git commit -m "feat: add account-scoped ingestion persistence"
 - Consumes: `RawIngestionEvent`, known account event-type keys, trusted tenant origin and phase-0 URL checks.
 - Produces: immutable `NormalizedActivityEvent`; `canonical_payload_hash`; `normalize_crm_event`; `normalize_call_event`. Task 3 persists the result and Task 4 builds intervals from it.
 
-- [ ] **Step 1: Write failing unit tests for the normalized value object**
+- [x] **Step 1: Write failing unit tests for the normalized value object**
 
 ```python
 result = normalize_crm_event(
@@ -190,13 +190,13 @@ assert result.occurred_at == datetime(2026, 9, 23, 9, 0)
 
 Cover every official catalog key via parametrization; unknown type becomes `normalized_type="unknown"` while preserving `original_type`; boolean-as-int, system author, foreign account, mismatched embedded entity, unsafe link, invalid timestamp and missing ID are incomplete. Hashes must be stable across JSON key order and differ across source/account.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run: `..\.venv312\Scripts\python.exe -m pytest tests/unit/test_event_normalizer.py -q --tb=short`
 
 Expected: import failure for `app.services.event_normalizer`.
 
-- [ ] **Step 3: Implement exact normalization interface**
+- [x] **Step 3: Implement exact normalization interface**
 
 ```python
 @dataclass(frozen=True)
@@ -220,11 +220,11 @@ Implement these exact public signatures: `canonical_payload_hash(*, account_id: 
 
 Reuse the strict tenant/entity URL functions from `amocrm_contract.py` rather than creating a second weaker validator. Keep compatibility wrappers `normalize_timeline_event` and the old `normalize_call_event` contract until their existing tests are migrated; wrappers must delegate to the new normalizer.
 
-- [ ] **Step 4: Define call completeness without inference**
+- [x] **Step 4: Define call completeness without inference**
 
 A call is complete only when `source_verified=True`, ID is non-empty, account matches, positive author maps later, direction is exactly `incoming|outgoing`, duration is an integer `>=0`, occurred time is valid UTC and object/link validate. Otherwise return `unknown_call`, no direction/duration, `is_complete=False`.
 
-- [ ] **Step 5: Run GREEN and compatibility tests**
+- [x] **Step 5: Run GREEN and compatibility tests**
 
 Run:
 
@@ -234,7 +234,7 @@ Run:
 
 Expected: all new and phase-0 tests pass.
 
-- [ ] **Step 6: Update API contract and commit**
+- [x] **Step 6: Update API contract and commit**
 
 Document `unknown`, `unknown_call`, `point`, 30-day raw retention and the verified-call gate, then:
 
@@ -259,7 +259,7 @@ git commit -m "feat: normalize amoCRM activity evidence"
 - Consumes: Task 1 models and Task 2 normalizer; existing encrypted OAuth connection.
 - Produces: `AmoCRMClient.list_events_page`, `list_event_types`; `EventIngestionService.acquire_lease`, `ingest_account`, `purge_expired_raw`; persisted `CrmEvent`/`CallEvent` consumed by Task 4.
 
-- [ ] **Step 1: Write transport RED tests**
+- [x] **Step 1: Write transport RED tests**
 
 Using `httpx.MockTransport`, assert:
 
@@ -273,7 +273,7 @@ assert page.next_url == "https://example.amocrm.ru/api/v4/events?limit=100&page=
 
 Reject cross-tenant, credentials, fragment, non-HTTPS or wrong-path `next`; cap pages/items; return an empty final page on `204`; preserve existing `Retry-After` behavior. Test `/api/v4/events/types` parsing as key/label pairs.
 
-- [ ] **Step 2: Write ingestion RED tests against PostgreSQL**
+- [x] **Step 2: Write ingestion RED tests against PostgreSQL**
 
 Cover: same-timestamp IDs across two pages, overlap replay, mid-page transaction failure, concurrent duplicate insert, active lease rejection, expired lease takeover, `401 -> one refresh -> success`, second `401` disable/backoff state, `429`, incomplete event storage, foreign/system author, and cleanup at exactly 30 days.
 
@@ -287,7 +287,7 @@ assert db.query(CrmEvent).count() == 2
 assert cursor.last_event_id == "b"
 ```
 
-- [ ] **Step 3: Run RED suites**
+- [x] **Step 3: Run RED suites**
 
 Run:
 
@@ -297,7 +297,7 @@ Run:
 
 Expected: missing client methods/service.
 
-- [ ] **Step 4: Implement bounded event transport**
+- [x] **Step 4: Implement bounded event transport**
 
 Add:
 
@@ -312,15 +312,15 @@ Implement exact methods `async list_events_page(self, account_url: str, access_t
 
 Use limit 100 and a two-second overlap before `last_created_at`. Validate every returned account ID again during normalization.
 
-- [ ] **Step 5: Implement database lease and transactional page ingestion**
+- [x] **Step 5: Implement database lease and transactional page ingestion**
 
 `acquire_lease(account_id, owner, now, lease_seconds=120)` uses a PostgreSQL atomic conditional update/insert. Each fetched page is written in one transaction; `ON CONFLICT DO NOTHING` handles raw dedup. Resolve `author_amocrm_user_id` only against active/inactive historical `User` rows with the same account. Persist incomplete events but do not fabricate a user. Update watermark to the maximum `(created_at, opaque_id)` only after commit.
 
-- [ ] **Step 6: Implement catalog refresh, OAuth retry and cleanup**
+- [x] **Step 6: Implement catalog refresh, OAuth retry and cleanup**
 
 Refresh type catalog at most daily. Decrypt access token only at request time. On first `401`, call existing `OAuthService.refresh`, reload token and retry once. `purge_expired_raw(now, batch_size=1000)` deletes only `RawIngestionEvent.expires_at <= now`; foreign keys to normalized records use `SET NULL`.
 
-- [ ] **Step 7: Run GREEN gates and commit**
+- [x] **Step 7: Run GREEN gates and commit**
 
 Run:
 
@@ -351,7 +351,7 @@ git commit -m "feat: ingest amoCRM events transactionally"
 - Consumes: normalized evidence persisted by Task 3, `PresenceBatch`, `WorkSession.status_transitions`.
 - Produces: `ActivityIntervalService.attach_crm_event`, `attach_call`, `record_presence`, `close_stale_presence`, `close_for_status_transition`; correct session duration aggregates.
 
-- [ ] **Step 1: Write RED tests for confirmed evidence boundaries**
+- [x] **Step 1: Write RED tests for confirmed evidence boundaries**
 
 ```python
 interval = service.attach_crm_event(complete_event)
@@ -363,7 +363,7 @@ assert interval.duration_source == "point"
 
 Assert no interval for incomplete, system, foreign account/user, `BREAK`, `FINISHED`, before start, after end, or a timestamp inside a non-working transition. A verified 45-second call creates exactly 45 seconds with `duration_source="observed"`; a call crossing a break creates no confirmed interval.
 
-- [ ] **Step 2: Write RED tests for presence and review-focus boundaries**
+- [x] **Step 2: Write RED tests for presence and review-focus boundaries**
 
 Cover `0`, `299`, `300`, and `301` second gaps; a batch spanning a break; repeated UUID; out-of-order packet; hidden user; late packet after finish; and server closure after browser disappears.
 
@@ -375,23 +375,23 @@ assert interval.ended_at == t0 + seconds(50)
 assert interval.duration_source == "observed"
 ```
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run: `..\.venv312\Scripts\python.exe -m pytest tests/unit/test_activity_intervals.py -q --tb=short`
 
 Expected: service import failure.
 
-- [ ] **Step 4: Implement interval service with explicit boundaries**
+- [x] **Step 4: Implement interval service with explicit boundaries**
 
 Use exact signatures `attach_crm_event(self, event: CrmEvent) -> ActivityInterval | None`, `attach_call(self, event: CallEvent) -> ActivityInterval | None`, `record_presence(self, *, account_id: int, user: User, command_id: UUID, window_started_at: datetime, last_seen_at: datetime, signal_count: int, received_at: datetime) -> ActivityInterval | None`, `close_stale_presence(self, *, now: datetime) -> int`, and `close_for_status_transition(self, session: WorkSession, *, at: datetime) -> int`.
 
 Presence timestamps must be UTC-naive, no more than 60 seconds into the future, no more than 10 minutes older than receipt for a new batch, ordered, and inside a verified current/historical `WORKING` segment. Merge only same account/user/session when `next.window_started_at - current.ended_at <= 300s`; ending time is always the last observed action.
 
-- [ ] **Step 5: Integrate status transitions and duration aggregates**
+- [x] **Step 5: Integrate status transitions and duration aggregates**
 
 After Task 3 persists a complete normalized row, call `attach_crm_event` or `attach_call` in the same page transaction; incomplete evidence deliberately creates no interval. Before committing `start-break` or `finish`, call `close_for_status_transition` in the same transaction. Recompute `active_duration` from measured confirmed intervals only and `unconfirmed_duration` from neutral intervals; point events add zero seconds. Never count overlap twice.
 
-- [ ] **Step 6: Run GREEN and regression tests**
+- [x] **Step 6: Run GREEN and regression tests**
 
 Run:
 
@@ -399,7 +399,7 @@ Run:
 ..\.venv312\Scripts\python.exe -m pytest tests/unit/test_activity_intervals.py tests/unit/test_interval_rules.py tests/unit/test_timesheet_transitions.py tests/api/test_timesheet.py -q --tb=short
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add backend/app/services/activity_interval_service.py backend/app/services/event_ingestion_service.py backend/app/models/activity_interval.py backend/app/models/work_session.py backend/app/services/timesheet_service.py backend/tests/unit/test_activity_intervals.py
