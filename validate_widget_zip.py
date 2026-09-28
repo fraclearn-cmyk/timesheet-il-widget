@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 RUNTIME_FILES = frozenset({
-    "manifest.json", "script.js", "overlay.js", "timesheet/controller.js", "styles.css",
+    "manifest.json", "script.js", "overlay.js", "activity-tracker.js", "timesheet/controller.js", "styles.css",
     "settings/settings.html", "settings/settings.js", "settings/settings.css",
     "i18n/ru.json", "i18n/en.json",
     "images/icon.png", "images/logo.png", "images/logo_main.png",
@@ -108,6 +108,7 @@ class WidgetValidator:
                 if "script.js" in text:
                     for dependency, member in (("./settings/settings", "settings/settings.js"),
                                                ("./timesheet/controller", "timesheet/controller.js"),
+                                               ("./activity-tracker", "activity-tracker.js"),
                                                ("./overlay", "overlay.js")):
                         if dependency in text["script.js"] and member not in names:
                             self.errors.append(f"Missing AMD dependency: {member}")

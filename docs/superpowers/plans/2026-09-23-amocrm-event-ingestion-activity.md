@@ -515,7 +515,7 @@ git commit -m "feat: expose safe activity ingestion endpoints"
 - Consumes: authenticated `/activity/presence`; timesheet snapshots containing `track_time`, `hide_widget`, `status`.
 - Produces: AMD `ActivityTracker.createActivityTracker(options)` with `updateSnapshot(snapshot)` and `destroy()`; package runtime grows from 18 to 19 files.
 
-- [ ] **Step 1: Write Node RED tests with controlled clock/scheduler**
+- [x] **Step 1: Write Node RED tests with controlled clock/scheduler**
 
 ```javascript
 tracker.updateSnapshot({track_time: true, hide_widget: true, status: 'working'});
@@ -528,11 +528,11 @@ assert.equal(JSON.stringify(sent[0]).includes('SecretText'), false);
 
 Test one-minute batching, pointer/keyboard aggregation, visibility flush, same UUID retry after lost response, bounded in-memory state, `break|finished|tracking_disabled` suppression, hidden tracking without UI, and destroy cleanup.
 
-- [ ] **Step 2: Write Playwright RED privacy/lifecycle tests**
+- [x] **Step 2: Write Playwright RED privacy/lifecycle tests**
 
 Boot the real widget modules and authorized transport. Assert no input value, key, coordinates, account ID or user ID enters the request body; server failure adds no overlay/buttons; transition to settings/destroy removes tracker listeners/timers.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run:
 
@@ -541,7 +541,7 @@ node --test frontend/tests/activity-tracker.test.js
 npx playwright test frontend/tests/activity-tracker.spec.js --workers=1 --reporter=line
 ```
 
-- [ ] **Step 4: Implement tracker module**
+- [x] **Step 4: Implement tracker module**
 
 Use:
 
@@ -556,15 +556,15 @@ ActivityTracker.createActivityTracker({
 
 Listen to `pointerdown`, `keydown` and `visibilitychange` only to update `windowStartedAt`, `lastSeenAt` and integer count. Do not retain the Event object. Retry one pending aggregate with the same UUID; cap count at 100000; drop bounded stale state after leaving `WORKING`.
 
-- [ ] **Step 5: Integrate with real widget lifecycle**
+- [x] **Step 5: Integrate with real widget lifecycle**
 
 Load the AMD module from `widget/script.js`. The timesheet controller calls a snapshot observer after server-confirmed responses, including hidden/tracking-disabled states. Tracker is silent and has no DOM. `stopTimesheet`, settings transitions and destroy tear it down. Backend/CSS failure keeps amoCRM clear.
 
-- [ ] **Step 6: Update package allowlist and scripts**
+- [x] **Step 6: Update package allowlist and scripts**
 
 Include `activity-tracker.js` as the 19th exact runtime file. Add `npm run test:activity` for Node tests. Package tests assert no credential-like text and exact runtime list.
 
-- [ ] **Step 7: Run GREEN and regression gates**
+- [x] **Step 7: Run GREEN and regression gates**
 
 Run:
 
@@ -576,7 +576,7 @@ npx playwright test frontend/tests/activity-tracker.spec.js frontend/tests/overl
 .\.venv312\Scripts\python.exe -m pytest test_widget_package.py -q --tb=short
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add widget/activity-tracker.js widget/timesheet/controller.js widget/script.js frontend/tests build_widget.ps1 validate_widget_zip.py test_widget_package.py package.json

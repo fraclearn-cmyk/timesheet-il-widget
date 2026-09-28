@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings', './timesheet/controller', './overlay'], function($, SettingsController, TimesheetController, Overlay) {
+define(['jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker) {
     function apiUrl(widget) {
         var settings = widget.get_settings();
         return settings && settings.api_url ? String(settings.api_url).replace(/\/+$/, '') : null;
@@ -32,6 +32,7 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay'],
         this.settingsMount = null;
         this.settingsStyle = null;
         this.timesheetController = null;
+        this.activityTracker = null;
         this.workingStyle = null;
         this.workingStyleTimer = null;
         this.removeFocusRefresh = null;
@@ -66,6 +67,8 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay'],
             widget.removeFocusRefresh = null;
             if (widget.timesheetController) widget.timesheetController.destroy();
             widget.timesheetController = null;
+            if (widget.activityTracker) widget.activityTracker.destroy();
+            widget.activityTracker = null;
             clearWorkingUi();
         }
         function startTimesheet() {
@@ -90,6 +93,20 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay'],
             document.head.appendChild(style);
         }
         function startController(baseUrl) {
+            if (ActivityTracker && typeof ActivityTracker.createActivityTracker === 'function') {
+                widget.activityTracker = ActivityTracker.createActivityTracker({
+                    document: document,
+                    request: function(payload) {
+                        return toPromise(widget.$authorizedAjax({
+                            url: baseUrl + '/activity/presence', method: 'POST', dataType: 'json',
+                            contentType: 'application/json', timeout: 10000, data: JSON.stringify(payload)
+                        }));
+                    },
+                    schedule: function(fn, delay) { var timer = setTimeout(fn, delay); return function() { clearTimeout(timer); }; },
+                    now: function() { return new Date(); },
+                    uuid: uuid
+                });
+            }
             widget.timesheetController = TimesheetController.createTimesheetController({
                 request: function(request) {
                     var options = { url: baseUrl + request.url, method: request.method, dataType: request.dataType, timeout: 10000 };
@@ -99,6 +116,9 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay'],
                 },
                 render: renderWorkingUi,
                 clear: clearWorkingUi,
+                onSnapshot: function(snapshot) {
+                    if (widget.activityTracker) widget.activityTracker.updateSnapshot(snapshot);
+                },
                 schedule: function(fn, delay) { var timer = setTimeout(fn, delay); return function() { clearTimeout(timer); }; },
                 uuid: uuid
             });

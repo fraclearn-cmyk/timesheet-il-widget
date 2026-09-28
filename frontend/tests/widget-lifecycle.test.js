@@ -49,10 +49,18 @@ function boot(options = {}) {
   let Widget;
   window.define = (ids, factory) => {
     moduleIds.push(...ids);
-    Widget = factory({}, window.SettingsController, require('../../widget/timesheet/controller'), require('../../widget/overlay'));
+    Widget = factory(
+      {},
+      window.SettingsController,
+      require('../../widget/timesheet/controller'),
+      require('../../widget/overlay'),
+      require('../../widget/activity-tracker'),
+    );
   };
   window.eval(widgetSource);
-  assert.deepEqual(moduleIds, ['jquery', './settings/settings', './timesheet/controller', './overlay']);
+  assert.deepEqual(moduleIds, [
+    'jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker',
+  ]);
   const requests = [];
   const widget = new Widget();
   widget.system = () => ({ area: options.area || 'advanced_settings' });

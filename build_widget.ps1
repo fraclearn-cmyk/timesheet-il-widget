@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $runtime = @(
-    'manifest.json', 'script.js', 'overlay.js', 'timesheet/controller.js', 'styles.css',
+    'manifest.json', 'script.js', 'overlay.js', 'activity-tracker.js', 'timesheet/controller.js', 'styles.css',
     'settings/settings.html', 'settings/settings.js', 'settings/settings.css',
     'i18n/ru.json', 'i18n/en.json',
     'images/icon.png', 'images/logo.png', 'images/logo_main.png',

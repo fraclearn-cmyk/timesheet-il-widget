@@ -40,10 +40,16 @@
                     .then(function(value) { finish(null, value); }, function(error) { finish(error || new Error('Request failed')); });
             });
         }
-        function failOpen() { confirmed = null; options.clear(); retry(); }
+        function failOpen() {
+            confirmed = null;
+            if (typeof options.onSnapshot === 'function') options.onSnapshot(null);
+            options.clear();
+            retry();
+        }
         function accept(snapshot) {
             if (!valid(snapshot)) { failOpen(); return false; }
             confirmed = snapshot;
+            if (typeof options.onSnapshot === 'function') options.onSnapshot(snapshot);
             options.clear();
             if (snapshot.track_time && !snapshot.hide_widget) options.render(snapshot);
             retry(30000);

@@ -1,8 +1,10 @@
 """Contract tests for the installable amoCRM ZIP, without touching live amoCRM."""
 
 import json
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -12,8 +14,12 @@ from validate_widget_zip import WidgetValidator
 
 
 ROOT = Path(__file__).resolve().parent
+BUILD_ENV = {
+    **os.environ,
+    "PATH": str(Path(sys.executable).resolve().parent) + os.pathsep + os.environ.get("PATH", ""),
+}
 RUNTIME = {
-    "manifest.json", "script.js", "overlay.js", "timesheet/controller.js", "styles.css",
+    "manifest.json", "script.js", "overlay.js", "activity-tracker.js", "timesheet/controller.js", "styles.css",
     "settings/settings.html", "settings/settings.js", "settings/settings.css",
     "i18n/ru.json", "i18n/en.json",
     "images/icon.png", "images/logo.png", "images/logo_main.png",
@@ -130,6 +136,7 @@ class WidgetPackageTests(unittest.TestCase):
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(work / "build_widget.ps1"),
                  "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
+                env=BUILD_ENV,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("-ApiUrl is deprecated", result.stdout + result.stderr)
@@ -157,12 +164,12 @@ class WidgetPackageTests(unittest.TestCase):
                 str(work / "build_widget.ps1"), "-ApiUrl",
             ]
             first = subprocess.run(command + ["https://first.example.test/api/v1"], cwd=work,
-                                   capture_output=True, text=True)
+                                   capture_output=True, text=True, env=BUILD_ENV)
             self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
             replacement_script = (work / "widget" / "script.js").read_bytes() + b"\n// Replacement fixture revision.\n"
             (work / "widget" / "script.js").write_bytes(replacement_script)
             second = subprocess.run(command + ["https://second.example.test/api/v1"], cwd=work,
-                                    capture_output=True, text=True)
+                                    capture_output=True, text=True, env=BUILD_ENV)
             self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
             with zipfile.ZipFile(work / "widget.zip") as archive:
                 self.assertEqual(archive.read("script.js"), replacement_script)
@@ -184,6 +191,7 @@ class WidgetPackageTests(unittest.TestCase):
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(work / "build_widget.ps1"),
                  "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
+                env=BUILD_ENV,
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Missing runtime source: settings/settings.css", result.stdout + result.stderr)
@@ -202,6 +210,7 @@ class WidgetPackageTests(unittest.TestCase):
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(work / "build_widget.ps1"),
                  "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
+                env=BUILD_ENV,
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Invalid JSON in staged archive: i18n/en.json", result.stdout + result.stderr)
@@ -224,6 +233,7 @@ class WidgetPackageTests(unittest.TestCase):
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(work / "build_widget.ps1"),
                  "-ApiUrl", "https://api.example.test/api/v1"], cwd=work, capture_output=True, text=True,
+                env=BUILD_ENV,
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Staged widget ZIP failed validation", result.stdout + result.stderr)
