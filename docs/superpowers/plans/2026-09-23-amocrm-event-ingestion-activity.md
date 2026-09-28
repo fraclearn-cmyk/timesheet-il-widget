@@ -427,7 +427,7 @@ git commit -m "feat: derive bounded activity intervals"
 - Consumes: Task 3 ingestion service/lease and Task 4 presence service.
 - Produces: `POST /api/v1/activity/presence`, `POST /api/v1/webhooks/amocrm/{hook_id}`, admin-only `POST /api/v1/activity/ingestion/webhook/ensure`, optional admin poll trigger, and application worker start/stop.
 
-- [ ] **Step 1: Write presence API RED tests**
+- [x] **Step 1: Write presence API RED tests**
 
 Exact request:
 
@@ -442,17 +442,17 @@ Exact request:
 
 Expect `202` with canonical interval summary or `204` when not `WORKING`; replay returns the same result without a second batch. Reject extra fields, browser identity, invalid UUID/time/count, foreign verified context and timestamps outside bounds.
 
-- [ ] **Step 2: Write webhook RED tests**
+- [x] **Step 2: Write webhook RED tests**
 
 Unknown hook ID returns `202` with no account disclosure and no DB change. Valid ID updates only `next_poll_at`; repeated or oversized requests are rate-limited; arbitrary payload cannot insert raw/normalized/activity rows. Ensure hook ID is absent from captured logs.
 
 Also test webhook subscription reconciliation: non-admin is denied, missing `PUBLIC_BASE_URL` returns stable `409 WEBHOOK_URL_MISSING`, and an admin call creates or updates the official destination/settings idempotently without returning the opaque hook ID.
 
-- [ ] **Step 3: Write worker RED tests**
+- [x] **Step 3: Write worker RED tests**
 
 Use a fake clock and fake ingestion service. Assert a due account runs within 60 seconds, two worker loops cannot hold the same lease, failure schedules bounded backoff, shutdown cancels promptly, and daily cleanup is invoked without blocking request startup.
 
-- [ ] **Step 4: Run RED suites**
+- [x] **Step 4: Run RED suites**
 
 Run:
 
@@ -460,13 +460,13 @@ Run:
 ..\.venv312\Scripts\python.exe -m pytest tests/api/test_activity_presence.py tests/api/test_webhooks.py tests/integration/test_ingestion_worker.py -q --tb=short
 ```
 
-- [ ] **Step 5: Implement strict schemas and routes**
+- [x] **Step 5: Implement strict schemas and routes**
 
 `PresenceBatchCreate` uses `ConfigDict(extra="forbid")`, UUID4, aware datetimes normalized to UTC and `signal_count: int = Field(ge=1, le=100000)`. The presence route uses `RequestContext` only. Webhook route is included outside the global amoCRM auth dependency, accepts at most 64 KiB, hashes the path ID before lookup, responds quickly and never calls normalization directly.
 
 `WebhookSubscriptionService.ensure(account_id)` generates a 256-bit hook ID once, stores its SHA-256 lookup hash plus an encrypted copy using the existing server-side cipher, constructs the destination from validated `PUBLIC_BASE_URL`, and uses the account's server-side OAuth token to reconcile the official webhook settings. The admin API returns only `{"enabled": true}`. Plain hook IDs never enter logs or API responses. Polling remains active when subscription is absent or fails.
 
-- [ ] **Step 6: Implement worker/config lifecycle**
+- [x] **Step 6: Implement worker/config lifecycle**
 
 Add validated configuration:
 
@@ -479,7 +479,7 @@ PUBLIC_BASE_URL: str | None = None
 
 Validate poll interval `15..60`, retention exactly `30`, and optional public base as HTTPS origin without credentials/query/fragment. Use FastAPI lifespan to create one cancellable loop; database leases provide cross-process exclusion. Each loop obtains `current_utc = utc_now()` and calls `close_stale_presence(now=current_utc)`; raw cleanup runs at most daily. Tests disable the worker by dependency/config override.
 
-- [ ] **Step 7: Run GREEN plus auth regressions**
+- [x] **Step 7: Run GREEN plus auth regressions**
 
 Run:
 
@@ -487,7 +487,7 @@ Run:
 ..\.venv312\Scripts\python.exe -m pytest tests/api/test_activity_presence.py tests/api/test_webhooks.py tests/integration/test_ingestion_worker.py tests/integration/test_authorized_routes.py -q --tb=short
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add backend/app/schemas/activity_ingestion.py backend/app/api/v1/activity.py backend/app/api/v1/webhooks.py backend/app/services/ingestion_worker.py backend/app/services/webhook_subscription_service.py backend/app/main.py backend/app/core/config.py backend/tests

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import logging
@@ -55,7 +56,6 @@ class EventIngestionService:
 
     _RAW_RETENTION = timedelta(days=30)
     _CATALOG_MAX_AGE = timedelta(days=1)
-    _POLL_INTERVAL = timedelta(seconds=60)
     _OVERLAP = timedelta(seconds=2)
     _MAX_BACKOFF_SECONDS = 3600
 
@@ -69,11 +69,14 @@ class EventIngestionService:
         max_pages: int = 100,
         max_items: int = 10_000,
         lease_clock: Callable[[], datetime] | None = None,
+        poll_interval_seconds: int = 60,
     ) -> None:
         if not owner or len(owner) > 128:
             raise ValueError("lease owner must contain 1 to 128 characters")
         if max_pages < 1 or max_items < 1:
             raise ValueError("page and item limits must be positive")
+        if not 15 <= poll_interval_seconds <= 60:
+            raise ValueError("poll interval must be between 15 and 60 seconds")
         self._db = db
         self._client = client
         self._oauth = oauth_service
@@ -81,6 +84,7 @@ class EventIngestionService:
         self._max_pages = max_pages
         self._max_items = max_items
         self._lease_clock = lease_clock or utc_now
+        self._poll_interval = timedelta(seconds=poll_interval_seconds)
 
     def acquire_lease(
         self,
@@ -119,6 +123,27 @@ class EventIngestionService:
         except Exception:
             self._db.rollback()
             raise
+
+    def due_accounts(self, now: datetime) -> list[int]:
+        """Return active OAuth accounts whose authoritative poll is due."""
+        now = self._naive_utc(now)
+        return list(
+            self._db.scalars(
+                select(OAuthConnection.account_id)
+                .outerjoin(
+                    IngestionCursor,
+                    IngestionCursor.account_id == OAuthConnection.account_id,
+                )
+                .where(
+                    OAuthConnection.is_active.is_(True),
+                    or_(
+                        IngestionCursor.account_id.is_(None),
+                        IngestionCursor.next_poll_at <= now,
+                    ),
+                )
+                .order_by(OAuthConnection.account_id)
+            )
+        )
 
     async def ingest_account(self, *, account_id: int, now: datetime) -> bool:
         """Poll and persist one account, returning false on lease/upstream failure."""
@@ -167,7 +192,8 @@ class EventIngestionService:
             total_items = 0
             while True:
                 page = await self._authorized_request(
-                    connection,
+                    account_id,
+                    run_owner,
                     refresh_state,
                     lambda token: self._client.list_events_page(
                         account_url,
@@ -206,7 +232,7 @@ class EventIngestionService:
                         self._publish_pending_watermark(cursor)
                         cursor.last_success_at = now
                     if final_page or budget_reached:
-                        cursor.next_poll_at = now + self._POLL_INTERVAL
+                        cursor.next_poll_at = now + self._poll_interval
                         cursor.failure_count = 0
                         cursor.lease_owner = None
                         cursor.lease_until = None
@@ -265,7 +291,8 @@ class EventIngestionService:
         refresh_state: dict[str, bool],
         run_owner: str,
     ) -> Collection[str]:
-        cursor = self._db.get(IngestionCursor, connection.account_id)
+        account_id = connection.account_id
+        cursor = self._db.get(IngestionCursor, account_id)
         if cursor is None:
             raise _LeaseLost("account ingestion cursor disappeared")
         latest = cursor.catalog_refreshed_at
@@ -273,7 +300,7 @@ class EventIngestionService:
             known = set(
                 self._db.scalars(
                     select(EventTypeCatalog.event_key).where(
-                        EventTypeCatalog.account_id == connection.account_id
+                        EventTypeCatalog.account_id == account_id
                     )
                 )
             )
@@ -281,24 +308,25 @@ class EventIngestionService:
             return known
 
         entries = await self._authorized_request(
-            connection,
+            account_id,
+            run_owner,
             refresh_state,
             lambda token: self._client.list_event_types(account_url, token),
         )
         with self._db.begin():
-            self._require_and_renew_lease(connection.account_id, run_owner)
-            cursor = self._db.get(IngestionCursor, connection.account_id)
+            self._require_and_renew_lease(account_id, run_owner)
+            cursor = self._db.get(IngestionCursor, account_id)
             if cursor is None or cursor.lease_owner != run_owner:
                 raise _LeaseLost("account ingestion lease was lost")
             cursor.catalog_refreshed_at = now
             self._db.execute(
                 delete(EventTypeCatalog).where(
-                    EventTypeCatalog.account_id == connection.account_id
+                    EventTypeCatalog.account_id == account_id
                 )
             )
             self._db.add_all(
                 EventTypeCatalog(
-                    account_id=connection.account_id,
+                    account_id=account_id,
                     event_key=key,
                     label=label,
                     refreshed_at=now,
@@ -309,15 +337,20 @@ class EventIngestionService:
 
     async def _authorized_request(
         self,
-        connection: OAuthConnection,
+        account_id: int,
+        run_owner: str,
         refresh_state: dict[str, bool],
         operation: Callable[[str], Awaitable[_T]],
     ) -> _T:
+        connection = self._db.get(OAuthConnection, account_id)
+        if connection is None:
+            raise _OAuthRejected("OAuth connection disappeared")
         token = self._oauth.load_access_token(connection)
+        # Loading the ORM state starts a transaction. End it before yielding to
+        # amoCRM so a slow network request never retains a DB connection.
+        self._db.commit()
         try:
-            result = await operation(token)
-            self._db.commit()
-            return result
+            return await operation(token)
         except httpx.HTTPStatusError as error:
             if error.response.status_code != 401:
                 raise
@@ -325,16 +358,55 @@ class EventIngestionService:
             if refresh_state["used"]:
                 raise _OAuthRejected("amoCRM rejected refreshed OAuth credentials")
             refresh_state["used"] = True
-            connection = self._db.get(OAuthConnection, connection.account_id)
-            if connection is None:
-                raise _OAuthRejected("OAuth connection disappeared")
             try:
-                connection = self._oauth.refresh(connection)
-                self._db.commit()
+                with self._db.begin():
+                    self._require_and_renew_lease(account_id, run_owner)
+                    connection = self._db.scalar(
+                        select(OAuthConnection)
+                        .where(OAuthConnection.account_id == account_id)
+                        .with_for_update()
+                    )
+                    if connection is None:
+                        raise _OAuthRejected("OAuth connection disappeared")
+                    snapshot = self._oauth.snapshot_refresh(connection)
+
+                refresh = asyncio.create_task(
+                    self._refresh_and_persist(account_id, run_owner, snapshot),
+                    name=f"amocrm-oauth-refresh-{account_id}",
+                )
+                try:
+                    await asyncio.shield(refresh)
+                except asyncio.CancelledError as cancellation:
+                    # asyncio.to_thread cannot stop a request already in flight. Keep
+                    # the exchange and its token CAS together, so shutdown cannot
+                    # discard a successfully rotated refresh token. The sync client
+                    # has its own bounded timeout, and worker.stop waits for this
+                    # account task before the shared clients are closed.
+                    while not refresh.done():
+                        try:
+                            await asyncio.shield(refresh)
+                        except asyncio.CancelledError:
+                            continue
+                        except Exception:
+                            break
+                    try:
+                        refresh.result()
+                    except Exception:
+                        logger.exception(
+                            "OAuth refresh finalization failed during cancellation",
+                            extra={
+                                "account_id": account_id,
+                                "error_code": "oauth_refresh_finalize_failed",
+                            },
+                        )
+                    raise cancellation
+
+                connection = self._db.get(OAuthConnection, account_id)
+                if connection is None:
+                    raise _OAuthRejected("OAuth connection disappeared")
                 token = self._oauth.load_access_token(connection)
-                result = await operation(token)
                 self._db.commit()
-                return result
+                return await operation(token)
             except httpx.HTTPStatusError as retry_error:
                 self._db.rollback()
                 if retry_error.response.status_code == 401:
@@ -342,6 +414,20 @@ class EventIngestionService:
                         "amoCRM rejected refreshed OAuth credentials"
                     ) from retry_error
                 raise
+
+    async def _refresh_and_persist(self, account_id, run_owner, snapshot) -> None:
+        """Finish one refresh exchange and its fenced CAS as one shutdown unit."""
+        tokens = await asyncio.to_thread(self._oauth.request_refresh, snapshot)
+        with self._db.begin():
+            self._require_and_renew_lease(account_id, run_owner)
+            connection = self._db.scalar(
+                select(OAuthConnection)
+                .where(OAuthConnection.account_id == account_id)
+                .with_for_update()
+            )
+            if connection is None:
+                raise _OAuthRejected("OAuth connection disappeared")
+            self._oauth.apply_refresh(connection, snapshot, tokens)
 
     def _persist_page(
         self,
@@ -523,7 +609,7 @@ class EventIngestionService:
         if cursor is not None:
             cursor.lease_owner = None
             cursor.lease_until = None
-            cursor.next_poll_at = now + self._POLL_INTERVAL
+            cursor.next_poll_at = now + self._poll_interval
         self._db.commit()
         return cursor is not None
 

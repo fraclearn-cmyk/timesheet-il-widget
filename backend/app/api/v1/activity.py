@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 
@@ -12,13 +12,88 @@ from app.schemas.activity_session import (
 )
 from app.schemas.activity_event import ActivityEventResponse
 from app.api.v1.dependencies import (
+    APIProblem,
     RequestContext,
     get_request_context,
     require_owned_activity_session,
     require_owned_work_session,
 )
+from app.core.access_policy import AccessPolicy
+from app.core.config import settings
+from app.core.time_utils import utc_now
+from app.schemas.activity_ingestion import PresenceBatchCreate, PresenceIntervalResponse
+from app.services.activity_interval_service import ActivityIntervalService
+from app.services.webhook_subscription_service import (
+    WebhookSubscriptionService,
+    WebhookURLMissing,
+)
+from app.integrations.amocrm_client import AmoCRMClient
+from app.integrations.oauth import OAuthTokenCipher
+import httpx
 
 router = APIRouter()
+
+
+async def get_webhook_subscription_service(db: Session = Depends(get_db)):
+    async with httpx.AsyncClient() as http_client:
+        yield WebhookSubscriptionService(
+            db,
+            AmoCRMClient(http_client),
+            OAuthTokenCipher.from_secret(settings.SECRET_KEY),
+            public_base_url=settings.PUBLIC_BASE_URL,
+            clock=utc_now,
+        )
+
+
+@router.post(
+    "/presence",
+    response_model=PresenceIntervalResponse,
+    status_code=202,
+    responses={204: {"description": "Presence recorded outside WORKING"}},
+)
+def record_presence(
+    body: PresenceBatchCreate,
+    response: Response,
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
+):
+    try:
+        interval = ActivityIntervalService(db).record_presence(
+            account_id=context.account_id,
+            user=context.user,
+            command_id=body.command_id,
+            window_started_at=body.window_started_at.replace(tzinfo=None),
+            last_seen_at=body.last_seen_at.replace(tzinfo=None),
+            signal_count=body.signal_count,
+            received_at=utc_now(),
+        )
+        db.commit()
+    except ValueError as error:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="PRESENCE_BATCH_INVALID") from error
+    if interval is None:
+        return Response(status_code=204)
+    response.status_code = 202
+    return interval
+
+
+@router.post("/ingestion/webhook/ensure")
+async def ensure_ingestion_webhook(
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
+    service: WebhookSubscriptionService = Depends(get_webhook_subscription_service),
+):
+    if not AccessPolicy(db, context).is_admin():
+        raise APIProblem(403, "ACCESS_DENIED", "У вас нет доступа к этому разделу.")
+    if not settings.PUBLIC_BASE_URL:
+        raise APIProblem(409, "WEBHOOK_URL_MISSING", "Публичный HTTPS URL не настроен.")
+    try:
+        await service.ensure(context.account_id)
+    except WebhookURLMissing as error:
+        raise APIProblem(
+            409, "WEBHOOK_URL_MISSING", "Публичный HTTPS URL не настроен."
+        ) from error
+    return {"enabled": True}
 
 
 @router.post("/start", response_model=ActivitySessionResponse, status_code=201)

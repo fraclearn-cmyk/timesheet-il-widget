@@ -21,7 +21,8 @@ from app.integrations.amocrm_client import (
     AmoCRMClientError,
     AmoCRMRateLimited,
 )
-from app.integrations.oauth import OAuthService
+from app.integrations.amocrm_contract import AmoCRMTokens
+from app.integrations.oauth import OAuthService, OAuthTokenCipher
 from app.models import (
     CrmEvent,
     EventTypeCatalog,
@@ -109,10 +110,16 @@ class FakeOAuth:
             else "access-1"
         )
 
-    def refresh(self, connection: OAuthConnection) -> OAuthConnection:
+    def snapshot_refresh(self, connection: OAuthConnection):
+        return connection.account_id
+
+    def request_refresh(self, snapshot):
         self.refreshes += 1
+        return "encrypted-access-2"
+
+    def apply_refresh(self, connection: OAuthConnection, snapshot, tokens) -> bool:
         connection.encrypted_access_token = "encrypted-access-2"
-        return connection
+        return True
 
 
 class PagingClient:
@@ -1141,6 +1148,147 @@ def test_first_401_refreshes_once_and_retries_with_reloaded_access_token(
         assert db.get(OAuthConnection, ACCOUNT_ID).is_active is True
 
 
+def test_401_refresh_http_has_no_db_transaction_and_does_not_block_event_loop(
+    migrated_db,
+) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    cipher = OAuthTokenCipher.from_secret(
+        "synthetic-test-key-with-at-least-32-characters"
+    )
+
+    with Session(engine) as db:
+        db.add(
+            OAuthConnection(
+                account_id=ACCOUNT_ID,
+                account_url=ACCOUNT_URL,
+                encrypted_access_token=cipher.encrypt("access-1"),
+                encrypted_refresh_token=cipher.encrypt("refresh-1"),
+                is_active=True,
+            )
+        )
+        db.commit()
+
+        class BlockingRefreshClient:
+            def __init__(self):
+                self.started = Event()
+                self.release = Event()
+                self.transaction_states = []
+                self.wait_timed_out = None
+                self.calls = 0
+
+            def refresh_access_token(self, account_url, refresh_token):
+                self.calls += 1
+                self.transaction_states.append(db.in_transaction())
+                self.started.set()
+                self.wait_timed_out = not self.release.wait(timeout=0.3)
+                return AmoCRMTokens("access-2", "refresh-2", 3600)
+
+        refresh_client = BlockingRefreshClient()
+        oauth = OAuthService(db, refresh_client, cipher)
+        client = UnauthorizedOnceClient()
+        service = build_service(db, client, oauth)
+
+        async def scenario():
+            ingestion = asyncio.create_task(
+                service.ingest_account(account_id=ACCOUNT_ID, now=now)
+            )
+            while not refresh_client.started.is_set():
+                await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            refresh_client.release.set()
+            return await ingestion
+
+        assert run(scenario()) is True
+        assert refresh_client.calls == 1
+        assert refresh_client.transaction_states == [False]
+        assert refresh_client.wait_timed_out is False
+
+        db.expire_all()
+        connection = db.get(OAuthConnection, ACCOUNT_ID)
+        assert cipher.decrypt(connection.encrypted_access_token) == "access-2"
+        assert cipher.decrypt(connection.encrypted_refresh_token) == "refresh-2"
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert cursor.failure_count == 0
+        assert cursor.lease_owner is None
+
+
+@pytest.mark.asyncio
+async def test_cancelled_401_refresh_persists_rotated_pair_before_client_close(
+    migrated_db,
+) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    cipher = OAuthTokenCipher.from_secret(
+        "synthetic-test-key-with-at-least-32-characters"
+    )
+
+    with Session(engine) as db:
+        db.add(
+            OAuthConnection(
+                account_id=ACCOUNT_ID,
+                account_url=ACCOUNT_URL,
+                encrypted_access_token=cipher.encrypt("access-before-cancel"),
+                encrypted_refresh_token=cipher.encrypt("refresh-before-cancel"),
+                is_active=True,
+            )
+        )
+        db.commit()
+
+        class CancellableRefreshClient:
+            def __init__(self):
+                self.started = Event()
+                self.release = Event()
+                self.finished = Event()
+                self.transaction_states = []
+                self.closed = False
+
+            def refresh_access_token(self, account_url, refresh_token):
+                self.transaction_states.append(db.in_transaction())
+                self.started.set()
+                assert self.release.wait(timeout=2)
+                self.finished.set()
+                return AmoCRMTokens("access-after-cancel", "refresh-after-cancel", 3600)
+
+            def close(self):
+                assert self.finished.is_set()
+                self.closed = True
+
+        refresh_client = CancellableRefreshClient()
+        service = build_service(
+            db,
+            UnauthorizedOnceClient(),
+            OAuthService(db, refresh_client, cipher),
+        )
+        ingestion = asyncio.create_task(
+            service.ingest_account(account_id=ACCOUNT_ID, now=now)
+        )
+        while not refresh_client.started.is_set():
+            await asyncio.sleep(0)
+
+        ingestion.cancel()
+        await asyncio.sleep(0)
+        completed_before_refresh = ingestion.done()
+        refresh_client.release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(ingestion, timeout=2)
+
+        assert not completed_before_refresh
+        assert refresh_client.transaction_states == [False]
+        db.expire_all()
+        connection = db.get(OAuthConnection, ACCOUNT_ID)
+        assert cipher.decrypt(connection.encrypted_access_token) == (
+            "access-after-cancel"
+        )
+        assert cipher.decrypt(connection.encrypted_refresh_token) == (
+            "refresh-after-cancel"
+        )
+        refresh_client.close()
+        assert refresh_client.closed
+
+
 def test_second_401_disables_account_and_records_backoff(migrated_db) -> None:
     config, engine = migrated_db
     command.upgrade(config, "head")
@@ -1392,6 +1540,50 @@ def test_catalog_refresh_happens_no_more_than_daily(migrated_db) -> None:
         )
         assert client.catalog_calls == 2
         assert db.query(EventTypeCatalog).count() == 1
+
+
+def test_external_catalog_and_event_awaits_hold_no_database_transaction(
+    migrated_db,
+) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+
+    with Session(engine) as db:
+        add_account(db)
+
+        class InspectingClient(PagingClient):
+            def __init__(self):
+                super().__init__([[]])
+                self.transaction_states = []
+
+            async def list_event_types(self, account_url: str, access_token: str):
+                self.transaction_states.append(("catalog", db.in_transaction()))
+                return await super().list_event_types(account_url, access_token)
+
+            async def list_events_page(
+                self,
+                account_url: str,
+                access_token: str,
+                *,
+                created_from: int,
+                page_url: str | None = None,
+            ):
+                self.transaction_states.append(("events", db.in_transaction()))
+                return await super().list_events_page(
+                    account_url,
+                    access_token,
+                    created_from=created_from,
+                    page_url=page_url,
+                )
+
+        client = InspectingClient()
+        assert run(
+            build_service(db, client).ingest_account(account_id=ACCOUNT_ID, now=now)
+        )
+
+        assert client.transaction_states == [("catalog", False), ("events", False)]
+        assert db.get(IngestionCursor, ACCOUNT_ID).catalog_refreshed_at == now
 
 
 def test_empty_successful_catalog_refresh_is_recorded_independently(

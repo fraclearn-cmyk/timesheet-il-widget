@@ -53,6 +53,14 @@ class StoredOAuthConnection:
     refresh_token: str
 
 
+@dataclass(frozen=True)
+class OAuthRefreshSnapshot:
+    account_id: int
+    account_url: str
+    refresh_token: str
+    encrypted_refresh_token: str
+
+
 class OAuthService:
     """Persist an OAuth pair atomically only after a complete successful grant."""
 
@@ -69,13 +77,48 @@ class OAuthService:
         return self._store_tokens(account_url, account, tokens)
 
     def refresh(self, connection: OAuthConnection) -> OAuthConnection:
-        refresh_token = self._cipher.decrypt(connection.encrypted_refresh_token)
-        tokens = self._client.refresh_access_token(
-            connection.account_url, refresh_token
+        snapshot = self.snapshot_refresh(connection)
+        self._db.commit()
+        tokens = self.request_refresh(snapshot)
+        connection = self._db.get(OAuthConnection, snapshot.account_id)
+        if connection is None:
+            raise LookupError("OAuth connection disappeared")
+        self.apply_refresh(connection, snapshot, tokens)
+        self._db.commit()
+        self._db.refresh(connection)
+        return connection
+
+    def snapshot_refresh(self, connection: OAuthConnection) -> OAuthRefreshSnapshot:
+        """Copy every refresh input so network I/O needs no ORM state."""
+        return OAuthRefreshSnapshot(
+            account_id=connection.account_id,
+            account_url=connection.account_url,
+            refresh_token=self._cipher.decrypt(connection.encrypted_refresh_token),
+            encrypted_refresh_token=connection.encrypted_refresh_token,
         )
-        return self._store_tokens(
-            connection.account_url, {"id": connection.account_id}, tokens
+
+    def request_refresh(self, snapshot: OAuthRefreshSnapshot) -> AmoCRMTokens:
+        """Perform only the remote token exchange; this method never touches DB state."""
+        return self._client.refresh_access_token(
+            snapshot.account_url, snapshot.refresh_token
         )
+
+    def apply_refresh(
+        self,
+        connection: OAuthConnection,
+        snapshot: OAuthRefreshSnapshot,
+        tokens: AmoCRMTokens,
+    ) -> bool:
+        """Apply a complete rotated pair if the snapshotted pair is still current."""
+        if (
+            connection.account_id != snapshot.account_id
+            or connection.account_url != snapshot.account_url
+        ):
+            raise ValueError("OAuth connection changed during refresh")
+        if connection.encrypted_refresh_token != snapshot.encrypted_refresh_token:
+            return False
+        self._assign_tokens(connection, tokens)
+        return True
 
     def load_tokens(self, connection: OAuthConnection) -> StoredOAuthConnection:
         return StoredOAuthConnection(
@@ -107,12 +150,15 @@ class OAuthService:
         connection.account_name = (
             account.get("name") if isinstance(account.get("name"), str) else None
         )
+        self._assign_tokens(connection, tokens)
+        self._db.commit()
+        self._db.refresh(connection)
+        return connection
+
+    def _assign_tokens(self, connection: OAuthConnection, tokens: AmoCRMTokens) -> None:
         connection.encrypted_access_token = self._cipher.encrypt(tokens.access_token)
         connection.encrypted_refresh_token = self._cipher.encrypt(tokens.refresh_token)
         connection.access_token_expires_at = utc_now() + timedelta(
             seconds=tokens.expires_in
         )
         connection.is_active = True
-        self._db.commit()
-        self._db.refresh(connection)
-        return connection

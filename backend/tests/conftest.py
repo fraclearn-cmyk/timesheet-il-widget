@@ -10,4 +10,5 @@ os.environ.update(
     AMOCRM_CLIENT_SECRET="synthetic-client-secret",
     AMOCRM_REDIRECT_URI="https://example.invalid/callback",
     SECRET_KEY="synthetic-test-key-with-at-least-32-characters",
+    INGESTION_WORKER_ENABLED="false",
 )

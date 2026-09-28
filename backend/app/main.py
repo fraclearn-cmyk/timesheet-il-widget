@@ -1,4 +1,11 @@
+from contextlib import asynccontextmanager
+import asyncio
+from collections import OrderedDict
+import socket
+
+import httpx
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -8,6 +15,7 @@ from fastapi import HTTPException
 from app.api.v1.dependencies import APIProblem
 from app.core.access_policy import AccessPolicy
 from app.core.database import get_db
+from app.core.logging import install_webhook_access_log_filter
 
 try:
     from app.core.config import settings
@@ -20,24 +28,109 @@ except ImportError:
     settings = Settings()
 
 
+install_webhook_access_log_filter()
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Start one cancellable scheduler without delaying request startup."""
+    resources = None
+    task = None
+    if getattr(settings, "INGESTION_WORKER_ENABLED", False):
+        from app.core.database import SessionLocal
+        from app.integrations.amocrm_client import AmoCRMClient
+        from app.integrations.amocrm_contract import AmoCRMAuthClient
+        from app.integrations.oauth import OAuthService, OAuthTokenCipher
+        from app.services.activity_interval_service import ActivityIntervalService
+        from app.services.event_ingestion_service import EventIngestionService
+        from app.services.ingestion_worker import (
+            DatabaseIngestionRuntime,
+            IngestionWorker,
+        )
+
+        sync_http = httpx.Client()
+        async_http = httpx.AsyncClient(
+            limits=httpx.Limits(
+                max_connections=settings.INGESTION_MAX_CONCURRENT_ACCOUNTS,
+                max_keepalive_connections=settings.INGESTION_MAX_CONCURRENT_ACCOUNTS,
+            )
+        )
+        cipher = OAuthTokenCipher.from_secret(settings.SECRET_KEY)
+        auth = AmoCRMAuthClient(
+            client_id=settings.AMOCRM_CLIENT_ID,
+            client_secret=settings.AMOCRM_CLIENT_SECRET,
+            redirect_uri=settings.AMOCRM_REDIRECT_URI,
+            http_client=sync_http,
+        )
+        api_client = AmoCRMClient(async_http)
+
+        def ingestion_factory(db):
+            return EventIngestionService(
+                db,
+                api_client,
+                OAuthService(db, auth, cipher),
+                owner=f"{socket.gethostname()}:{id(application)}",
+                poll_interval_seconds=settings.EVENT_POLL_INTERVAL_SECONDS,
+            )
+
+        runtime = DatabaseIngestionRuntime(
+            session_factory=SessionLocal,
+            ingestion_factory=ingestion_factory,
+            presence_factory=ActivityIntervalService,
+        )
+        worker = IngestionWorker(
+            runtime,
+            runtime,
+            interval_seconds=settings.EVENT_POLL_INTERVAL_SECONDS,
+            max_concurrent_accounts=settings.INGESTION_MAX_CONCURRENT_ACCOUNTS,
+        )
+        resources = (worker, sync_http, async_http)
+        task = asyncio.create_task(worker.run(), name="amocrm-ingestion-worker")
+    try:
+        yield
+    finally:
+        if resources is not None:
+            worker, sync_http, async_http = resources
+            await worker.stop()
+            if task is not None:
+                if not task.done():
+                    task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            await async_http.aclose()
+            sync_http.close()
+
+
 # Rate limiting middleware
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, calls_per_minute: int = 60):
+    def __init__(self, app, calls_per_minute: int = 60, max_clients: int = 4096):
         super().__init__(app)
         self.calls_per_minute = calls_per_minute
-        self.requests = {}
+        self.max_clients = max_clients
+        self.requests = OrderedDict()
+
+    def record_request(self, client_ip: str, *, now: float) -> bool:
+        bucket = self.requests.get(client_ip)
+        if bucket is None:
+            if len(self.requests) >= self.max_clients:
+                self.requests.popitem(last=False)
+            bucket = []
+            self.requests[client_ip] = bucket
+        else:
+            self.requests.move_to_end(client_ip)
+        bucket[:] = [timestamp for timestamp in bucket if now - timestamp < 60]
+        if len(bucket) >= self.calls_per_minute:
+            return True
+        bucket.append(now)
+        return False
 
     async def dispatch(self, request: Request, call_next):
         client_ip = request.client.host if request.client else "unknown"
         current_time = time.time()
 
-        # Clean old requests
-        self.requests[client_ip] = [
-            t for t in self.requests.get(client_ip, []) if current_time - t < 60
-        ]
-
-        # Check limit
-        if len(self.requests.get(client_ip, [])) >= self.calls_per_minute:
+        if self.record_request(client_ip, now=current_time):
             return JSONResponse(
                 status_code=429,
                 headers={"Retry-After": "60"},
@@ -50,17 +143,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        # Add request
-        if client_ip not in self.requests:
-            self.requests[client_ip] = []
-        self.requests[client_ip].append(current_time)
-
         response = await call_next(request)
         return response
 
 
 # Create app
-app = FastAPI(title="Timesheet IL API", version="1.0.0", docs_url="/api/docs")
+app = FastAPI(
+    title="Timesheet IL API",
+    version="1.0.0",
+    docs_url="/api/docs",
+    lifespan=lifespan,
+)
 
 
 @app.exception_handler(HTTPException)
@@ -83,6 +176,22 @@ async def api_error_handler(request: Request, exc: HTTPException):
             "error": {
                 "code": code,
                 "message": message,
+                "request_id": request.headers.get("X-Request-Id", ""),
+            }
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(
+    request: Request, exc: RequestValidationError
+):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "REQUEST_INVALID",
+                "message": "Проверьте формат и значения полей запроса.",
                 "request_id": request.headers.get("X-Request-Id", ""),
             }
         },
@@ -182,6 +291,7 @@ try:
         groups as settings_groups,
         reports,
         timesheet,
+        webhooks,
     )
     from app.api.v1.endpoints import departments, excel, kpi
 
@@ -206,6 +316,12 @@ try:
         prefix="/api/v1/activity",
         tags=["activity"],
         dependencies=protected,
+    )
+    # The opaque webhook path is intentionally outside amoCRM request auth.
+    app.include_router(
+        webhooks.router,
+        prefix="/api/v1/webhooks",
+        tags=["webhooks"],
     )
     app.include_router(
         categories.router,

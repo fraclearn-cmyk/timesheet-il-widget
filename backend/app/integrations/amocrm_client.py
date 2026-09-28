@@ -180,6 +180,53 @@ class AmoCRMClient:
             raise AmoCRMClientError("amoCRM event type catalog exceeded item budget")
         return tuple(result)
 
+    async def ensure_webhook(
+        self,
+        account_url: str,
+        access_token: str,
+        *,
+        destination: str,
+        settings: Sequence[str],
+    ) -> None:
+        """Reconcile the official webhook identified by its stable destination."""
+        origin = self._trusted_origin(account_url)
+        installed = await self._get_json(
+            f"{origin}/api/v4/webhooks",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        embedded = installed.get("_embedded") if installed is not None else None
+        webhooks = embedded.get("webhooks") if isinstance(embedded, Mapping) else []
+        if not isinstance(webhooks, list):
+            raise AmoCRMClientError("amoCRM returned an unexpected webhooks payload")
+        desired_settings = set(settings)
+        for webhook in webhooks:
+            if not isinstance(webhook, Mapping):
+                raise AmoCRMClientError(
+                    "amoCRM returned an unexpected webhooks payload"
+                )
+            if webhook.get("destination") != destination:
+                continue
+            current_settings = webhook.get("settings")
+            if (
+                isinstance(current_settings, list)
+                and all(isinstance(item, str) for item in current_settings)
+                and set(current_settings) == desired_settings
+                and webhook.get("disabled") is False
+            ):
+                return
+            break
+        response = await self._http.post(
+            f"{origin}/api/v4/webhooks",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={"destination": destination, "settings": list(settings)},
+            timeout=self._timeout,
+        )
+        if response.status_code == 429:
+            raise AmoCRMRateLimited("amoCRM rate limit exceeded")
+        if response.status_code in {502, 503, 504}:
+            raise AmoCRMUnavailable("amoCRM is temporarily unavailable")
+        response.raise_for_status()
+
     async def get_account(
         self, account_url: str, access_token: str
     ) -> Mapping[str, Any]:
