@@ -479,6 +479,8 @@ PUBLIC_BASE_URL: str | None = None
 
 Validate poll interval `15..60`, retention exactly `30`, and optional public base as HTTPS origin without credentials/query/fragment. Use FastAPI lifespan to create one cancellable loop; database leases provide cross-process exclusion. Each loop obtains `current_utc = utc_now()` and calls `close_stale_presence(now=current_utc)`; raw cleanup runs at most daily. Tests disable the worker by dependency/config override.
 
+Capacity requirement: support at least 40 active accounts through a deduplicated FIFO queue. Keep account work bounded to `1..8` concurrent tasks and reserve one serialized short-lived control session so presence/discovery continue every `15..60` seconds under saturation. Sample the clock when an account actually starts, not when it first enters the queue.
+
 - [x] **Step 7: Run GREEN plus auth regressions**
 
 Run:

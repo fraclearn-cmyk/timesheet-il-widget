@@ -219,6 +219,221 @@ async def test_due_accounts_beyond_cap_do_not_open_more_concurrent_runs():
     await worker.stop()
 
 
+@pytest.mark.asyncio
+async def test_forty_due_accounts_are_refilled_fairly_without_another_scan():
+    clock, service, presence = FakeClock(), FakeService(), FakePresence()
+    service.due = {account_id: clock.now for account_id in range(1, 41)}
+    service.blocked_accounts = set(service.due)
+    worker = IngestionWorker(
+        service,
+        presence,
+        clock=clock,
+        interval_seconds=60,
+        max_concurrent_accounts=4,
+    )
+
+    run = asyncio.create_task(worker.run_once())
+    await asyncio.wait_for(service.block_started.wait(), timeout=0.2)
+    await asyncio.sleep(0)
+
+    # Repeated scheduler ticks while the first wave is active must neither
+    # duplicate queued tenants nor reset their order.
+    for _ in range(3):
+        assert await worker.scan_once() == []
+    assert len(service.active) == 4
+
+    service.block_release.set()
+    await asyncio.wait_for(run, timeout=1)
+
+    account_ids = [account_id for account_id, _ in service.ingested]
+    assert len(account_ids) == 40
+    assert set(account_ids) == set(range(1, 41))
+    assert len(account_ids) == len(set(account_ids))
+    assert service.max_parallel == 4
+
+
+@pytest.mark.parametrize("concurrency_cap", [1, 4])
+@pytest.mark.asyncio
+async def test_forty_accounts_reserve_one_serial_control_session_above_account_cap(
+    concurrency_cap,
+):
+    from app.services.ingestion_worker import DatabaseIngestionRuntime
+
+    current_sessions = 0
+    max_sessions = 0
+    release = asyncio.Event()
+    started = asyncio.Event()
+    completed = []
+    active_accounts = 0
+    max_active_accounts = 0
+    due_calls = 0
+    cleanup_calls = 0
+    presence_calls = 0
+
+    class CountingSessionContext:
+        def __enter__(self):
+            nonlocal current_sessions, max_sessions
+            current_sessions += 1
+            max_sessions = max(max_sessions, current_sessions)
+            return object()
+
+        def __exit__(self, *args):
+            nonlocal current_sessions
+            current_sessions -= 1
+
+    class RuntimeService:
+        def due_accounts(self, now):
+            nonlocal due_calls
+            due_calls += 1
+            return range(1, 41)
+
+        async def ingest_account(self, *, account_id, now):
+            nonlocal active_accounts, max_active_accounts
+            active_accounts += 1
+            max_active_accounts = max(max_active_accounts, active_accounts)
+            started.set()
+            await release.wait()
+            completed.append(account_id)
+            active_accounts -= 1
+            return True
+
+        def purge_expired_raw(self, now, batch_size=1000):
+            nonlocal cleanup_calls
+            cleanup_calls += 1
+            return 0
+
+    class CountingPresence:
+        def close_stale_presence(self, *, now):
+            nonlocal presence_calls
+            presence_calls += 1
+            return 0
+
+    runtime = DatabaseIngestionRuntime(
+        session_factory=CountingSessionContext,
+        ingestion_factory=lambda db: RuntimeService(),
+        presence_factory=lambda db: CountingPresence(),
+    )
+    worker = IngestionWorker(
+        runtime,
+        runtime,
+        clock=clock_now,
+        max_concurrent_accounts=concurrency_cap,
+    )
+
+    run = asyncio.create_task(worker.run_once())
+    await asyncio.wait_for(started.wait(), timeout=0.2)
+    await asyncio.sleep(0)
+    assert max_sessions == concurrency_cap
+
+    # Overlapping scheduler ticks keep their <=60 second control cadence while
+    # account work is saturated, but share one serialized control-session slot.
+    scans = await asyncio.gather(*(worker.scan_once() for _ in range(3)))
+    assert scans == [[], [], []]
+    assert max_active_accounts == concurrency_cap
+    assert max_sessions == concurrency_cap + 1
+    assert presence_calls == 4
+    assert due_calls == 4
+    assert cleanup_calls == 1
+
+    release.set()
+    await asyncio.wait_for(run, timeout=1)
+    assert set(completed) == set(range(1, 41))
+    assert len(completed) == 40
+    assert max_active_accounts == concurrency_cap
+    assert max_sessions == concurrency_cap + 1
+    assert current_sessions == 0
+
+
+@pytest.mark.asyncio
+async def test_queued_account_uses_fresh_start_time_and_keeps_lease_from_takeover():
+    clock = FakeClock()
+    presence = FakePresence()
+    lease_duration = timedelta(seconds=30)
+
+    class SharedState:
+        def __init__(self):
+            self.leases = {}
+            self.started = []
+            self.takeovers = 0
+            self.first_started = asyncio.Event()
+            self.first_release = asyncio.Event()
+            self.second_started = asyncio.Event()
+            self.second_release = asyncio.Event()
+
+    state = SharedState()
+
+    class LeaseService:
+        def __init__(self, owner, due):
+            self.owner = owner
+            self.due = due
+
+        def due_accounts(self, now):
+            return self.due
+
+        async def ingest_account(self, *, account_id, now):
+            existing = state.leases.get(account_id)
+            if existing is not None:
+                existing_owner, expires_at = existing
+                if existing_owner != self.owner and expires_at > now:
+                    return False
+                if existing_owner != self.owner:
+                    state.takeovers += 1
+
+            state.leases[account_id] = (self.owner, now + lease_duration)
+            state.started.append((self.owner, account_id, now))
+            if self.owner == "first" and account_id == 1:
+                state.first_started.set()
+                await state.first_release.wait()
+            if self.owner == "first" and account_id == 2:
+                state.second_started.set()
+                await state.second_release.wait()
+
+            if state.leases.get(account_id, (None,))[0] == self.owner:
+                state.leases.pop(account_id, None)
+            return True
+
+        def purge_expired_raw(self, now, batch_size=1000):
+            return 0
+
+    first = IngestionWorker(
+        LeaseService("first", [1, 2]),
+        presence,
+        clock=clock,
+        max_concurrent_accounts=1,
+    )
+    second = IngestionWorker(
+        LeaseService("second", [2]),
+        presence,
+        clock=clock,
+        max_concurrent_accounts=1,
+    )
+
+    first_run = asyncio.create_task(first.run_once())
+    await asyncio.wait_for(state.first_started.wait(), timeout=0.2)
+    clock.now += lease_duration * 2
+    fresh_start = clock.now
+    state.first_release.set()
+    await asyncio.wait_for(state.second_started.wait(), timeout=0.2)
+
+    # A second process scanning at the current time must see the queued task's
+    # lease as active. A timestamp retained from the original scan would make
+    # this lease expired immediately and permit a spurious takeover.
+    await asyncio.wait_for(second.run_once(), timeout=0.2)
+    first_second_start = next(
+        started_at
+        for owner, account_id, started_at in state.started
+        if owner == "first" and account_id == 2
+    )
+    assert first_second_start == fresh_start
+    assert state.takeovers == 0
+    assert not any(
+        owner == "second" and account_id == 2 for owner, account_id, _ in state.started
+    )
+
+    state.second_release.set()
+    await asyncio.wait_for(first_run, timeout=0.2)
+
+
 def test_account_concurrency_cap_cannot_exceed_runtime_budget():
     clock, service, presence = FakeClock(), FakeService(), FakePresence()
 

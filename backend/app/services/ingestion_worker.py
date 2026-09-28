@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from datetime import datetime, timedelta
 import logging
 from typing import Callable, Protocol, Sequence
@@ -94,8 +95,21 @@ class IngestionWorker:
         self._cleanup_pending = False
         self._max_concurrent_accounts = max_concurrent_accounts
         self._active_accounts: dict[int, asyncio.Task] = {}
+        self._pending_accounts: deque[int] = deque()
+        self._pending_account_ids: set[int] = set()
+        self._idle_event = asyncio.Event()
+        self._idle_event.set()
+        self._scan_lock = asyncio.Lock()
 
     async def scan_once(self) -> list[asyncio.Task]:
+        # Account work owns the configured budget. Control scans reserve one
+        # additional short-lived session so due-account discovery still runs on
+        # its <=60 second cadence while all account slots are occupied. Serialize
+        # that control slot to keep total ingestion sessions at account cap + 1.
+        async with self._scan_lock:
+            return self._scan_once_locked()
+
+    def _scan_once_locked(self) -> list[asyncio.Task]:
         current_utc = self._clock()
         try:
             self._presence.close_stale_presence(now=current_utc)
@@ -107,25 +121,19 @@ class IngestionWorker:
                 extra={"error_code": "presence_cleanup_failed"},
             )
 
-        started: list[asyncio.Task] = []
-        available_slots = self._max_concurrent_accounts - len(self._active_accounts)
         for account_id in self._ingestion.due_accounts(current_utc):
-            if self._stop_event.is_set() or available_slots <= 0:
+            if self._stop_event.is_set():
                 break
-            if account_id in self._active_accounts:
+            if (
+                account_id in self._active_accounts
+                or account_id in self._pending_account_ids
+            ):
                 continue
-            task = asyncio.create_task(
-                self._ingest_account(account_id, current_utc),
-                name=f"amocrm-ingestion-{account_id}",
-            )
-            self._active_accounts[account_id] = task
-            task.add_done_callback(
-                lambda completed, account=account_id: self._forget_account(
-                    account, completed
-                )
-            )
-            started.append(task)
-            available_slots -= 1
+            self._pending_accounts.append(account_id)
+            self._pending_account_ids.add(account_id)
+            self._idle_event.clear()
+
+        started = self._start_pending_accounts()
 
         if (
             self._cleanup_pending
@@ -153,9 +161,30 @@ class IngestionWorker:
         return started
 
     async def run_once(self) -> None:
-        started = await self.scan_once()
-        if started:
-            await asyncio.gather(*started, return_exceptions=True)
+        await self.scan_once()
+        await self._idle_event.wait()
+
+    def _start_pending_accounts(self) -> list[asyncio.Task]:
+        started: list[asyncio.Task] = []
+        while (
+            not self._stop_event.is_set()
+            and self._pending_accounts
+            and len(self._active_accounts) < self._max_concurrent_accounts
+        ):
+            account_id = self._pending_accounts.popleft()
+            self._pending_account_ids.remove(account_id)
+            task = asyncio.create_task(
+                self._ingest_account(account_id, self._clock()),
+                name=f"amocrm-ingestion-{account_id}",
+            )
+            self._active_accounts[account_id] = task
+            task.add_done_callback(
+                lambda completed, account=account_id: self._forget_account(
+                    account, completed
+                )
+            )
+            started.append(task)
+        return started
 
     async def _ingest_account(self, account_id: int, now: datetime) -> None:
         try:
@@ -174,6 +203,9 @@ class IngestionWorker:
     def _forget_account(self, account_id: int, task: asyncio.Task) -> None:
         if self._active_accounts.get(account_id) is task:
             self._active_accounts.pop(account_id, None)
+        self._start_pending_accounts()
+        if not self._active_accounts and not self._pending_accounts:
+            self._idle_event.set()
 
     async def run(self) -> None:
         while not self._stop_event.is_set():
@@ -195,9 +227,12 @@ class IngestionWorker:
 
     async def stop(self) -> None:
         self._stop_event.set()
+        self._pending_accounts.clear()
+        self._pending_account_ids.clear()
         active = list(self._active_accounts.values())
         for task in active:
             task.cancel()
         if active:
             await asyncio.gather(*active, return_exceptions=True)
+        self._idle_event.set()
         await asyncio.sleep(0)
