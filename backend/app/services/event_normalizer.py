@@ -18,6 +18,21 @@ from app.integrations.amocrm_contract import (
 )
 
 
+# Conservative runtime floor observed during phase-0 amoCRM verification. The
+# account-scoped catalog remains authoritative and extends this recognition set.
+OBSERVED_MINIMUM_EVENT_TYPES = frozenset(
+    {
+        "contact_added",
+        "company_added",
+        "lead_added",
+        "entity_linked",
+        "task_added",
+        "common_note_added",
+        "name_field_changed",
+    }
+)
+
+
 @dataclass(frozen=True)
 class NormalizedActivityEvent:
     external_id: str | None
@@ -334,7 +349,7 @@ def _account_matches(payload: Mapping[str, Any], expected_account_id: int) -> bo
     if isinstance(embedded, Mapping) and "account" in embedded:
         account = embedded["account"]
         account_ids.append(account.get("id") if isinstance(account, Mapping) else None)
-    return all(
+    return bool(account_ids) and all(
         _is_positive_int(account_id) and account_id == expected_account_id
         for account_id in account_ids
     )

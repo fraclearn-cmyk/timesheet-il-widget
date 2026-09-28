@@ -77,9 +77,12 @@ class FakeService:
 class FakePresence:
     def __init__(self):
         self.closed = []
+        self.results = []
 
-    def close_stale_presence(self, *, now):
-        self.closed.append(now)
+    def close_stale_presence(self, *, now, batch_size=100):
+        self.closed.append((now, batch_size))
+        if self.results:
+            return self.results.pop(0)
         return 0
 
 
@@ -89,7 +92,27 @@ async def test_due_account_runs_within_sixty_seconds_and_closes_presence():
     worker = IngestionWorker(service, presence, clock=clock, interval_seconds=60)
     await worker.run_once()
     assert service.ingested == [(10, clock.now)]
-    assert presence.closed == [clock.now]
+    assert presence.closed == [(clock.now, 100)]
+
+
+@pytest.mark.asyncio
+async def test_stale_presence_cleanup_is_bounded_and_continues_next_scan():
+    clock, service, presence = FakeClock(), FakeService(), FakePresence()
+    presence.results = [100, 100, 5]
+    worker = IngestionWorker(
+        service,
+        presence,
+        clock=clock,
+        interval_seconds=60,
+        presence_batch_size=100,
+    )
+
+    await worker.run_once()
+    await worker.run_once()
+    await worker.run_once()
+    await worker.run_once()
+
+    assert presence.closed == [(clock.now, 100)] * 4
 
 
 @pytest.mark.asyncio
@@ -252,6 +275,72 @@ async def test_forty_due_accounts_are_refilled_fairly_without_another_scan():
     assert service.max_parallel == 4
 
 
+@pytest.mark.asyncio
+async def test_healthy_forty_accounts_start_inside_sixty_second_target():
+    """Eight slots meet the target when healthy account runs finish in 10 seconds."""
+    clock, service, presence = FakeClock(), FakeService(), FakePresence()
+    service.due = {account_id: clock.now for account_id in range(1, 41)}
+    starts: list[tuple[int, datetime]] = []
+    releases = {account_id: asyncio.Event() for account_id in service.due}
+
+    async def bounded_ingest(*, account_id, now):
+        starts.append((account_id, clock.now))
+        await releases[account_id].wait()
+        service.due[account_id] = now + timedelta(seconds=60)
+        return True
+
+    service.ingest_account = bounded_ingest
+    started_at = clock.now
+    worker = IngestionWorker(
+        service,
+        presence,
+        clock=clock,
+        interval_seconds=60,
+        max_concurrent_accounts=8,
+        account_budget_seconds=10,
+    )
+
+    run = asyncio.create_task(worker.run_once())
+    for expected in range(8, 41, 8):
+        while len(starts) < expected:
+            await asyncio.sleep(0)
+        clock.now += timedelta(seconds=10)
+        for account_id, _started in starts[expected - 8 : expected]:
+            releases[account_id].set()
+    await run
+
+    assert len(starts) == 40
+    assert max(start - started_at for _, start in starts) <= timedelta(seconds=40)
+
+
+@pytest.mark.asyncio
+async def test_account_task_starts_before_slow_control_work_finishes():
+    clock, service = FakeClock(), FakeService()
+    account_started = asyncio.Event()
+    control_started = threading.Event()
+    control_release = threading.Event()
+
+    async def ingest(*, account_id, now):
+        account_started.set()
+        return True
+
+    class SlowPresence:
+        def close_stale_presence(self, *, now, batch_size=100):
+            control_started.set()
+            assert control_release.wait(timeout=1)
+            return 0
+
+    service.ingest_account = ingest
+    worker = IngestionWorker(service, SlowPresence(), clock=clock)
+    scan = asyncio.create_task(worker.scan_once())
+
+    await asyncio.wait_for(account_started.wait(), timeout=0.2)
+    assert control_started.wait(timeout=0.2)
+    assert not scan.done()
+    control_release.set()
+    await asyncio.wait_for(scan, timeout=0.2)
+
+
 @pytest.mark.parametrize("concurrency_cap", [1, 4])
 @pytest.mark.asyncio
 async def test_forty_accounts_reserve_one_serial_control_session_above_account_cap(
@@ -275,11 +364,17 @@ async def test_forty_accounts_reserve_one_serial_control_session_above_account_c
             nonlocal current_sessions, max_sessions
             current_sessions += 1
             max_sessions = max(max_sessions, current_sessions)
-            return object()
+            return self
 
         def __exit__(self, *args):
             nonlocal current_sessions
             current_sessions -= 1
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
 
     class RuntimeService:
         def due_accounts(self, now):
@@ -303,7 +398,7 @@ async def test_forty_accounts_reserve_one_serial_control_session_above_account_c
             return 0
 
     class CountingPresence:
-        def close_stale_presence(self, *, now):
+        def close_stale_presence(self, *, now, batch_size=100):
             nonlocal presence_calls
             presence_calls += 1
             return 0
@@ -323,7 +418,9 @@ async def test_forty_accounts_reserve_one_serial_control_session_above_account_c
     run = asyncio.create_task(worker.run_once())
     await asyncio.wait_for(started.wait(), timeout=0.2)
     await asyncio.sleep(0)
-    assert max_sessions == concurrency_cap
+    # Account tasks start before the serialized control slice, so the reserved
+    # control session can overlap immediately but never exceeds cap + 1.
+    assert max_sessions == concurrency_cap + 1
 
     # Overlapping scheduler ticks keep their <=60 second control cadence while
     # account work is saturated, but share one serialized control-session slot.
@@ -455,6 +552,9 @@ def test_account_concurrency_setting_is_configurable_within_runtime_budget():
     values = settings.model_dump()
     values["INGESTION_MAX_CONCURRENT_ACCOUNTS"] = 8
     assert Settings(**values).INGESTION_MAX_CONCURRENT_ACCOUNTS == 8
+
+    values["INGESTION_MAX_CONCURRENT_ACCOUNTS"] = 7
+    assert Settings(**values).INGESTION_MAX_CONCURRENT_ACCOUNTS == 7
 
     values["INGESTION_MAX_CONCURRENT_ACCOUNTS"] = 9
     with pytest.raises(ValidationError):

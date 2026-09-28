@@ -97,7 +97,8 @@ class Settings(BaseSettings):
     EVENT_POLL_INTERVAL_SECONDS: int = Field(default=60, ge=15, le=60)
     RAW_EVENT_RETENTION_DAYS: int = 30
     INGESTION_WORKER_ENABLED: bool = True
-    INGESTION_MAX_CONCURRENT_ACCOUNTS: int = Field(default=4, ge=1, le=8)
+    # Eight slots are the recommended production default for up to 40 accounts.
+    INGESTION_MAX_CONCURRENT_ACCOUNTS: int = Field(default=8, ge=1, le=8)
     PUBLIC_BASE_URL: str | None = None
 
     @field_validator("RAW_EVENT_RETENTION_DAYS")
@@ -107,10 +108,10 @@ class Settings(BaseSettings):
             raise ValueError("RAW_EVENT_RETENTION_DAYS must be exactly 30")
         return value
 
-    @field_validator("PUBLIC_BASE_URL")
+    @field_validator("PUBLIC_BASE_URL", mode="before")
     @classmethod
     def validate_public_base_url(cls, value: str | None) -> str | None:
-        if value is None:
+        if value is None or (isinstance(value, str) and not value.strip()):
             return None
         try:
             parsed = urlsplit(value)

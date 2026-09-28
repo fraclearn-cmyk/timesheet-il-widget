@@ -178,6 +178,32 @@ def test_unknown_type_is_preserved_but_incomplete() -> None:
     assert result.error_code == "unknown_event_type"
 
 
+@pytest.mark.parametrize("normalizer", ["crm", "call"])
+def test_missing_all_account_claims_fail_closed(normalizer: str) -> None:
+    """A payload cannot prove tenancy merely by omitting every account ID."""
+    payload = crm_payload() if normalizer == "crm" else call_payload()
+    payload.pop("account_id")
+    payload["_embedded"].pop("account", None)
+
+    if normalizer == "crm":
+        result = normalize_crm_event(
+            payload,
+            expected_account_id=ACCOUNT_ID,
+            expected_origin=ACCOUNT_ORIGIN,
+            known_types={"lead_added"},
+        )
+    else:
+        result = normalize_call_event(
+            payload,
+            expected_account_id=ACCOUNT_ID,
+            expected_origin=ACCOUNT_ORIGIN,
+            source_verified=True,
+        )
+
+    assert result.is_complete is False
+    assert result.error_code == "account_mismatch"
+
+
 @pytest.mark.parametrize(
     ("mutate", "error_code"),
     [

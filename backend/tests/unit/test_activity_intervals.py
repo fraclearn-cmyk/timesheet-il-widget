@@ -519,6 +519,31 @@ def test_server_closes_stale_presence_at_last_action_without_counting_wait(db):
     assert work.unconfirmed_duration == 50
 
 
+def test_stale_presence_closure_limits_each_database_batch(db):
+    work = add_work_session(db)
+    db.add_all(
+        ActivityInterval.from_evidence(
+            work,
+            started_at=START + timedelta(seconds=index),
+            ended_at=START + timedelta(seconds=index),
+            source="unconfirmed_input",
+        )
+        for index in range(205)
+    )
+    db.commit()
+    service = ActivityIntervalService(db)
+    now = START + timedelta(minutes=10)
+
+    assert service.close_stale_presence(now=now, batch_size=100) == 100
+    assert (
+        db.query(ActivityInterval).filter(ActivityInterval.closed_at.is_(None)).count()
+        == 105
+    )
+    assert service.close_stale_presence(now=now, batch_size=100) == 100
+    assert service.close_stale_presence(now=now, batch_size=100) == 5
+    assert service.close_stale_presence(now=now, batch_size=100) == 0
+
+
 def test_status_transition_closure_never_extends_presence_to_transition_time(db):
     work = add_work_session(db)
     service = ActivityIntervalService(db)
@@ -529,13 +554,15 @@ def test_status_transition_closure_never_extends_presence_to_transition_time(db)
         seen=START + timedelta(seconds=50),
     )
 
-    assert service.close_for_status_transition(
-        work, at=START + timedelta(minutes=2)
-    ) == 1
+    assert (
+        service.close_for_status_transition(work, at=START + timedelta(minutes=2)) == 1
+    )
     interval = db.query(ActivityInterval).one()
     assert interval.ended_at == START + timedelta(seconds=50)
     assert interval.closed_at == START + timedelta(minutes=2)
-    assert service.close_for_status_transition(work, at=START + timedelta(minutes=2)) == 0
+    assert (
+        service.close_for_status_transition(work, at=START + timedelta(minutes=2)) == 0
+    )
 
 
 def test_status_transition_clamps_presence_observed_after_transition(db):
@@ -549,9 +576,9 @@ def test_status_transition_clamps_presence_observed_after_transition(db):
         received=START + timedelta(seconds=40),
     )
 
-    assert service.close_for_status_transition(
-        work, at=START + timedelta(seconds=30)
-    ) == 1
+    assert (
+        service.close_for_status_transition(work, at=START + timedelta(seconds=30)) == 1
+    )
     interval = db.query(ActivityInterval).one()
     assert interval.started_at == START + timedelta(seconds=10)
     assert interval.ended_at == START + timedelta(seconds=30)
@@ -630,9 +657,7 @@ def test_ingestion_attaches_only_new_complete_normalized_evidence(db):
         "entity_id": 42,
         "entity_type": "lead",
         "_links": {
-            "self": {
-                "href": "https://example.amocrm.ru/api/v4/events/ingested-event"
-            }
+            "self": {"href": "https://example.amocrm.ru/api/v4/events/ingested-event"}
         },
         "_embedded": {
             "account": {"id": ACCOUNT_ID},

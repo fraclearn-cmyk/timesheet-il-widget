@@ -20,6 +20,7 @@ from app.integrations.amocrm_client import (
     AmoCRMClient,
     AmoCRMClientError,
     AmoCRMRateLimited,
+    AmoCRMUnavailable,
 )
 from app.integrations.amocrm_contract import AmoCRMTokens
 from app.integrations.oauth import OAuthService, OAuthTokenCipher
@@ -1215,7 +1216,7 @@ def test_401_refresh_http_has_no_db_transaction_and_does_not_block_event_loop(
 
 
 @pytest.mark.asyncio
-async def test_cancelled_401_refresh_persists_rotated_pair_before_client_close(
+async def test_cancelled_401_refresh_may_exceed_poll_timeout_but_persists_rotation(
     migrated_db,
 ) -> None:
     config, engine = migrated_db
@@ -1271,6 +1272,11 @@ async def test_cancelled_401_refresh_persists_rotated_pair_before_client_close(
         ingestion.cancel()
         await asyncio.sleep(0)
         completed_before_refresh = ingestion.done()
+        # OAuth rotation is intentionally allowed to outlive ordinary poll
+        # cancellation. Releasing its scheduler slot early could lose the one-
+        # time rotated refresh token returned by amoCRM.
+        await asyncio.sleep(0.02)
+        assert not ingestion.done()
         refresh_client.release.set()
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(ingestion, timeout=2)
@@ -1309,9 +1315,116 @@ def test_second_401_disables_account_and_records_backoff(migrated_db) -> None:
         assert cursor.lease_owner is None
 
 
+def test_cancelled_poll_releases_lease_and_schedules_retry(migrated_db) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    with Session(engine) as db:
+        add_account(db)
+        db.add(
+            EventTypeCatalog(
+                account_id=ACCOUNT_ID,
+                event_key="lead_status_changed",
+                label="Lead status changed",
+                refreshed_at=now,
+            )
+        )
+        db.commit()
+        client = BlockingEventsClient([])
+        service = build_service(db, client, lease_clock=lambda: now)
+
+        async def scenario():
+            poll = asyncio.create_task(
+                service.ingest_account(account_id=ACCOUNT_ID, now=now)
+            )
+            while not client.started.is_set():
+                await asyncio.sleep(0)
+            poll.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await poll
+
+        run(scenario())
+
+        db.expire_all()
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert cursor.lease_owner is None
+        assert cursor.lease_until is None
+        assert cursor.failure_count == 1
+        assert cursor.next_poll_at > now
+        assert db.get(OAuthConnection, ACCOUNT_ID).is_active is True
+
+
 class RateLimitedClient(PagingClient):
     async def list_event_types(self, account_url: str, access_token: str):
         raise AmoCRMRateLimited("bounded rate limit")
+
+
+class AccountAccessDeniedClient(PagingClient):
+    def __init__(self, status_code: int):
+        super().__init__([[]])
+        self.status_code = status_code
+
+    async def list_event_types(self, account_url: str, access_token: str):
+        request = httpx.Request("GET", f"{account_url}/api/v4/events/types")
+        response = httpx.Response(self.status_code, request=request)
+        raise httpx.HTTPStatusError(
+            "account access denied", request=request, response=response
+        )
+
+
+class CatalogUnavailableClient(PagingClient):
+    async def list_event_types(self, account_url: str, access_token: str):
+        self.catalog_calls += 1
+        raise AmoCRMUnavailable("catalog temporarily unavailable")
+
+
+@pytest.mark.parametrize("status_code", [402, 403])
+def test_permanent_account_error_suspends_future_polling(migrated_db, status_code):
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    with Session(engine) as db:
+        add_account(db)
+        service = build_service(db, AccountAccessDeniedClient(status_code))
+
+        assert not run(service.ingest_account(account_id=ACCOUNT_ID, now=now))
+
+        db.expire_all()
+        assert db.get(OAuthConnection, ACCOUNT_ID).is_active is False
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert cursor.failure_count == 1
+        assert cursor.lease_owner is None
+        assert service.due_accounts(now + timedelta(days=2)) == []
+
+
+def test_first_catalog_outage_uses_builtin_minimum_without_blocking_events(
+    migrated_db,
+) -> None:
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    with Session(engine) as db:
+        add_account(db)
+        db.add(
+            User(
+                id=7,
+                amocrm_user_id=456,
+                amocrm_account_id=ACCOUNT_ID,
+                name="Author",
+            )
+        )
+        db.commit()
+        client = CatalogUnavailableClient([[event("builtin", event_type="lead_added")]])
+
+        assert run(
+            build_service(db, client).ingest_account(account_id=ACCOUNT_ID, now=now)
+        )
+
+        db.expire_all()
+        stored = db.scalar(select(CrmEvent).where(CrmEvent.external_id == "builtin"))
+        assert stored is not None
+        assert stored.is_complete == 1
+        assert db.get(IngestionCursor, ACCOUNT_ID).catalog_refreshed_at is None
 
 
 class UnexpectedFailureClient(PagingClient):

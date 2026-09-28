@@ -21,6 +21,7 @@ from app.integrations.amocrm_client import (
     AmoCRMClient,
     AmoCRMClientError,
     AmoCRMRateLimited,
+    AmoCRMUnavailable,
 )
 from app.integrations.oauth import OAuthService
 from app.models.crm_event import CrmEvent
@@ -29,7 +30,11 @@ from app.models.ingestion_cursor import IngestionCursor
 from app.models.oauth_connection import OAuthConnection
 from app.models.raw_ingestion_event import RawIngestionEvent
 from app.models.user import User
-from app.services.event_normalizer import canonical_payload_hash, normalize_crm_event
+from app.services.event_normalizer import (
+    OBSERVED_MINIMUM_EVENT_TYPES,
+    canonical_payload_hash,
+    normalize_crm_event,
+)
 from app.services.activity_interval_service import ActivityIntervalService
 
 
@@ -44,6 +49,10 @@ class _PageOutcome:
 
 
 class _OAuthRejected(AmoCRMClientError):
+    pass
+
+
+class _AccountAccessDenied(AmoCRMClientError):
     pass
 
 
@@ -243,6 +252,18 @@ class EventIngestionService:
         except _OAuthRejected as error:
             disable_oauth = True
             failure = error
+        except _AccountAccessDenied as error:
+            disable_oauth = True
+            failure = error
+        except asyncio.CancelledError:
+            self._db.rollback()
+            self._record_failure(
+                account_id,
+                run_owner,
+                self._naive_utc(self._lease_clock()),
+                disable_oauth=False,
+            )
+            raise
         except _LeaseLost as error:
             self._db.rollback()
             self._log_failure(account_id, error)
@@ -305,14 +326,20 @@ class EventIngestionService:
                 )
             )
             self._db.commit()
-            return known
+            return known | OBSERVED_MINIMUM_EVENT_TYPES
 
-        entries = await self._authorized_request(
-            account_id,
-            run_owner,
-            refresh_state,
-            lambda token: self._client.list_event_types(account_url, token),
-        )
+        try:
+            entries = await self._authorized_request(
+                account_id,
+                run_owner,
+                refresh_state,
+                lambda token: self._client.list_event_types(account_url, token),
+            )
+        except AmoCRMUnavailable:
+            # The small observed floor lets polling continue safely during an
+            # initial catalog outage. Unknown types remain preserved/incomplete,
+            # and absence of a refresh timestamp retries the catalog next poll.
+            return OBSERVED_MINIMUM_EVENT_TYPES
         with self._db.begin():
             self._require_and_renew_lease(account_id, run_owner)
             cursor = self._db.get(IngestionCursor, account_id)
@@ -333,7 +360,7 @@ class EventIngestionService:
                 )
                 for key, label in entries
             )
-        return {key for key, _label in entries}
+        return {key for key, _label in entries} | OBSERVED_MINIMUM_EVENT_TYPES
 
     async def _authorized_request(
         self,
@@ -352,6 +379,10 @@ class EventIngestionService:
         try:
             return await operation(token)
         except httpx.HTTPStatusError as error:
+            if error.response.status_code in {402, 403}:
+                raise _AccountAccessDenied(
+                    "amoCRM account access is permanently unavailable"
+                ) from error
             if error.response.status_code != 401:
                 raise
             self._db.rollback()
@@ -409,6 +440,10 @@ class EventIngestionService:
                 return await operation(token)
             except httpx.HTTPStatusError as retry_error:
                 self._db.rollback()
+                if retry_error.response.status_code in {402, 403}:
+                    raise _AccountAccessDenied(
+                        "amoCRM account access is permanently unavailable"
+                    ) from retry_error
                 if retry_error.response.status_code == 401:
                     raise _OAuthRejected(
                         "amoCRM rejected refreshed OAuth credentials"
@@ -650,6 +685,8 @@ class EventIngestionService:
             return "lease_lost"
         if isinstance(error, _OAuthRejected):
             return "oauth_rejected"
+        if isinstance(error, _AccountAccessDenied):
+            return "account_access_denied"
         if isinstance(error, AmoCRMRateLimited):
             return "amocrm_rate_limited"
         if isinstance(error, AmoCRMClientError):

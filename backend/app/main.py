@@ -83,6 +83,7 @@ async def lifespan(application: FastAPI):
             runtime,
             interval_seconds=settings.EVENT_POLL_INTERVAL_SECONDS,
             max_concurrent_accounts=settings.INGESTION_MAX_CONCURRENT_ACCOUNTS,
+            account_budget_seconds=10,
         )
         resources = (worker, sync_http, async_http)
         task = asyncio.create_task(worker.run(), name="amocrm-ingestion-worker")

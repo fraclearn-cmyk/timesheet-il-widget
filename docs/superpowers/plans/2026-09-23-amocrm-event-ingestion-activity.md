@@ -4,7 +4,7 @@
 
 **Goal:** Build account-scoped amoCRM event ingestion and privacy-preserving browser presence tracking that produces confirmed points/measured calls and neutral five-minute-bounded intervals without inventing work duration.
 
-**Architecture:** A PostgreSQL-leased worker polls `GET /api/v4/events` at least once per 60 seconds; an untrusted webhook can only advance the next poll time. Raw envelopes expire after 30 days, normalization is fail-closed, deduplication is database-enforced, and interval creation is restricted to verified `WORKING` windows. The widget sends only aggregated presence batches and remains fail-open.
+**Architecture:** A PostgreSQL-leased worker targets healthy-path admission to `GET /api/v4/events` within 60 seconds for up to 40 accounts; an untrusted webhook can only advance the next poll time. Raw envelopes expire after 30 days, normalization is fail-closed, deduplication is database-enforced, and interval creation is restricted to verified `WORKING` windows. The widget sends only aggregated presence batches and remains fail-open.
 
 **Tech Stack:** Python 3.12, FastAPI, SQLAlchemy/Alembic, PostgreSQL 15, Pydantic v2, httpx, vanilla AMD JavaScript, Node test runner, Playwright Chrome, pytest.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Normal polling delay is at most 60 seconds; webhook is only an acceleration signal and never event evidence.
+- The recommended eight production slots target admission of 40 due accounts within 60 seconds when healthy account runs complete within 10 seconds. OAuth refresh rotation may intentionally outlive ordinary poll cancellation so a rotated refresh token is never lost; database or network stalls therefore carry no absolute latency SLA and enter failure/backoff handling. Webhook is only an acceleration signal and never event evidence.
 - Raw payload retention is exactly 30 days; normalized records and intervals remain after cleanup.
 - Browser signals contain no key values, text, coordinates, DOM values, card content, account ID, or user ID.
 - Inactivity threshold is exactly 300 seconds; waiting time is not added to an interval.
@@ -474,12 +474,13 @@ Add validated configuration:
 EVENT_POLL_INTERVAL_SECONDS: int = 60
 RAW_EVENT_RETENTION_DAYS: int = 30
 INGESTION_WORKER_ENABLED: bool = True
+INGESTION_MAX_CONCURRENT_ACCOUNTS: int = 8  # configurable 1..8
 PUBLIC_BASE_URL: str | None = None
 ```
 
 Validate poll interval `15..60`, retention exactly `30`, and optional public base as HTTPS origin without credentials/query/fragment. Use FastAPI lifespan to create one cancellable loop; database leases provide cross-process exclusion. Each loop obtains `current_utc = utc_now()` and calls `close_stale_presence(now=current_utc)`; raw cleanup runs at most daily. Tests disable the worker by dependency/config override.
 
-Capacity requirement: support at least 40 active accounts through a deduplicated FIFO queue. Keep account work bounded to `1..8` concurrent tasks and reserve one serialized short-lived control session so presence/discovery continue every `15..60` seconds under saturation. Sample the clock when an account actually starts, not when it first enters the queue.
+Capacity requirement: provision at least 40 active accounts through a deduplicated FIFO queue. Production defaults to eight concurrent account tasks and permits `1..8`; eight is recommended for 40 accounts. With healthy account runs finishing within the ordinary 10-second budget, five FIFO waves target admission within 60 seconds. Cancellation-protected OAuth rotation may exceed that ordinary budget to persist a rotated token, and arbitrary database/network stalls have no absolute 60-second guarantee. One serialized control session runs off the event loop after the new account wave has started; presence and raw cleanup remain batch-bounded. Sample the clock when an account actually starts, not when it first enters the queue.
 
 - [x] **Step 7: Run GREEN plus auth regressions**
 
@@ -600,7 +601,7 @@ git commit -m "feat: batch privacy-safe browser presence"
 - Consumes: Tasks 1–6 complete and reviewed.
 - Produces: one verified local phase-5 pipeline, current deployment documentation, exact 19-file `widget.zip`, and phase report in `Plan.md`.
 
-- [ ] **Step 1: Write an integration RED scenario spanning the complete pipeline**
+- [x] **Step 1: Write an integration RED scenario spanning the complete pipeline**
 
 Create account/user/group and a `WORKING -> BREAK -> WORKING` session. Feed two same-time CRM events with replay, a system event, an unknown event, a call without verified source, presence packets separated by 301 seconds, and a forged webhook. Assert:
 
@@ -613,17 +614,17 @@ assert duplicate_rows == 0
 assert forged_webhook_rows == 0
 ```
 
-- [ ] **Step 2: Run RED and implement only missing integration glue**
+- [x] **Step 2: Run RED and implement only missing integration glue**
 
 Run: `..\.venv312\Scripts\python.exe -m pytest tests/integration/test_phase5_activity_pipeline.py -q --tb=short`
 
 Expected: fail only where cross-task wiring is absent. Fix router/service/model wiring without adding new behavior beyond the spec.
 
-- [ ] **Step 3: Update deployment-neutral documentation**
+- [x] **Step 3: Update deployment-neutral documentation**
 
 Document `PUBLIC_BASE_URL`, polling-only fallback, webhook setup/reconciliation, 30-day cleanup, no readable calls source, worker lease, migration `012`, and exact 19-file archive. `.env.example` contains placeholders only; compose passes variables without test/ngrok values.
 
-- [ ] **Step 4: Run focused and full verification**
+- [x] **Step 4: Run focused and full verification**
 
 Against an isolated disposable PostgreSQL database run:
 
@@ -643,11 +644,11 @@ npx playwright test frontend/tests/overlay.spec.js frontend/tests/widget-working
 git diff --check
 ```
 
-- [ ] **Step 5: Request broad whole-phase code review**
+- [x] **Step 5: Request broad whole-phase code review**
 
 Review from phase-5 base through HEAD against this plan and the design spec. Resolve every Critical/Important finding through the prescribed fix/re-review loop. Live amoCRM remains explicitly out of scope; local transport/browser/database behavior is in scope.
 
-- [ ] **Step 6: Build and validate root archive after review**
+- [x] **Step 6: Build and validate root archive after review**
 
 Preserve any locked prior `widget.zip` under a unique verified backup name; do not delete backups. Run:
 
@@ -659,14 +660,13 @@ Get-FileHash -Algorithm SHA256 .\widget.zip
 
 Expected: `VALIDATION PASSED: 19 exact runtime files`.
 
-- [ ] **Step 7: Update `Plan.md`, commit and push**
+- [x] **Step 7: Update `Plan.md` and commit locally**
 
-Only after every gate is green: mark phase 5 locally complete/live gate deferred, list actual files and exact test counts, explain what can be checked, retain call/live limitations, add journal entry, then:
+Only after every gate is green: mark phase 5 locally complete/live gate deferred, list actual files and exact test counts, explain what can be checked, retain call/live limitations, add journal entry, then commit locally. Push only after explicit user authorization:
 
 ```powershell
 git add backend/tests/integration/test_phase5_activity_pipeline.py docs .env.example docker-compose.yml Plan.md
 git commit -m "docs: mark phase five locally complete"
-git push origin main
 ```
 
 Do not write the global completion phrase: phases 6–9 remain.

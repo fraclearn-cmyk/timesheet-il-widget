@@ -22,7 +22,7 @@ class IngestionService(Protocol):
 
 
 class PresenceService(Protocol):
-    def close_stale_presence(self, *, now: datetime) -> int: ...
+    def close_stale_presence(self, *, now: datetime, batch_size: int = 100) -> int: ...
 
 
 class DatabaseIngestionRuntime:
@@ -43,10 +43,12 @@ class DatabaseIngestionRuntime:
                 account_id=account_id, now=now
             )
 
-    def close_stale_presence(self, *, now: datetime) -> int:
+    def close_stale_presence(self, *, now: datetime, batch_size: int = 100) -> int:
         with self._session_factory() as db:
             try:
-                count = self._presence_factory(db).close_stale_presence(now=now)
+                count = self._presence_factory(db).close_stale_presence(
+                    now=now, batch_size=batch_size
+                )
                 db.commit()
                 return count
             except Exception:
@@ -75,6 +77,8 @@ class IngestionWorker:
         cleanup_batch_size: int = 1000,
         cleanup_max_batches_per_scan: int = 2,
         max_concurrent_accounts: int = 4,
+        presence_batch_size: int = 100,
+        account_budget_seconds: float = 10.0,
     ) -> None:
         if not 15 <= interval_seconds <= 60:
             raise ValueError("worker interval must be between 15 and 60 seconds")
@@ -82,6 +86,8 @@ class IngestionWorker:
             raise ValueError("concurrent account limit must be between 1 and 8")
         if cleanup_batch_size < 1 or cleanup_max_batches_per_scan < 1:
             raise ValueError("cleanup batch limits must be positive")
+        if presence_batch_size < 1 or account_budget_seconds <= 0:
+            raise ValueError("presence and account budgets must be positive")
         self._ingestion = ingestion
         self._presence = presence
         self._clock = clock
@@ -92,6 +98,8 @@ class IngestionWorker:
         self._rollback = rollback or (lambda: None)
         self._cleanup_batch_size = cleanup_batch_size
         self._cleanup_max_batches_per_scan = cleanup_max_batches_per_scan
+        self._presence_batch_size = presence_batch_size
+        self._account_budget_seconds = account_budget_seconds
         self._cleanup_pending = False
         self._max_concurrent_accounts = max_concurrent_accounts
         self._active_accounts: dict[int, asyncio.Task] = {}
@@ -104,23 +112,19 @@ class IngestionWorker:
     async def scan_once(self) -> list[asyncio.Task]:
         # Account work owns the configured budget. Control scans reserve one
         # additional short-lived session so due-account discovery still runs on
-        # its <=60 second cadence while all account slots are occupied. Serialize
-        # that control slot to keep total ingestion sessions at account cap + 1.
+        # its configured cadence while account slots are occupied. Serialize that
+        # control slot to keep total ingestion sessions at account cap + 1; slow
+        # dependencies may extend wall-clock time between completed scans.
         async with self._scan_lock:
-            return self._scan_once_locked()
+            current_utc = self._clock()
+            started = self._discover_and_start(current_utc)
+            # create_task only schedules account work. Yield before synchronous
+            # control I/O so the first wave can acquire leases immediately.
+            await asyncio.sleep(0)
+            await asyncio.to_thread(self._run_control, current_utc)
+            return started
 
-    def _scan_once_locked(self) -> list[asyncio.Task]:
-        current_utc = self._clock()
-        try:
-            self._presence.close_stale_presence(now=current_utc)
-            self._commit()
-        except Exception:
-            self._rollback()
-            logger.exception(
-                "presence cleanup failed",
-                extra={"error_code": "presence_cleanup_failed"},
-            )
-
+    def _discover_and_start(self, current_utc: datetime) -> list[asyncio.Task]:
         for account_id in self._ingestion.due_accounts(current_utc):
             if self._stop_event.is_set():
                 break
@@ -134,6 +138,22 @@ class IngestionWorker:
             self._idle_event.clear()
 
         started = self._start_pending_accounts()
+
+        return started
+
+    def _run_control(self, current_utc: datetime) -> None:
+        """Run one serialized bounded maintenance slice off the event loop."""
+        try:
+            self._presence.close_stale_presence(
+                now=current_utc, batch_size=self._presence_batch_size
+            )
+            self._commit()
+        except Exception:
+            self._rollback()
+            logger.exception(
+                "presence cleanup failed",
+                extra={"error_code": "presence_cleanup_failed"},
+            )
 
         if (
             self._cleanup_pending
@@ -158,7 +178,6 @@ class IngestionWorker:
                 logger.exception(
                     "raw cleanup failed", extra={"error_code": "raw_cleanup_failed"}
                 )
-        return started
 
     async def run_once(self) -> None:
         await self.scan_once()
@@ -188,7 +207,16 @@ class IngestionWorker:
 
     async def _ingest_account(self, account_id: int, now: datetime) -> None:
         try:
-            await self._ingestion.ingest_account(account_id=account_id, now=now)
+            async with asyncio.timeout(self._account_budget_seconds):
+                await self._ingestion.ingest_account(account_id=account_id, now=now)
+        except TimeoutError:
+            logger.warning(
+                "account ingestion exceeded its bounded scheduler slot",
+                extra={
+                    "account_id": account_id,
+                    "error_code": "worker_poll_timeout",
+                },
+            )
         except asyncio.CancelledError:
             raise
         except Exception:

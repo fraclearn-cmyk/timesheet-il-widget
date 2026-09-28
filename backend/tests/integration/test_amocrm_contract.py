@@ -452,9 +452,7 @@ def test_phase_zero_timeline_wrapper_preserves_unknown_event_shape() -> None:
             "entity": {
                 "id": 1001,
                 "_links": {
-                    "self": {
-                        "href": "https://example.amocrm.ru/api/v4/leads/1001"
-                    }
+                    "self": {"href": "https://example.amocrm.ru/api/v4/leads/1001"}
                 },
             }
         },

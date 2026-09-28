@@ -171,11 +171,8 @@ class ActivityIntervalService:
                 )
                 candidate_start = min(merged_start, interval.started_at)
                 candidate_end = max(merged_end, interval.ended_at)
-                if (
-                    gap <= self._PRESENCE_GAP
-                    and session.contains_working_interval(
-                        candidate_start, candidate_end
-                    )
+                if gap <= self._PRESENCE_GAP and session.contains_working_interval(
+                    candidate_start, candidate_end
                 ):
                     connected.append(interval)
                     merged_start = candidate_start
@@ -201,7 +198,9 @@ class ActivityIntervalService:
         self._recompute_durations(session)
         return interval
 
-    def close_stale_presence(self, *, now: datetime) -> int:
+    def close_stale_presence(self, *, now: datetime, batch_size: int = 100) -> int:
+        if batch_size < 1:
+            raise ValueError("presence cleanup batch size must be positive")
         now = self._require_utc_naive(now, "presence closure time")
         cutoff = now - self._PRESENCE_GAP
         eligible = (
@@ -209,36 +208,40 @@ class ActivityIntervalService:
             ActivityInterval.closed_at.is_(None),
             ActivityInterval.ended_at <= cutoff,
         )
-        user_ids = list(
-            self.db.scalars(
-                select(ActivityInterval.user_id)
-                .where(*eligible)
-                .distinct()
-                .order_by(ActivityInterval.user_id)
-            )
+        candidates = (
+            select(ActivityInterval.id, ActivityInterval.user_id)
+            .where(*eligible)
+            .order_by(ActivityInterval.user_id, ActivityInterval.id)
+            .limit(batch_size)
         )
+        selected = list(self.db.execute(candidates))
+        interval_ids = [interval_id for interval_id, _user_id in selected]
+        user_ids = sorted({user_id for _interval_id, user_id in selected})
         count = 0
         for user_id in user_ids:
             user = self.db.get(User, user_id)
             if user is None:
                 continue
             self._lock_user(user)
-            intervals = list(
-                self.db.scalars(
-                    select(ActivityInterval).where(
-                        *eligible, ActivityInterval.user_id == user_id
-                    )
+            intervals_query = (
+                select(ActivityInterval)
+                .where(
+                    *eligible,
+                    ActivityInterval.id.in_(interval_ids),
+                    ActivityInterval.user_id == user_id,
                 )
+                .order_by(ActivityInterval.id)
             )
+            if self.db.bind is not None and self.db.bind.dialect.name == "postgresql":
+                intervals_query = intervals_query.with_for_update(skip_locked=True)
+            intervals = list(self.db.scalars(intervals_query))
             for interval in intervals:
                 interval.closed_at = now
             count += len(intervals)
         self.db.flush()
         return count
 
-    def close_for_status_transition(
-        self, session: WorkSession, *, at: datetime
-    ) -> int:
+    def close_for_status_transition(self, session: WorkSession, *, at: datetime) -> int:
         at = self._require_utc_naive(at, "presence transition time")
         intervals = list(
             self.db.scalars(
