@@ -329,6 +329,18 @@
     box-shadow: none !important;
 }
 
+/* Stable placement while the separately packaged monitoring stylesheet loads. */
+.ts-monitoring-widget {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 10010;
+}
+
+.ts-monitoring-widget__panel[hidden] {
+    display: none;
+}
+
 /* Pulse Animation for Active Status */
 .status-working::before {
     content: '';

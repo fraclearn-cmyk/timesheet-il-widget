@@ -8,6 +8,7 @@ const settingsSource = readFileSync(resolve(__dirname, '../settings/settings.js'
 const widgetSource = readFileSync(resolve(__dirname, '../../widget/script.js'), 'utf8');
 const manifest = JSON.parse(readFileSync(resolve(__dirname, '../../widget/manifest.json'), 'utf8'));
 const workingCss = readFileSync(resolve(__dirname, '../../widget/styles.css'));
+const monitoringCss = readFileSync(resolve(__dirname, '../monitoring/styles.css'));
 const fixtures = [];
 test.afterEach(() => {
   for (const { widget, dom } of fixtures.splice(0)) {
@@ -18,6 +19,7 @@ test.afterEach(() => {
 
 class WidgetResources extends ResourceLoader {
   fetch(url) {
+    if (url.includes('/widgets/timesheet/monitoring/styles.css')) return Promise.resolve(monitoringCss);
     if (url.includes('/widgets/timesheet/styles.css')) return Promise.resolve(workingCss);
     return null;
   }
@@ -35,10 +37,23 @@ function snapshot() {
   };
 }
 
+function response() {
+  return { generated_at: '2026-09-29T09:00:00Z', viewer: { id: 1, role: 'admin', can_view_activity: true },
+    groups: [{ id: 10, name: 'Продажи', timezone: 'Europe/Moscow', workday_started_at: '2026-09-29T06:00:00Z',
+      workday_ended_at: '2026-09-29T15:00:00Z', employee_count: 1 }],
+    employees: [{ id: 2, amocrm_user_id: 102, account_id: 1, name: 'Анна', avatar_url: null, group_id: 10,
+      group_name: 'Продажи', timezone: 'Europe/Moscow', workday_started_at: '2026-09-29T06:00:00Z',
+      workday_ended_at: '2026-09-29T15:00:00Z', status: 'working', status_since: '2026-09-29T06:00:00Z',
+      session_started_at: '2026-09-29T06:00:00Z', session_ended_at: null, work_seconds: 3600, break_seconds: 0,
+      confirmed_seconds: 600, confirmed_events: 2, activity_detail_allowed: true }],
+    totals: { employees: 1, working: 1, on_break: 0, finished: 0, not_started: 0, work_seconds: 3600,
+      break_seconds: 0, confirmed_seconds: 600, confirmed_events: 2 } };
+}
+
 function boot(options = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><form id="install-form"></form>' +
     '<div id="list_page_holder"><p id="amo-owned">amoCRM content</p></div><div id="timesheet-overlay"></div></body></html>', {
-    url: 'https://account.amocrm.ru', runScripts: 'outside-only', resources: new WidgetResources(),
+    url: 'https://account.amocrm.ru', runScripts: 'outside-only', resources: new WidgetResources(), pretendToBeVisual: true,
   });
   const { window } = dom;
   const { document } = window;
@@ -55,11 +70,15 @@ function boot(options = {}) {
       require('../../widget/timesheet/controller'),
       require('../../widget/overlay'),
       require('../../widget/activity-tracker'),
+      require('../monitoring/timeline'),
+      require('../monitoring/activity-modal'),
+      require('../monitoring/dashboard'),
     );
   };
   window.eval(widgetSource);
   assert.deepEqual(moduleIds, [
     'jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker',
+    './monitoring/timeline', './monitoring/activity-modal', './monitoring/dashboard',
   ]);
   const requests = [];
   const widget = new Widget();
@@ -68,12 +87,20 @@ function boot(options = {}) {
     path: '/widgets/timesheet/', version: '3.0.2' });
   widget.$authorizedAjax = (request) => {
     requests.push(request);
+    if (request.url.includes('/team/status')) return Promise.resolve(options.monitoringStatus || response());
+    if (request.url.includes('/team/') && request.url.includes('/activity')) return Promise.resolve(activity());
     if (request.method === 'GET') return options.load || Promise.resolve(snapshot());
     return options.save || Promise.resolve(snapshot());
   };
   const fixture = { dom, document, widget, requests };
   fixtures.push(fixture);
   return fixture;
+}
+
+function activity() {
+  return { target: { id: 2, amocrm_user_id: 102, name: 'Анна', avatar_url: null }, group: { id: 10, name: 'Продажи' },
+    timezone: 'Europe/Moscow', from: '2026-09-23', to: '2026-09-29',
+    totals: { confirmed_seconds: 0, confirmed_events: 0, unconfirmed_seconds: 0 }, days: [] };
 }
 
 test('working init without API URL remains fail-open and keeps settings editor out', () => {
@@ -177,13 +204,38 @@ test('working init uses authorized timesheet API without browser identity and re
   }) });
   widget.callbacks.init();
   await new Promise(setImmediate);
-  assert.equal(requests[0].url, 'https://api.example.test/api/v1/timesheet/my-status');
-  assert.equal(requests[0].method, 'GET');
-  assert.equal('data' in requests[0], false);
+  const timesheetRequest = requests.find((request) => request.url.endsWith('/timesheet/my-status'));
+  assert.equal(timesheetRequest.url, 'https://api.example.test/api/v1/timesheet/my-status');
+  assert.equal(timesheetRequest.method, 'GET');
+  assert.equal('data' in timesheetRequest, false);
   assert.equal(document.querySelectorAll('.timesheet-overlay').length, 1);
   dom.window.dispatchEvent(new dom.window.Event('focus'));
   await new Promise(setImmediate);
   assert.equal(requests.filter((request) => request.url.endsWith('/timesheet/my-status')).length, 2);
+});
+
+test('working init mounts one monitoring launcher and uses authorized team APIs without identity headers', async () => {
+  const { document, widget, requests } = boot({ area: 'lcard' });
+  widget.callbacks.init();
+  await new Promise(setImmediate);
+  assert.equal(document.querySelectorAll('.ts-monitoring-widget').length, 1);
+  assert.equal(document.querySelectorAll('.ts-monitoring-widget__launcher').length, 1);
+  const statusRequest = requests.find((request) => request.url.includes('/team/status'));
+  assert.equal(statusRequest.method, 'GET');
+  assert.equal(statusRequest.dataType, 'json');
+  assert.equal('headers' in statusRequest, false);
+  assert.equal('beforeSend' in statusRequest, false);
+  widget.callbacks.destroy();
+  assert.equal(document.querySelector('.ts-monitoring-widget'), null);
+  assert.equal(document.querySelector('link[href*="monitoring/styles.css"]'), null);
+});
+
+test('repeated working init replaces monitoring DOM and does not duplicate launchers', async () => {
+  const { document, widget } = boot({ area: 'lcard' });
+  widget.callbacks.init(); await new Promise(setImmediate);
+  widget.callbacks.init(); await new Promise(setImmediate);
+  assert.equal(document.querySelectorAll('.ts-monitoring-widget').length, 1);
+  assert.equal(document.querySelectorAll('link[href*="monitoring/styles.css"]').length, 1);
 });
 
 test('repeated working init replaces its controller and focus refresh listener', async () => {

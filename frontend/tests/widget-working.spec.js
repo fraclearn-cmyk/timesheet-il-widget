@@ -6,24 +6,34 @@ test.use({ channel: 'chrome' });
 const sources = Object.fromEntries([
   ['settings', 'frontend/settings/settings.js'],
   ['controller', 'widget/timesheet/controller.js'],
-  ['overlay', 'widget/overlay.js'], ['widget', 'widget/script.js'],
+  ['overlay', 'widget/overlay.js'], ['tracker', 'widget/activity-tracker.js'],
+  ['timeline', 'frontend/monitoring/timeline.js'], ['modal', 'frontend/monitoring/activity-modal.js'],
+  ['dashboard', 'frontend/monitoring/dashboard.js'], ['widget', 'widget/script.js'],
 ].map(([key, file]) => [key, readFileSync(resolve(__dirname, '../..', file), 'utf8')]));
 const css = readFileSync(resolve(__dirname, '../../widget/styles.css'), 'utf8');
+const monitoringCss = readFileSync(resolve(__dirname, '../monitoring/styles.css'), 'utf8');
 
 async function boot(page, cssHandler) {
   await page.route('https://widget.test/**', async (route) => {
+    if (route.request().url().includes('/monitoring/styles.css')) {
+      return route.fulfill({ contentType: 'text/css', body: monitoringCss });
+    }
     if (route.request().url().includes('/styles.css')) return cssHandler(route);
     return route.fulfill({ contentType: 'text/html', body: '<button id="crm">CRM</button><div id="list_page_holder"></div>' });
   });
   await page.goto('https://widget.test/');
   await page.evaluate((code) => {
     const modules = {};
-    for (const name of ['settings', 'controller', 'overlay']) {
+    for (const name of ['settings', 'controller', 'overlay', 'tracker']) {
       window.define = (factory) => { modules[name] = factory(); };
       window.define.amd = {};
       (0, eval)(code[name]);
     }
-    window.define = (_ids, factory) => { window.Widget = factory({}, modules.settings, modules.controller, modules.overlay); };
+    window.define = (_ids, factory) => { modules.timeline = factory(); }; window.define.amd = {}; (0, eval)(code.timeline);
+    window.define = (_ids, factory) => { modules.modal = factory(modules.timeline); }; window.define.amd = {}; (0, eval)(code.modal);
+    window.define = (_ids, factory) => { modules.dashboard = factory(modules.modal); }; window.define.amd = {}; (0, eval)(code.dashboard);
+    window.define = (_ids, factory) => { window.Widget = factory({}, modules.settings, modules.controller, modules.overlay,
+      modules.tracker, modules.timeline, modules.modal, modules.dashboard); };
     (0, eval)(code.widget);
     window.widget = new window.Widget();
     window.area = 'lcard'; window.calls = [];
@@ -32,6 +42,9 @@ async function boot(page, cssHandler) {
     window.widget.$authorizedAjax = (request) => {
       window.calls.push(request);
       if (request.url.includes('/settings/')) return new Promise(() => {});
+      if (request.url.includes('/team/status')) return Promise.resolve({ generated_at: '2026-09-29T09:00:00Z',
+        viewer: { role: 'employee', can_view_activity: false }, groups: [], employees: [],
+        totals: { employees: 0, working: 0, on_break: 0, finished: 0, not_started: 0 } });
       return Promise.resolve({ session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z',
         ended_at: null, break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false });
     };

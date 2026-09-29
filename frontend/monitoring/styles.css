@@ -1,3 +1,63 @@
+.ts-monitoring-widget {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10010;
+  font: 14px/1.4 Arial, sans-serif;
+  color: #1f2937;
+}
+
+.ts-monitoring-widget__launcher {
+  display: block;
+  margin-left: auto;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.28);
+  cursor: pointer;
+}
+
+.ts-monitoring-widget__panel {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 100px));
+  margin-bottom: 10px;
+  overflow: auto;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.22);
+}
+
+.ts-monitoring-widget__panel[hidden] { display: none; }
+.ts-monitoring { padding: 16px; }
+.ts-monitoring__header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ts-monitoring__title { margin: 0; font-size: 20px; }
+.ts-monitoring__last-success { color: #667085; font-size: 12px; }
+.ts-monitoring__controls { display: grid; grid-template-columns: minmax(160px, 1fr) repeat(3, auto); gap: 8px; margin: 14px 0; }
+.ts-monitoring__controls input,
+.ts-monitoring__controls select,
+.ts-monitoring__controls button { min-height: 36px; border: 1px solid #d0d5dd; border-radius: 6px; background: #fff; }
+.ts-monitoring__controls input { padding: 0 10px; }
+.ts-monitoring__controls button { padding: 0 12px; cursor: pointer; }
+.ts-monitoring__totals { margin-bottom: 10px; color: #475467; font-size: 13px; }
+.ts-monitoring__message { min-height: 20px; color: #b54708; }
+.ts-monitoring__group { margin-top: 14px; }
+.ts-monitoring__group-title { margin: 0 0 6px; font-size: 15px; }
+.ts-monitoring__employee { position: relative; display: grid; grid-template-columns: 10px minmax(130px, 1fr) minmax(210px, 1.4fr) auto; gap: 10px; align-items: center; padding: 10px 40px 10px 12px; border-top: 1px solid #eaecf0; }
+.ts-monitoring__employee::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #98a2b3; }
+.ts-monitoring__employee--working::before { background: #22a06b; }
+.ts-monitoring__employee--on_break::before { background: #f79009; }
+.ts-monitoring__employee--finished::before { background: #667085; }
+.ts-monitoring__identity { display: flex; flex-direction: column; }
+.ts-monitoring__employee-status,
+.ts-monitoring__metrics,
+.ts-monitoring__shift { color: #667085; font-size: 12px; }
+.ts-monitoring__activity { position: absolute; right: 8px; width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; font-size: 22px; cursor: pointer; }
+.ts-monitoring__activity:hover,
+.ts-monitoring__activity:focus-visible { background: #eef4ff; outline: 2px solid #84adff; }
+
 .ts-activity-modal {
   position: fixed;
   inset: 0;
@@ -87,6 +147,13 @@
 .ts-timeline__tooltip a { display: inline-block; margin-top: 6px; }
 
 @media (max-width: 640px) {
+  .ts-monitoring-widget { right: 0; bottom: 0; left: 0; }
+  .ts-monitoring-widget__launcher { margin-right: 12px; margin-bottom: 12px; }
+  .ts-monitoring-widget__panel { width: 100%; max-height: calc(100vh - 64px); margin: 0; border-radius: 12px 12px 0 0; }
+  .ts-monitoring__controls { grid-template-columns: 1fr 1fr; }
+  .ts-monitoring__employee { grid-template-columns: 10px 1fr; }
+  .ts-monitoring__metrics,
+  .ts-monitoring__shift { grid-column: 2; }
   .ts-activity-modal { padding: 0; }
   .ts-activity-modal__panel { max-height: 100vh; border-radius: 0; }
 }

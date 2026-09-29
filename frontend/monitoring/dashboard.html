@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Демо мониторинга сотрудников</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="monitoring"></main>
+  <script src="timeline.js"></script>
+  <script src="activity-modal.js"></script>
+  <script src="dashboard.js"></script>
+  <script>
+    // Credential-free harness: provide window.monitoringTransport from local developer tooling.
+    if (window.monitoringTransport) {
+      window.monitoringDashboard = TimesheetMonitoringDashboard.mount(
+        document.getElementById('monitoring'),
+        { transport: window.monitoringTransport, document: document }
+      );
+    } else {
+      document.getElementById('monitoring').textContent = 'Подключите локальный monitoringTransport для демо.';
+    }
+  </script>
+</body>
+</html>

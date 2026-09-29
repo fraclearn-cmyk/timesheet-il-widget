@@ -21,6 +21,7 @@ BUILD_ENV = {
 RUNTIME = {
     "manifest.json", "script.js", "overlay.js", "activity-tracker.js", "timesheet/controller.js", "styles.css",
     "settings/settings.html", "settings/settings.js", "settings/settings.css",
+    "monitoring/dashboard.js", "monitoring/activity-modal.js", "monitoring/timeline.js", "monitoring/styles.css",
     "i18n/ru.json", "i18n/en.json",
     "images/icon.png", "images/logo.png", "images/logo_main.png",
     "images/logo_medium.png", "images/logo_min.png", "images/logo_small.png",
@@ -41,7 +42,8 @@ class WidgetPackageTests(unittest.TestCase):
     def entries(self):
         result = {}
         for name in RUNTIME:
-            source = ROOT / ("frontend" if name.startswith("settings/") else "widget") / name
+            source_root = "frontend" if name.startswith(("settings/", "monitoring/")) else "widget"
+            source = ROOT / source_root / name
             result[name] = source.read_bytes()
         return result
 
@@ -125,6 +127,7 @@ class WidgetPackageTests(unittest.TestCase):
             work = Path(temporary)
             shutil.copytree(ROOT / "widget", work / "widget")
             shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
+            shutil.copytree(ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
             locale = work / "widget" / "i18n" / "en.json"
@@ -157,6 +160,7 @@ class WidgetPackageTests(unittest.TestCase):
             work = Path(temporary)
             shutil.copytree(ROOT / "widget", work / "widget")
             shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
+            shutil.copytree(ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
             command = [
@@ -185,6 +189,7 @@ class WidgetPackageTests(unittest.TestCase):
             work = Path(temporary)
             shutil.copytree(ROOT / "widget", work / "widget")
             shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
+            shutil.copytree(ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
             (work / "frontend" / "settings" / "settings.css").unlink()
@@ -204,6 +209,7 @@ class WidgetPackageTests(unittest.TestCase):
             work = Path(temporary)
             shutil.copytree(ROOT / "widget", work / "widget")
             shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
+            shutil.copytree(ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
             (work / "widget" / "i18n" / "en.json").write_text("{ invalid", encoding="utf-8")
@@ -223,6 +229,7 @@ class WidgetPackageTests(unittest.TestCase):
             work = Path(temporary)
             shutil.copytree(ROOT / "widget", work / "widget")
             shutil.copytree(ROOT / "frontend" / "settings", work / "frontend" / "settings")
+            shutil.copytree(ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py")
             settings = work / "frontend" / "settings" / "settings.js"

@@ -272,31 +272,31 @@ git commit -m "feat: render safe activity timelines"
 - Consumes: Tasks 1–3 APIs/modules and existing `widget.$authorizedAjax`/`api_url`/`settings.path`.
 - Produces: `MonitoringDashboard.mount(root, {transport, schedule, now, random, document})`; a widget “Сотрудники” launcher; packaged `monitoring/dashboard.js`, `monitoring/activity-modal.js`, `monitoring/timeline.js`, `monitoring/styles.css`.
 
-- [ ] **Step 1: Write failing controller tests**
+- [x] **Step 1: Write failing controller tests**
 
 In jsdom, assert grouped employee rows, Russian status labels, server-side search/status/group parameters, hamburger visibility from `activity_detail_allowed`, exact seven-date detail request, manual refresh, selected employee preservation, modal in-place refresh, and clean destroy/remount.
 
 Use a fake scheduler to assert one in-flight status request, success returns to 30 seconds, failures follow bounded `30/60/120/240/300` seconds with ±10% injected jitter, page-hidden cancels the timer, visibility resumes immediately, and stale/aborted responses cannot overwrite newer state.
 
-- [ ] **Step 2: Run dashboard RED**
+- [x] **Step 2: Run dashboard RED**
 
 ```powershell
 node --test frontend/tests/monitoring-dashboard.test.js frontend/tests/widget-lifecycle.test.js
 ```
 
-- [ ] **Step 3: Implement dashboard and standalone harness**
+- [x] **Step 3: Implement dashboard and standalone harness**
 
 `dashboard.js` is UMD and receives a transport rather than reading browser identity. It renders group sections, totals, employees, status, shift/aggregate values, search/status/group controls, a manual “Обновить” button, last-success time, and simple Russian error text. Preserve `selectedUserId`, open modal and zoom across refresh. `dashboard.html` is a credential-free local/demo harness and does not hardcode an API URL.
 
-- [ ] **Step 4: Integrate with the widget lifecycle**
+- [x] **Step 4: Integrate with the widget lifecycle**
 
 Add AMD dependencies for the three monitoring modules. Mount one owned host/launcher in normal `everywhere` operation and call only `$authorizedAjax` against `apiUrl(widget) + '/team/...'`. Load monitoring CSS from the widget asset path. Do not mount in `settings`/`advanced_settings`; do not disturb native amoCRM nodes, settings controller, activity tracker, or overlay. `destroy()` removes timers, requests/listeners, modal, styles and owned DOM. Backend failure leaves amoCRM usable.
 
-- [ ] **Step 5: Write browser acceptance tests**
+- [x] **Step 5: Write browser acceptance tests**
 
 Mock authorized status/detail responses and verify admin grouping, manager self plus own group, employee self-only/no hamburger, filters, manual/poll refresh, preserved selection, seven-day modal, green bars, visible empty gaps, tooltip, zoom, Escape, fullscreen toggle, backend failure/backoff, and no unauthorized direct `fetch`/identity headers.
 
-- [ ] **Step 6: Extend and verify the exact widget package**
+- [x] **Step 6: Extend and verify the exact widget package**
 
 Add the four monitoring runtime files to the allowlists/build map, raising the exact archive count from 19 to 23. Keep `dashboard.html` outside the production ZIP. Update dependency validation and lifecycle/package tests.
 
@@ -310,7 +310,7 @@ powershell -ExecutionPolicy Bypass -File .\build_widget.ps1
 ..\.venv312\Scripts\python.exe validate_widget_zip.py widget.zip
 ```
 
-- [ ] **Step 7: Independent review and commit**
+- [x] **Step 7: Independent review and commit**
 
 ```powershell
 git add frontend/monitoring frontend/tests/monitoring-dashboard.test.js frontend/tests/monitoring.spec.js frontend/tests/widget-lifecycle.test.js frontend/tests/widget-working.spec.js widget/script.js widget/styles.css build_widget.ps1 validate_widget_zip.py test_widget_package.py package.json widget.zip

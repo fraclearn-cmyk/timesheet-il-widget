@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker) {
+define(['jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker', './monitoring/timeline', './monitoring/activity-modal', './monitoring/dashboard'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard) {
     function apiUrl(widget) {
         var settings = widget.get_settings();
         return settings && settings.api_url ? String(settings.api_url).replace(/\/+$/, '') : null;
@@ -36,6 +36,10 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
         this.workingStyle = null;
         this.workingStyleTimer = null;
         this.removeFocusRefresh = null;
+        this.monitoringController = null;
+        this.monitoringHost = null;
+        this.monitoringStyle = null;
+        this.monitoringStyleTimer = null;
         this.timesheetOverlay = Overlay.createOverlay(document);
 
         this.clearTimesheetStatus = function() { widget.timesheetOverlay.clear(); };
@@ -50,12 +54,86 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
             widget.settingsStyle = null;
         }
         function clearWorkingUi() { if (typeof widget.clearTimesheetStatus === 'function') widget.clearTimesheetStatus(); }
+        function stopMonitoring() {
+            clearTimeout(widget.monitoringStyleTimer);
+            widget.monitoringStyleTimer = null;
+            if (widget.monitoringController) widget.monitoringController.destroy();
+            widget.monitoringController = null;
+            if (widget.monitoringHost) widget.monitoringHost.remove();
+            widget.monitoringHost = null;
+            if (widget.monitoringStyle) {
+                widget.monitoringStyle.onload = widget.monitoringStyle.onerror = null;
+                widget.monitoringStyle.remove();
+            }
+            widget.monitoringStyle = null;
+        }
+        function monitoringRequest(options, signal) {
+            if (signal && signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+            var request = widget.$authorizedAjax(options);
+            if (signal && request && typeof request.abort === 'function') {
+                var abort = function() { request.abort(); };
+                signal.addEventListener('abort', abort, { once: true });
+            }
+            return toPromise(request);
+        }
+        function startMonitoring(baseUrl, settings) {
+            stopMonitoring();
+            if (!MonitoringDashboard || typeof MonitoringDashboard.mount !== 'function' || !settings.path) return;
+            var style = document.createElement('link');
+            style.rel = 'stylesheet';
+            style.href = String(settings.path).replace(/\/?$/, '/') + 'monitoring/styles.css?v=' + encodeURIComponent(settings.version || '');
+            widget.monitoringStyle = style;
+            function finishStyleLoad() {
+                clearTimeout(widget.monitoringStyleTimer);
+                widget.monitoringStyleTimer = null;
+                style.onload = style.onerror = null;
+            }
+            style.onload = finishStyleLoad;
+            style.onerror = finishStyleLoad;
+            widget.monitoringStyleTimer = setTimeout(finishStyleLoad, 10000);
+            document.head.appendChild(style);
+
+            var host = document.createElement('aside');
+            host.className = 'ts-monitoring-widget';
+            var launcher = document.createElement('button');
+            launcher.type = 'button';
+            launcher.className = 'ts-monitoring-widget__launcher';
+            launcher.textContent = 'Сотрудники';
+            launcher.setAttribute('aria-expanded', 'false');
+            var panel = document.createElement('div');
+            panel.className = 'ts-monitoring-widget__panel';
+            panel.hidden = true;
+            launcher.addEventListener('click', function() {
+                panel.hidden = !panel.hidden;
+                launcher.setAttribute('aria-expanded', String(!panel.hidden));
+            });
+            host.appendChild(launcher);
+            host.appendChild(panel);
+            document.body.appendChild(host);
+            widget.monitoringHost = host;
+            widget.monitoringController = MonitoringDashboard.mount(panel, {
+                document: document,
+                transport: {
+                    status: function(params, signal) {
+                        return monitoringRequest({ url: baseUrl + '/team/status', method: 'GET', dataType: 'json', timeout: 10000, data: params }, signal);
+                    },
+                    activity: function(userId, fromDate, toDate, signal) {
+                        return monitoringRequest({ url: baseUrl + '/team/' + encodeURIComponent(userId) + '/activity', method: 'GET', dataType: 'json', timeout: 10000,
+                            data: { from: fromDate, to: toDate } }, signal);
+                    }
+                },
+                schedule: function(fn, delay) { var timer = setTimeout(fn, delay); return function() { clearTimeout(timer); }; },
+                now: function() { return new Date(); },
+                random: Math.random
+            });
+        }
         function renderWorkingUi(snapshot) {
             if (typeof widget.renderTimesheetStatus === 'function') {
                 widget.renderTimesheetStatus(snapshot, function(action) { return widget.timesheetController.command(action); });
             }
         }
         function stopTimesheet() {
+            stopMonitoring();
             clearTimeout(widget.workingStyleTimer);
             widget.workingStyleTimer = null;
             if (widget.workingStyle) {
@@ -88,6 +166,7 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
                 clearTimeout(widget.workingStyleTimer);
                 widget.workingStyleTimer = null;
                 style.onload = style.onerror = null;
+                startMonitoring(baseUrl, settings);
                 startController(baseUrl);
             };
             document.head.appendChild(style);
