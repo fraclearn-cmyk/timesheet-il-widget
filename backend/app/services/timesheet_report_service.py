@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, timezone
 
-from sqlalchemy import and_
+from sqlalchemy import and_, tuple_
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import access_denied, not_found
@@ -59,6 +59,97 @@ def _elapsed(session: WorkSession, transitions: list[StatusTransition], now: dat
 class TimesheetReportService:
     def __init__(self, db: Session) -> None:
         self.db = db
+
+    def _stream_totals(
+        self,
+        account: int,
+        visible_ids: list[int],
+        date_from: date,
+        date_to: date,
+        now: datetime,
+        days: int,
+        employees: int,
+    ) -> DetailedReportTotals:
+        """Fold one projected session/transition stream without retaining period rows."""
+        rows = (
+            self.db.query(
+                User.id.label("user_id"),
+                WorkSession.business_date.label("day"),
+                WorkSession.id.label("session_id"),
+                WorkSession.start_time.label("started_at"),
+                WorkSession.end_time.label("ended_at"),
+                WorkSession.total_work_time.label("legacy_work"),
+                WorkSession.total_break_time.label("legacy_break"),
+                WorkSession.late_minutes.label("late_minutes"),
+                StatusTransition.id.label("transition_id"),
+                StatusTransition.timestamp.label("transition_at"),
+                StatusTransition.to_status.label("to_status"),
+            )
+            .join(User, and_(User.amocrm_account_id == WorkSession.amocrm_account_id,
+                             User.amocrm_user_id == WorkSession.amocrm_user_id))
+            .outerjoin(StatusTransition, StatusTransition.work_session_id == WorkSession.id)
+            .filter(WorkSession.amocrm_account_id == account,
+                    User.amocrm_account_id == account,
+                    WorkSession.business_date >= date_from,
+                    WorkSession.business_date <= date_to,
+                    User.id.in_(visible_ids))
+            .order_by(User.id, WorkSession.business_date, WorkSession.start_time,
+                      WorkSession.id, StatusTransition.timestamp, StatusTransition.id)
+            .yield_per(512)
+        )
+        work_total = break_total = late_total = 0
+        current_session_id = None
+        current_day = None
+        session_work = session_break = 0
+        has_transition = False
+
+        def finish_session() -> tuple[int, int]:
+            if not has_transition and ended_at is not None:
+                return max(0, int(legacy_work or 0)), max(0, int(legacy_break or 0))
+            elapsed = _seconds(cursor, finish)
+            return (
+                session_work + (elapsed if state == "working" else 0),
+                session_break + (elapsed if state == "break" else 0),
+            )
+
+        for row in rows:
+            if row.session_id != current_session_id:
+                if current_session_id is not None:
+                    work, breaks = finish_session()
+                    work_total += work
+                    break_total += breaks
+                current_session_id = row.session_id
+                day_key = (row.user_id, row.day)
+                if day_key != current_day:
+                    late_total += max(0, int(row.late_minutes or 0)) * 60
+                    current_day = day_key
+                ended_at = row.ended_at
+                legacy_work, legacy_break = row.legacy_work, row.legacy_break
+                start = _utc_naive(row.started_at)
+                finish = min(_utc_naive(ended_at), now) if ended_at else now
+                finish = max(start, finish)
+                cursor = start
+                state = "working"
+                session_work = session_break = 0
+                has_transition = False
+            if row.transition_id is not None:
+                has_transition = True
+                at = min(finish, max(cursor, _utc_naive(row.transition_at)))
+                elapsed = _seconds(cursor, at)
+                if state == "working":
+                    session_work += elapsed
+                elif state == "break":
+                    session_break += elapsed
+                cursor = at
+                state = row.to_status
+        if current_session_id is not None:
+            work, breaks = finish_session()
+            work_total += work
+            break_total += breaks
+        return DetailedReportTotals(
+            work_seconds=work_total, break_seconds=break_total,
+            late_seconds=late_total, days=days, employees=employees,
+        )
 
     def list_rows(
         self,
@@ -140,9 +231,9 @@ class TimesheetReportService:
                                             late_seconds=0, days=0, employees=0),
             )
 
-        # Full-filter totals and the page use the same canonical rows. Both
-        # collections are fetched in bulk, so employee count does not drive SQL count.
-        sessions = (
+        # Page rows use only the selected employee/day keys. Full-filter totals
+        # are folded separately from a projected stream below.
+        sessions_query = (
             self.db.query(WorkSession, User.id)
             .join(User, and_(User.amocrm_account_id == WorkSession.amocrm_account_id,
                              User.amocrm_user_id == WorkSession.amocrm_user_id))
@@ -150,9 +241,9 @@ class TimesheetReportService:
                     User.amocrm_account_id == account,
                     WorkSession.business_date >= date_from,
                     WorkSession.business_date <= date_to,
-                    User.id.in_(visible))
-            .all()
+                    tuple_(User.id, WorkSession.business_date).in_(page_keys))
         )
+        sessions = sessions_query.all() if page_keys else []
         by_key: dict[tuple[int, date], list[WorkSession]] = defaultdict(list)
         for session, internal_id in sessions:
             by_key[(internal_id, session.business_date)].append(session)
@@ -167,13 +258,13 @@ class TimesheetReportService:
                         User.amocrm_account_id == account,
                         WorkSession.business_date >= date_from,
                         WorkSession.business_date <= date_to,
-                        User.id.in_(visible))
+                        tuple_(User.id, WorkSession.business_date).in_(page_keys))
             )
             for transition in transition_query.all():
                 transitions_by_session[transition.work_session_id].append(transition)
 
         effective_now = _utc_naive(now or utc_now())
-        all_rows = {}
+        page_rows = {}
         for key, day_sessions in by_key.items():
             internal_id, day = key
             user, group = visible[internal_id]
@@ -185,7 +276,7 @@ class TimesheetReportService:
                 breaks += session_breaks
             first = day_sessions[0]
             latest = day_sessions[-1]
-            all_rows[key] = DetailedReportRow(
+            page_rows[key] = DetailedReportRow(
                 user_id=internal_id,
                 amocrm_user_id=user.amocrm_user_id,
                 employee_name=user.name,
@@ -200,12 +291,9 @@ class TimesheetReportService:
                 late_seconds=max(0, int(first.late_minutes or 0)) * 60,
                 status="on_break" if latest.current_status.value == "break" else latest.current_status.value,
             )
-        rows = [all_rows[key] for key in [(item.id, item.business_date) for item in ordered_keys] if key in page_keys]
-        totals = DetailedReportTotals(
-            work_seconds=sum(row.work_seconds for row in all_rows.values()),
-            break_seconds=sum(row.break_seconds for row in all_rows.values()),
-            late_seconds=sum(row.late_seconds for row in all_rows.values()),
-            days=total,
-            employees=len({key[0] for key in all_rows}),
+        rows = [page_rows[key] for key in [(item.id, item.business_date) for item in ordered_keys] if key in page_keys]
+        totals = self._stream_totals(
+            account, list(visible), date_from, date_to, effective_now,
+            total, len({item.id for item in ordered_keys}),
         )
         return DetailedReportResponse(items=rows, page=page, total=total, totals=totals)

@@ -273,7 +273,53 @@ def test_service_select_count_is_bounded_by_fixed_bulk_queries(db, employee_coun
         event.remove(db.get_bind(), "before_cursor_execute", record)
     assert result.total == employee_count
     assert len(result.items) == min(10, employee_count)
-    assert len(selects) == 4, "unexpected N+1 queries: " + repr(selects)
+    assert len(selects) == 5, "unexpected N+1 queries: " + repr(selects)
+
+
+def test_empty_page_streams_full_totals_without_loading_page_rows(db):
+    from app.services.timesheet_report_service import TimesheetReportService
+
+    for offset in range(12):
+        user_id = 100 + offset
+        external_id = 200 + offset
+        add_user(db, user_id=user_id, external_id=external_id, name=f"Person {offset:02d}")
+        add_member(db, member_id=user_id, user_id=user_id)
+        if offset == 0:
+            add_session(db, external_id=external_id, work=99999,
+                        transitions=[("working", datetime(2026, 9, 22, 6)),
+                                     ("finished", datetime(2026, 9, 22, 7))])
+        else:
+            add_session(db, external_id=external_id, work=60)
+    db.commit()
+    context = RequestContext(account_id=10, user=db.get(User, 1))
+    selects = []
+
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects.append(statement.lower())
+
+    event.listen(db.get_bind(), "before_cursor_execute", record)
+    try:
+        service = TimesheetReportService(db)
+        first = service.list_rows(context, date(2026, 9, 22), date(2026, 9, 22),
+                                  page=1, now=datetime(2026, 9, 23))
+        first_selects = list(selects)
+        selects.clear()
+        empty = service.list_rows(context, date(2026, 9, 22), date(2026, 9, 22),
+                                  page=99, now=datetime(2026, 9, 23))
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", record)
+    assert first.total == empty.total == 12
+    assert len(first.items) == 10
+    assert empty.items == []
+    assert first.totals == empty.totals
+    assert empty.totals.work_seconds == 4260
+    assert len(first_selects) == 5
+    assert sum("(users.id, work_sessions.business_date) in" in statement
+               for statement in first_selects) == 2
+    assert len(selects) == 3
+    assert sum("work_sessions" in statement for statement in selects) == 2
+    assert sum("status_transitions" in statement for statement in selects) == 1
 
 
 @pytest.fixture
@@ -337,4 +383,4 @@ def test_postgres_real_scoped_bulk_report(postgres_db):
     assert result.total == 1
     assert result.items[0].user_id == 2
     assert result.totals.work_seconds == 60
-    assert len(selects) == 4, "unexpected N+1 queries: " + repr(selects)
+    assert len(selects) == 5, "unexpected N+1 queries: " + repr(selects)
