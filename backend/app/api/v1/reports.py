@@ -3,7 +3,7 @@ Reports API
 API endpoints для отчётов
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import date, datetime
@@ -20,6 +20,7 @@ from app.api.v1.dependencies import (
 )
 from app.services.report_service import ReportService
 from app.services.timesheet_report_service import TimesheetReportService
+from app.services.timesheet_excel_service import TimesheetExcelService, safe_report_filename
 from app.models.report import ReportType, ReportFormat
 from app.schemas.report import (
     DetailedReportResponse,
@@ -31,9 +32,30 @@ from app.schemas.report import (
     ReportResponse,
     ReportListResponse,
     ReportGenerateRequest,
+    ReportExcelRequest,
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+@router.post("/export-excel")
+def export_timesheet_excel(
+    request: ReportExcelRequest,
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
+):
+    try:
+        rows = TimesheetReportService(db).export_rows(
+            context, request.date_from, request.date_to, request.group_id, request.user_id
+        )
+    except ReportPeriodError as error:
+        raise APIProblem(422, error.code, error.message) from error
+    return Response(
+        content=TimesheetExcelService().render(rows, request.columns),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{safe_report_filename(request.date_from, request.date_to)}"'},
+    )
 
 
 @router.get("/detailed", response_model=DetailedReportResponse)

@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import and_, tuple_
 from sqlalchemy.orm import Session
 
-from app.api.v1.dependencies import access_denied, not_found
+from app.api.v1.dependencies import APIProblem, access_denied, not_found
 from app.core.access_policy import AccessPolicy, RequestContext
 from app.core.report_period import validate_report_period
 from app.core.time_utils import utc_now
@@ -18,6 +18,8 @@ from app.models.user import User
 from app.models.widget_group import WidgetGroup
 from app.models.work_session import WorkSession
 from app.schemas.report import DetailedReportResponse, DetailedReportRow, DetailedReportTotals
+
+MAX_EXPORT_ROWS = 10000
 
 
 def _utc_naive(value: datetime) -> datetime:
@@ -59,6 +61,77 @@ def _elapsed(session: WorkSession, transitions: list[StatusTransition], now: dat
 class TimesheetReportService:
     def __init__(self, db: Session) -> None:
         self.db = db
+
+    def _visible_members(
+        self, context: RequestContext, group_id: int | None, user_id: int | None,
+    ) -> dict[int, tuple[User, WidgetGroup]]:
+        policy = AccessPolicy(self.db, context)
+        is_admin = policy.is_admin()
+        if not is_admin and not policy.is_manager():
+            raise access_denied()
+        account = context.account_id
+        group_scope = [WidgetGroup.account_id == account, WidgetGroup.is_active.is_(True)]
+        if not is_admin:
+            group_scope += [
+                WidgetGroup.manager_user_id == context.user.id,
+                WidgetGroup.manager_role_id == context.user.amocrm_role_id,
+            ]
+        if group_id is not None:
+            group = self.db.query(WidgetGroup.id).filter(WidgetGroup.id == group_id, *group_scope).first()
+            if group is None:
+                raise not_found()
+        membership = (
+            self.db.query(User, WidgetGroup)
+            .join(GroupMember, and_(GroupMember.account_id == User.amocrm_account_id,
+                                    GroupMember.user_id == User.id))
+            .join(WidgetGroup, and_(WidgetGroup.account_id == GroupMember.account_id,
+                                    WidgetGroup.id == GroupMember.group_id))
+            .filter(User.amocrm_account_id == account, User.is_active.is_(True),
+                    GroupMember.account_id == account, GroupMember.is_active.is_(True),
+                    GroupMember.track_time.is_(True), *group_scope)
+        )
+        if group_id is not None:
+            membership = membership.filter(WidgetGroup.id == group_id)
+        if user_id is not None:
+            membership = membership.filter(User.id == user_id)
+        visible = {user.id: (user, group) for user, group in membership.all()}
+        if user_id is not None and user_id not in visible:
+            raise not_found()
+        return visible
+
+    def _ordered_keys(self, account: int, visible_ids: list[int],
+                      date_from: date, date_to: date, limit: int | None = None):
+        keys_query = (
+            self.db.query(User.id, WorkSession.business_date, User.name)
+            .join(WorkSession, and_(WorkSession.amocrm_account_id == User.amocrm_account_id,
+                                    WorkSession.amocrm_user_id == User.amocrm_user_id))
+            .filter(User.amocrm_account_id == account,
+                    WorkSession.amocrm_account_id == account,
+                    WorkSession.business_date >= date_from,
+                    WorkSession.business_date <= date_to,
+                    User.id.in_(visible_ids))
+            .distinct()
+        )
+        if limit is not None:
+            keys_query = keys_query.limit(limit)
+        return sorted(keys_query.all(),
+                      key=lambda item: (-item.business_date.toordinal(), item.name.strip().casefold(), item.id))
+
+    def export_rows(
+        self, context: RequestContext, date_from: date, date_to: date,
+        group_id: int | None = None, user_id: int | None = None,
+        now: datetime | None = None,
+    ) -> list[DetailedReportRow]:
+        validate_report_period(date_from, date_to)
+        visible = self._visible_members(context, group_id, user_id)
+        if not visible:
+            return []
+        keys = self._ordered_keys(context.account_id, list(visible), date_from, date_to,
+                                  limit=MAX_EXPORT_ROWS + 1)
+        if len(keys) > MAX_EXPORT_ROWS:
+            raise APIProblem(413, "REPORT_EXPORT_TOO_LARGE", "Слишком много строк для выгрузки отчёта.")
+        return self._rows_for_keys(context.account_id, visible, date_from, date_to,
+                                   keys, _utc_naive(now or utc_now()))
 
     def _stream_totals(
         self,
@@ -162,42 +235,10 @@ class TimesheetReportService:
         now: datetime | None = None,
     ) -> DetailedReportResponse:
         validate_report_period(date_from, date_to)
-        policy = AccessPolicy(self.db, context)
-        is_admin = policy.is_admin()
-        if not is_admin and not policy.is_manager():
-            raise access_denied()
         if page < 1:
             raise ValueError("page must be positive")
-
         account = context.account_id
-        group_scope = [WidgetGroup.account_id == account, WidgetGroup.is_active.is_(True)]
-        if not is_admin:
-            group_scope += [
-                WidgetGroup.manager_user_id == context.user.id,
-                WidgetGroup.manager_role_id == context.user.amocrm_role_id,
-            ]
-        if group_id is not None:
-            group = self.db.query(WidgetGroup.id).filter(WidgetGroup.id == group_id, *group_scope).first()
-            if group is None:
-                raise not_found()
-
-        membership = (
-            self.db.query(User, WidgetGroup)
-            .join(GroupMember, and_(GroupMember.account_id == User.amocrm_account_id,
-                                    GroupMember.user_id == User.id))
-            .join(WidgetGroup, and_(WidgetGroup.account_id == GroupMember.account_id,
-                                    WidgetGroup.id == GroupMember.group_id))
-            .filter(User.amocrm_account_id == account, User.is_active.is_(True),
-                    GroupMember.account_id == account, GroupMember.is_active.is_(True),
-                    GroupMember.track_time.is_(True), *group_scope)
-        )
-        if group_id is not None:
-            membership = membership.filter(WidgetGroup.id == group_id)
-        if user_id is not None:
-            membership = membership.filter(User.id == user_id)
-        visible = {user.id: (user, group) for user, group in membership.all()}
-        if user_id is not None and user_id not in visible:
-            raise not_found()
+        visible = self._visible_members(context, group_id, user_id)
         if not visible:
             return DetailedReportResponse(
                 items=[], page=page, total=0,
@@ -205,25 +246,8 @@ class TimesheetReportService:
                                             late_seconds=0, days=0, employees=0),
             )
 
-        # Select distinct internal-user/day keys before applying the page window.
-        # Account predicates on both identities prevent external-ID collisions.
-        keys_query = (
-            self.db.query(User.id, WorkSession.business_date, User.name)
-            .join(WorkSession, and_(WorkSession.amocrm_account_id == User.amocrm_account_id,
-                                    WorkSession.amocrm_user_id == User.amocrm_user_id))
-            .filter(User.amocrm_account_id == account,
-                    WorkSession.amocrm_account_id == account,
-                    WorkSession.business_date >= date_from,
-                    WorkSession.business_date <= date_to,
-                    User.id.in_(visible))
-            .distinct()
-        )
-        ordered_keys = sorted(
-            keys_query.all(),
-            key=lambda item: (-item.business_date.toordinal(), item.name.strip().casefold(), item.id),
-        )
+        ordered_keys = self._ordered_keys(account, list(visible), date_from, date_to)
         total = len(ordered_keys)
-        page_keys = {(item.id, item.business_date) for item in ordered_keys[(page - 1) * 10:page * 10]}
         if not ordered_keys:
             return DetailedReportResponse(
                 items=[], page=page, total=0,
@@ -231,8 +255,23 @@ class TimesheetReportService:
                                             late_seconds=0, days=0, employees=0),
             )
 
-        # Page rows use only the selected employee/day keys. Full-filter totals
-        # are folded separately from a projected stream below.
+        effective_now = _utc_naive(now or utc_now())
+        rows = self._rows_for_keys(account, visible, date_from, date_to,
+                                   ordered_keys[(page - 1) * 10:page * 10],
+                                   effective_now)
+        totals = self._stream_totals(
+            account, list(visible), date_from, date_to, effective_now,
+            total, len({item.id for item in ordered_keys}),
+        )
+        return DetailedReportResponse(items=rows, page=page, total=total, totals=totals)
+
+    def _rows_for_keys(
+        self, account: int, visible: dict[int, tuple[User, WidgetGroup]],
+        date_from: date, date_to: date, ordered_keys, effective_now: datetime,
+    ) -> list[DetailedReportRow]:
+        if not ordered_keys:
+            return []
+        page_keys = {(item.id, item.business_date) for item in ordered_keys}
         sessions_query = (
             self.db.query(WorkSession, User.id)
             .join(User, and_(User.amocrm_account_id == WorkSession.amocrm_account_id,
@@ -263,7 +302,6 @@ class TimesheetReportService:
             for transition in transition_query.all():
                 transitions_by_session[transition.work_session_id].append(transition)
 
-        effective_now = _utc_naive(now or utc_now())
         page_rows = {}
         for key, day_sessions in by_key.items():
             internal_id, day = key
@@ -291,9 +329,4 @@ class TimesheetReportService:
                 late_seconds=max(0, int(first.late_minutes or 0)) * 60,
                 status="on_break" if latest.current_status.value == "break" else latest.current_status.value,
             )
-        rows = [page_rows[key] for key in [(item.id, item.business_date) for item in ordered_keys] if key in page_keys]
-        totals = self._stream_totals(
-            account, list(visible), date_from, date_to, effective_now,
-            total, len({item.id for item in ordered_keys}),
-        )
-        return DetailedReportResponse(items=rows, page=page, total=total, totals=totals)
+        return [page_rows[(item.id, item.business_date)] for item in ordered_keys]
