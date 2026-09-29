@@ -110,7 +110,9 @@ def test_rate_limited_widget_response_exposes_retry_after_only_to_allowed_origin
         )
         assert response.status_code == 429
         assert response.headers["Access-Control-Allow-Origin"] == allowed
-        assert "retry-after" in response.headers["Access-Control-Expose-Headers"].lower()
+        assert (
+            "retry-after" in response.headers["Access-Control-Expose-Headers"].lower()
+        )
         assert response.headers["Retry-After"] == "60"
         assert response.json() == {
             "error": {
@@ -1025,10 +1027,14 @@ def test_department_kpi_filters_members_by_group_not_legacy_department(scoped_cl
     assert response.json()["total_employees"] == 1
 
 
-def test_department_chart_filters_members_by_current_manager_group(scoped_client, monkeypatch):
+def test_department_chart_filters_members_by_current_manager_group(
+    scoped_client, monkeypatch
+):
     """A shared department must not pull a stale-group member into chart averages."""
     client, db = scoped_client
-    monkeypatch.setattr('app.services.kpi_service.utc_now', lambda: datetime(2026, 9, 22, 12))
+    monkeypatch.setattr(
+        "app.services.kpi_service.utc_now", lambda: datetime(2026, 9, 22, 12)
+    )
     yesterday = datetime(2026, 9, 21, 10)
     db.get(User, 2).department_id = 60
     db.get(WorkSession, 100).start_time = yesterday
@@ -1051,7 +1057,10 @@ def test_manager_collections_exclude_members_of_stale_assignment(scoped_client):
     headers = {"X-User-Id": "12", "X-Account-Id": "20"}
     response = client.get("/api/v1/team/status", headers=headers)
     assert response.status_code == 200
-    assert sorted(row["user_id"] for row in response.json()) == [10, 12]
+    assert sorted(row["amocrm_user_id"] for row in response.json()["employees"]) == [
+        10,
+        12,
+    ]
     report = client.get(
         "/api/v1/reports/daily?account_id=20&date=2026-09-18", headers=headers
     )

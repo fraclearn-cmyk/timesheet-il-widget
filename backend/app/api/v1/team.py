@@ -1,19 +1,21 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.services.team_service import TeamService
-from app.api.v1.dependencies import RequestContext, get_request_context
+from app.api.v1.dependencies import RequestContext, get_request_context, not_found
 from app.core.access_policy import AccessPolicy
 from app.schemas.team import (
     ActivityTimelineResponse,
     ActivityHistoryResponse,
     ForceFinishRequest,
     ForceFinishResponse,
+    TeamStatusResponse,
 )
+from app.core.time_utils import utc_now
 
 router = APIRouter()
 
@@ -49,38 +51,33 @@ class TeamStats(BaseModel):
     avg_break_time: float
 
 
-@router.get("/status", response_model=List[TeamMemberStatus])
+@router.get("/status", response_model=TeamStatusResponse)
 def get_team_status(
-    department_id: Optional[int] = Query(None),
-    status_filter: Optional[str] = Query(None),
-    online_only: bool = Query(False),
+    group_id: Optional[int] = Query(None),
+    status_filter: Optional[
+        Literal["working", "on_break", "finished", "not_started"]
+    ] = Query(None, alias="status"),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     context: RequestContext = Depends(get_request_context),
 ):
     """
-    Get current status of team members with RBAC filtering.
-    - Admin: all employees
-    - ROP: only employees from allowed departments
-    - Employee: forbidden
+    Get the current account-scoped monitoring snapshot.
+    - Admin: all active account users
+    - Manager: active members of currently managed groups plus self
+    - Employee: self only
     """
-    user = context.user
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
     service = TeamService(db)
-    return service.get_team_status_with_rbac(
-        accessible_dept_ids=None,
-        department_id=department_id,
-        status_filter=status_filter,
-        online_only=online_only,
-        search=search,
-        account_id=context.account_id,
-        visible_internal_user_ids=AccessPolicy(db, context).visible_internal_user_ids(),
-    )
+    try:
+        return service.get_monitoring_status(
+            context,
+            search=search,
+            status_filter=status_filter,
+            group_id=group_id,
+            now=utc_now(),
+        )
+    except LookupError as error:
+        raise not_found() from error
 
 
 @router.get("/stats", response_model=TeamStats)
