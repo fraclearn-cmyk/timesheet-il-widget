@@ -48,28 +48,28 @@
 - Produces: `TimesheetColumn`, `DetailedReportRow`, `DetailedReportTotals`, `DetailedReportResponse`, `ReportExcelRequest`.
 - Errors: `ReportPeriodError(code, message)` with `REPORT_DATE_RANGE_INVALID` or `REPORT_RANGE_LIMIT`.
 
-- [ ] **Step 1: Write failing period and schema tests**
+- [x] **Step 1: Write failing period and schema tests**
 
 Cover one day, seven days, exact one/three calendar months, leap/month-end clamping, reversed dates, one day beyond the limit, fixed positive page, duplicate/unknown/empty Excel columns, and an allowlist containing only employee, date, start, end, break, work, lateness and status fields.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 Set-Location backend
 & ..\.venv312\Scripts\python.exe -m pytest tests/unit/test_report_period.py -q --tb=short
 ```
 
-- [ ] **Step 3: Implement the validator and DTOs**
+- [x] **Step 3: Implement the validator and DTOs**
 
 Use calendar-month arithmetic without adding a dependency. DTOs must reject extra fields and must not define activity, CRM, call, URL or payload properties.
 
-- [ ] **Step 4: Run GREEN and contract regressions**
+- [x] **Step 4: Run GREEN and contract regressions**
 
 ```powershell
 & ..\.venv312\Scripts\python.exe -m pytest tests/unit/test_report_period.py tests/unit/test_models.py -q --tb=short
 ```
 
-- [ ] **Step 5: Independent review and commit**
+- [x] **Step 5: Independent review and commit**
 
 Review range boundaries, error text, column allowlist and DTO leakage. Commit as `feat: define strict timesheet report contracts`.
 
