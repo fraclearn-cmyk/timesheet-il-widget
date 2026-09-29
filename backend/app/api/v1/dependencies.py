@@ -440,7 +440,15 @@ async def enforce_route_scope(
     if account is not None:
         require_account(context, account)
     route_path = request.url.path
-    if (
+    if route_path == "/api/v1/reports/detailed":
+        policy = AccessPolicy(db, context)
+        if not policy.is_admin() and not policy.is_manager():
+            raise access_denied()
+        # This one strict endpoint documents user_id as an internal User.id.
+        # Legacy reports retain their external amoCRM reference semantics.
+        if "user_id" in values:
+            require_visible_internal_user(db, context, values["user_id"])
+    elif (
         "employee_id" in values
         or "/kpi/user/" in route_path
         or "/kpi/chart/user/" in route_path

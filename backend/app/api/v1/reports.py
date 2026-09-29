@@ -10,15 +10,19 @@ from datetime import date, datetime
 
 from app.core.database import get_db
 from app.core.access_policy import AccessPolicy
+from app.core.report_period import ReportPeriodError
 from app.api.v1.dependencies import (
+    APIProblem,
     RequestContext,
     get_request_context,
     not_found,
     require_self_internal_user,
 )
 from app.services.report_service import ReportService
+from app.services.timesheet_report_service import TimesheetReportService
 from app.models.report import ReportType, ReportFormat
 from app.schemas.report import (
+    DetailedReportResponse,
     DailySummary,
     WeeklySummary,
     MonthlySummary,
@@ -30,6 +34,24 @@ from app.schemas.report import (
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+@router.get("/detailed", response_model=DetailedReportResponse)
+def get_detailed_report(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    group_id: int | None = Query(default=None, gt=0),
+    user_id: int | None = Query(default=None, gt=0),
+    page: int = Query(default=1, ge=1),
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
+):
+    try:
+        return TimesheetReportService(db).list_rows(
+            context, date_from, date_to, group_id, user_id, page
+        )
+    except ReportPeriodError as error:
+        raise APIProblem(422, error.code, error.message) from error
 
 
 @router.get("/daily", response_model=DailySummary)
