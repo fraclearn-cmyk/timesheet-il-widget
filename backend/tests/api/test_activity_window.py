@@ -186,6 +186,19 @@ def test_dst_overnight_window_clips_splits_and_resolves_safe_evidence(
                 source="unconfirmed_input",
                 duration_source="observed",
             ),
+            ActivityInterval(
+                id=107,
+                account_id=10,
+                user_id=2,
+                work_session_id=500,
+                started_at=datetime(2026, 3, 29, 12),
+                ended_at=datetime(2026, 3, 29, 12),
+                kind="confirmed",
+                source="call",
+                duration_source="observed",
+                object_type="contact",
+                object_id=3004,
+            ),
             CrmEvent(
                 account_id=10,
                 external_id="crm-1002",
@@ -224,6 +237,20 @@ def test_dst_overnight_window_clips_splits_and_resolves_safe_evidence(
                 object_id=3003,
                 card_url="https://tenant.amocrm.ru/api/v4/contacts/3003",
                 payload={"recording": "private"},
+                is_complete=1,
+            ),
+            CallEvent(
+                account_id=10,
+                source_event_id="call-3004",
+                author_amocrm_user_id=102,
+                user_id=2,
+                direction="incoming",
+                occurred_at=datetime(2026, 3, 29, 12),
+                duration_seconds=0,
+                object_type="contact",
+                object_id=3004,
+                card_url="https://tenant.amocrm.ru/api/v4/contacts/3004",
+                payload={"recording": "private-zero"},
                 is_complete=1,
             ),
         ]
@@ -265,11 +292,14 @@ def test_dst_overnight_window_clips_splits_and_resolves_safe_evidence(
     assert by_id[102][0]["card_url"].endswith("/api/v4/leads/1002")
     assert by_id[105][0]["call_direction"] == "outgoing"
     assert by_id[105][0]["call_duration_seconds"] == 60
+    assert by_id[107][0]["call_direction"] == "incoming"
+    assert by_id[107][0]["call_duration_seconds"] == 0
+    assert by_id[107][0]["card_url"].endswith("/api/v4/contacts/3004")
     assert by_id[106][0]["kind"] == "unconfirmed"
     assert by_id[106][0]["message"] == "Нет подтверждённой активности"
     # Overlapping confirmed spans are merged: 30m clipped + 105m merged + 1m call.
     assert payload["totals"]["confirmed_seconds"] == 8_160
-    assert payload["totals"]["confirmed_events"] == 5
+    assert payload["totals"]["confirmed_events"] == 6
     serialized = response.text.lower()
     assert "payload" not in serialized
     assert "secret" not in serialized

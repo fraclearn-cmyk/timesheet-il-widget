@@ -331,7 +331,7 @@ git commit -m "feat: add team monitoring dashboard"
 - Consumes: Tasks 1–4 and the phase-6 acceptance criteria.
 - Produces: reviewed phase-6 implementation, reproducible verification evidence, updated user-checkable scenarios, and checked phase/tasks in `Plan.md`.
 
-- [ ] **Step 1: Run focused backend and PostgreSQL gates**
+- [x] **Step 1: Run focused backend and PostgreSQL gates**
 
 ```powershell
 cd backend
@@ -340,7 +340,7 @@ $env:TEST_POSTGRES_ADMIN_URL='postgresql://phase5_test@127.0.0.1:55435/postgres'
 ..\.venv312\Scripts\python.exe -m pytest tests/api/test_team_visibility.py tests/api/test_activity_window.py tests/integration/test_activity_ingestion.py -q --tb=short
 ```
 
-- [ ] **Step 2: Run the complete backend/frontend/browser/package gates**
+- [x] **Step 2: Run the complete backend/frontend/browser/package gates**
 
 ```powershell
 cd backend
@@ -357,19 +357,19 @@ cd backend
 
 Expected: all pass, exactly one `013 (head)`, and exactly 23 widget runtime files. Phase 6 adds no migration.
 
-- [ ] **Step 3: Run final security/capacity checks**
+- [x] **Step 3: Run final security/capacity checks**
 
 Run `git diff --check`, Black check for changed Python, `compileall`, and review that 40-account fixtures stay account-isolated, status SQL count is bounded, polling has one timer/request, raw payloads are absent, tooltip rendering has no unsafe HTML, and Excel/export files were not changed to include activity.
 
-- [ ] **Step 4: Independent whole-phase review**
+- [x] **Step 4: Independent whole-phase review**
 
 Review the complete phase diff against `Plan.md` lines 228–251, with explicit verdicts for all eight task checkboxes and the 40-account constraint. Fix every Critical/Important issue and rerun affected plus full gates.
 
-- [ ] **Step 5: Update documentation and Plan.md only from fresh evidence**
+- [x] **Step 5: Update documentation and Plan.md only from fresh evidence**
 
 Document the two endpoints and exact visibility/range/error contracts in `docs/API.md`. In `Plan.md`, check all eight phase-6 tasks, change the phase table row to `Локально выполнена; live gate отложен`, update “Таблица прогресса”, “Что сделано”, “Что можно проверить”, “Блокеры”, current-status paragraph, and change log with exact fresh counts/files. State the manual checks now available: role visibility, filters, activity button, seven-day limit, green/empty timeline, tooltip, zoom, Escape/fullscreen, manual refresh/backoff, and absence of activity in Excel.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add docs/API.md docs/development-workflow.md Plan.md

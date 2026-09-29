@@ -8,15 +8,33 @@ import zipfile
 from pathlib import Path
 
 
-RUNTIME_FILES = frozenset({
-    "manifest.json", "script.js", "overlay.js", "activity-tracker.js", "timesheet/controller.js", "styles.css",
-    "settings/settings.html", "settings/settings.js", "settings/settings.css",
-    "monitoring/dashboard.js", "monitoring/activity-modal.js", "monitoring/timeline.js", "monitoring/styles.css",
-    "i18n/ru.json", "i18n/en.json",
-    "images/icon.png", "images/logo.png", "images/logo_main.png",
-    "images/logo_medium.png", "images/logo_min.png", "images/logo_small.png",
-    "images/tour_en.png", "images/tour_ru.png",
-})
+RUNTIME_FILES = frozenset(
+    {
+        "manifest.json",
+        "script.js",
+        "overlay.js",
+        "activity-tracker.js",
+        "timesheet/controller.js",
+        "styles.css",
+        "settings/settings.html",
+        "settings/settings.js",
+        "settings/settings.css",
+        "monitoring/dashboard.js",
+        "monitoring/activity-modal.js",
+        "monitoring/timeline.js",
+        "monitoring/styles.css",
+        "i18n/ru.json",
+        "i18n/en.json",
+        "images/icon.png",
+        "images/logo.png",
+        "images/logo_main.png",
+        "images/logo_medium.png",
+        "images/logo_min.png",
+        "images/logo_small.png",
+        "images/tour_en.png",
+        "images/tour_ru.png",
+    }
+)
 TEXT_SUFFIXES = (".json", ".js", ".css", ".html")
 SECRET_PATTERNS = (
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
@@ -24,7 +42,9 @@ SECRET_PATTERNS = (
     re.compile(r"\b(?:sk-[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16})\b"),
     re.compile(r"\beyJ[A-Za-z0-9_-]{16,}\.eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"),
 )
-SENSITIVE_KEY = r"(?:amocrm[_-]?)?(?:client[_-]?secret|access[_-]?token|refresh[_-]?token)"
+SENSITIVE_KEY = (
+    r"(?:amocrm[_-]?)?(?:client[_-]?secret|access[_-]?token|refresh[_-]?token)"
+)
 SENSITIVE_ASSIGNMENT = re.compile(
     rf"(?<![\w$])(?:[\"']{SENSITIVE_KEY}[\"']|{SENSITIVE_KEY})\s*[:=]\s*([\"'`])",
     re.IGNORECASE,
@@ -62,7 +82,9 @@ class WidgetValidator:
                 names = [member.filename for member in members]
                 missing = RUNTIME_FILES - set(names)
                 extra = set(names) - RUNTIME_FILES
-                self.errors.extend(f"Missing runtime file: {name}" for name in sorted(missing))
+                self.errors.extend(
+                    f"Missing runtime file: {name}" for name in sorted(missing)
+                )
                 self.errors.extend(f"Unexpected file: {name}" for name in sorted(extra))
                 if len(names) != len(set(names)):
                     self.errors.append("Duplicate ZIP member name")
@@ -92,7 +114,9 @@ class WidgetValidator:
                             json.loads(content)
                         except json.JSONDecodeError:
                             self.errors.append(f"Invalid JSON in {name}")
-                    if any(pattern.search(content) for pattern in SECRET_PATTERNS) or has_named_secret_literal(content):
+                    if any(
+                        pattern.search(content) for pattern in SECRET_PATTERNS
+                    ) or has_named_secret_literal(content):
                         self.errors.append(f"Credential-like value in {name}")
 
                 if "manifest.json" in text:
@@ -100,23 +124,40 @@ class WidgetValidator:
                         manifest = json.loads(text["manifest.json"])
                     except json.JSONDecodeError:
                         manifest = {}
-                    if manifest.get("locations") != ["settings", "advanced_settings", "everywhere"]:
-                        self.errors.append("manifest.json locations must be exactly settings, advanced_settings, everywhere")
-                    if not isinstance(manifest.get("advanced"), dict) or not manifest["advanced"].get("title"):
+                    if manifest.get("locations") != [
+                        "settings",
+                        "advanced_settings",
+                        "everywhere",
+                    ]:
+                        self.errors.append(
+                            "manifest.json locations must be exactly settings, advanced_settings, everywhere"
+                        )
+                    if not isinstance(manifest.get("advanced"), dict) or not manifest[
+                        "advanced"
+                    ].get("title"):
                         self.errors.append("manifest.json advanced.title is required")
-                if "script.js" in text and not re.search(r"advancedSettings\s*:\s*function", text["script.js"]):
-                    self.errors.append("script.js must define advancedSettings callback")
+                if "script.js" in text and not re.search(
+                    r"advancedSettings\s*:\s*function", text["script.js"]
+                ):
+                    self.errors.append(
+                        "script.js must define advancedSettings callback"
+                    )
                 if "script.js" in text:
-                    for dependency, member in (("./settings/settings", "settings/settings.js"),
-                                               ("./timesheet/controller", "timesheet/controller.js"),
-                                               ("./activity-tracker", "activity-tracker.js"),
-                                               ("./overlay", "overlay.js"),
-                                               ("./monitoring/timeline", "monitoring/timeline.js"),
-                                               ("./monitoring/activity-modal", "monitoring/activity-modal.js"),
-                                               ("./monitoring/dashboard", "monitoring/dashboard.js")):
+                    for dependency, member in (
+                        ("./settings/settings", "settings/settings.js"),
+                        ("./timesheet/controller", "timesheet/controller.js"),
+                        ("./activity-tracker", "activity-tracker.js"),
+                        ("./overlay", "overlay.js"),
+                        ("./monitoring/timeline", "monitoring/timeline.js"),
+                        ("./monitoring/activity-modal", "monitoring/activity-modal.js"),
+                        ("./monitoring/dashboard", "monitoring/dashboard.js"),
+                    ):
                         if dependency in text["script.js"] and member not in names:
                             self.errors.append(f"Missing AMD dependency: {member}")
-                if "settings/settings.js" in text and "SettingsController" not in text["settings/settings.js"]:
+                if (
+                    "settings/settings.js" in text
+                    and "SettingsController" not in text["settings/settings.js"]
+                ):
                     self.errors.append("settings/settings.js is not the runtime editor")
         except (OSError, zipfile.BadZipFile, RuntimeError, ValueError) as exc:
             self.errors.append(f"Cannot inspect ZIP: {type(exc).__name__}")

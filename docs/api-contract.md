@@ -113,25 +113,13 @@ reports и export) обязан выполнять эту server-side прове
 
 ## Команда и timeline
 
-`GET /api/v1/team/status` возвращает только сотрудников, видимых по policy роли.
+Актуальные строгие контракты `GET /api/v1/team/status` и
+`GET /api/v1/team/{user_id}/activity?from=&to=` описаны в [API.md](API.md).
+`user_id` — внутренний account-scoped ID из status response, диапазон detail — от одной
+до семи включительных локальных календарных дат. Роль и аккаунт берутся только из
+проверенного server-side context.
 
-```json
-{
-  "items": [
-    {
-      "amocrm_user_id": 456,
-      "name": "Иван Иванов",
-      "group_id": 10,
-      "status": "working",
-      "last_confirmed_activity_at": "2026-09-11T08:24:00Z"
-    }
-  ],
-  "page": 1,
-  "total": 1
-}
-```
-
-`GET /api/v1/team/{amocrm_user_id}/activity?date_from=&date_to=` возвращает интервалы:
+Интервал detail имеет вид:
 
 ```json
 {

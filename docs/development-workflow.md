@@ -25,6 +25,22 @@
 - `docs/api-contract.md` и `docs/amocrm-integration-limits.md`.
 
 Реальные проверки amoCRM, отложенные до локальной реализации всех фаз, остаются отдельным незакрытым пунктом приёмки.
+
+Для фазы 6 источником пошаговой реализации служит
+`docs/superpowers/plans/2026-09-28-phase6-monitoring-activity.md`, а публичные контракты
+мониторинга описаны в `docs/API.md`.
+
+## Повторяемый gate мониторинга
+
+Перед завершением изменений monitoring dashboard нужно проверить четыре уровня:
+
+1. Backend status/detail на SQLite и отдельной PostgreSQL, включая роли, 1–7 локальных дат, DST, ночные смены, повторяющиеся внешние ID и постоянное число SQL-запросов.
+2. Все Node-тесты `frontend/tests/*.test.js`, включая 40 изолированных dashboard-контекстов, один активный status-запрос и один polling timer на аккаунт.
+3. Все browser-тесты `frontend/tests/*.spec.js`: роли, фильтры, семь дней, зелёные интервалы и пустоты, tooltip, zoom, Escape/fullscreen, polling/backoff и сохранение выбора.
+4. `test_widget_package.py`, `build_widget.ps1` и `validate_widget_zip.py widget.zip`. Архив фазы 6 должен содержать ровно 23 runtime-файла; demo `monitoring/dashboard.html`, исходники, секреты и source maps в него не входят.
+
+Фаза получает статус «Локально выполнена» только после свежего полного прогона и независимого review. Проверка в настоящем аккаунте amoCRM остаётся отдельным live gate.
+
 ## Проверка среды при возобновлении 2026-09-27
 
 - Восстановлен путь к Python в локальном `.venv312/pyvenv.cfg`; исходная настройка сохранена рядом в `.before-resume-20260927.backup`.
