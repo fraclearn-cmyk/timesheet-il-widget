@@ -136,26 +136,26 @@ Review role drift, pagination-before-join, transition math, tenant isolation, qu
 - Produces: `TimesheetExcelService.render(rows, columns) -> bytes` and `safe_report_filename(date_from, date_to) -> str`.
 - Produces: `POST /api/v1/reports/export-excel` with XLSX content type and `Content-Disposition`.
 
-- [ ] **Step 1: Write failing workbook and access tests**
+- [x] **Step 1: Write failing workbook and access tests**
 
 Cover one day, seven days, one month, exact three months and over-limit rejection; selected column order; local times for different group timezones; multiple same-day sessions; manager foreign-group denial; safe fixed filename; formula-like employee text; and absence of activity, CRM, calls, URLs, raw payloads and hyperlinks.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 Set-Location backend
 & ..\.venv312\Scripts\python.exe -m pytest tests/api/test_excel_export.py -q --tb=short
 ```
 
-- [ ] **Step 3: Implement allowlisted workbook rendering**
+- [x] **Step 3: Implement allowlisted workbook rendering**
 
 Render one `Табель` worksheet from canonical rows, format durations as `[h]:mm`, serialize timestamps in each row’s timezone, freeze the heading row, enable filters, and prefix formula-like text with an apostrophe. Filename is `timesheet_YYYY-MM-DD_YYYY-MM-DD.xlsx` and contains no user input.
 
-- [ ] **Step 4: Implement the export route**
+- [x] **Step 4: Implement the export route**
 
 Apply the same scope, filter and period rules as preview. Build the file in memory from DTOs only; never pass ORM activity objects to the exporter.
 
-- [ ] **Step 5: Run focused and PostgreSQL GREEN**
+- [x] **Step 5: Run focused and PostgreSQL GREEN**
 
 ```powershell
 & ..\.venv312\Scripts\python.exe -m pytest tests/api/test_reports.py tests/api/test_excel_export.py -q --tb=short
@@ -163,7 +163,7 @@ $env:TEST_POSTGRES_ADMIN_URL='postgresql://phase5_test@127.0.0.1:55435/postgres'
 & ..\.venv312\Scripts\python.exe -m pytest tests/api/test_excel_export.py -q --tb=short
 ```
 
-- [ ] **Step 6: Independent review and commit**
+- [x] **Step 6: Independent review and commit**
 
 Review spreadsheet injection, content headers, permissions, memory bounds, timezone conversion and excluded data. Commit as `feat: export safe timesheet workbooks`.
 
