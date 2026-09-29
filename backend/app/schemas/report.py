@@ -2,10 +2,75 @@
 Report Schemas
 Pydantic схемы для отчётов
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime, date
 from typing import Optional, Dict, Any, List
 from enum import Enum
+from typing import Literal
+
+
+class _StrictReportModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class TimesheetColumn(str, Enum):
+    EMPLOYEE = "employee"
+    DATE = "date"
+    START = "start"
+    END = "end"
+    BREAK = "break"
+    WORK = "work"
+    LATENESS = "lateness"
+    STATUS = "status"
+
+
+class DetailedReportRow(_StrictReportModel):
+    user_id: int = Field(gt=0)
+    amocrm_user_id: int = Field(gt=0)
+    employee_name: str = Field(min_length=1)
+    group_id: int = Field(gt=0)
+    group_name: str = Field(min_length=1)
+    group_timezone: str = Field(min_length=1)
+    date: date
+    started_at: datetime | None
+    ended_at: datetime | None
+    break_seconds: int = Field(ge=0)
+    work_seconds: int = Field(ge=0)
+    late_seconds: int = Field(ge=0)
+    status: Literal["working", "on_break", "finished"]
+
+
+class DetailedReportTotals(_StrictReportModel):
+    work_seconds: int = Field(ge=0)
+    break_seconds: int = Field(ge=0)
+    late_seconds: int = Field(ge=0)
+    days: int = Field(ge=0)
+    employees: int = Field(ge=0)
+
+
+class DetailedReportResponse(_StrictReportModel):
+    items: list[DetailedReportRow]
+    page: int = Field(ge=1)
+    page_size: Literal[10] = 10
+    total: int = Field(ge=0)
+    totals: DetailedReportTotals
+
+
+class ReportExcelRequest(_StrictReportModel):
+    date_from: date
+    date_to: date
+    group_id: int | None = Field(default=None, gt=0)
+    user_id: int | None = Field(default=None, gt=0)
+    columns: list[TimesheetColumn] = Field(
+        default_factory=lambda: list(TimesheetColumn), min_length=1
+    )
+
+    @field_validator("columns")
+    @classmethod
+    def unique_columns(cls, columns: list[TimesheetColumn]) -> list[TimesheetColumn]:
+        if len(columns) != len(set(columns)):
+            raise ValueError("Колонки отчёта не должны повторяться.")
+        return columns
 
 
 class ReportType(str, Enum):
