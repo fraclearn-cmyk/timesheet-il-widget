@@ -87,30 +87,30 @@ Review range boundaries, error text, column allowlist and DTO leakage. Commit as
 - Produces: `TimesheetReportService.list_rows(context, date_from, date_to, group_id, user_id, page, now) -> DetailedReportResponse`.
 - Produces: `GET /api/v1/reports/detailed?date_from=&date_to=&group_id=&user_id=&page=`.
 
-- [ ] **Step 1: Write failing scope and aggregation tests**
+- [x] **Step 1: Write failing scope and aggregation tests**
 
 Assert admin/manager visibility, employee 403, uniform 404 for foreign/inactive group or user, active tracked membership, empty-filter scoping, several same-day sessions merged into one row, first-session lateness, current/final status, overnight/DST dates, stable ten-row pages and page bounds.
 
-- [ ] **Step 2: Add failure-mode and capacity tests**
+- [x] **Step 2: Add failure-mode and capacity tests**
 
 Assert reversed/over-limit Russian errors, no activity-shaped fields, duplicate external IDs in 40 foreign accounts, and the same bounded SELECT count for one and at least 40 visible employees.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 ```powershell
 Set-Location backend
 & ..\.venv312\Scripts\python.exe -m pytest tests/api/test_reports.py -q --tb=short
 ```
 
-- [ ] **Step 4: Implement account-scoped row selection**
+- [x] **Step 4: Implement account-scoped row selection**
 
 Select distinct `(internal_user_id, business_date)` keys before pagination, then bulk-load the page’s sessions, status transitions, current group and users. Reconstruct working/break seconds from transitions at one injected `now`; use legacy nonnegative counters only when a historical session has no transitions. Do not import activity models.
 
-- [ ] **Step 5: Register the strict route before `/{report_id}`**
+- [x] **Step 5: Register the strict route before `/{report_id}`**
 
 Translate `ReportPeriodError` to the stable error envelope, and use existing `not_found()`/access-denied helpers without exposing whether a foreign filter exists.
 
-- [ ] **Step 6: Run focused and PostgreSQL GREEN**
+- [x] **Step 6: Run focused and PostgreSQL GREEN**
 
 ```powershell
 & ..\.venv312\Scripts\python.exe -m pytest tests/unit/test_report_period.py tests/api/test_reports.py tests/integration/test_authorized_routes.py -q --tb=short
@@ -118,7 +118,7 @@ $env:TEST_POSTGRES_ADMIN_URL='postgresql://phase5_test@127.0.0.1:55435/postgres'
 & ..\.venv312\Scripts\python.exe -m pytest tests/api/test_reports.py -q --tb=short
 ```
 
-- [ ] **Step 7: Independent review and commit**
+- [x] **Step 7: Independent review and commit**
 
 Review role drift, pagination-before-join, transition math, tenant isolation, query bounds and response fields. Commit as `feat: add scoped detailed timesheet reports`.
 
