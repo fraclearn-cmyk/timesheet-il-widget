@@ -154,25 +154,25 @@ git commit -m "feat: add account-scoped team monitoring status"
 - Consumes: Task 1 internal user references and viewer scope; `ActivityInterval`, `CrmEvent`, `CallEvent`, group timezone/schedule.
 - Produces: `AccessPolicy.can_view_activity_detail(target) -> bool`; `local_date_range_utc_bounds(from_date, to_date, zone_name)`; `TeamService.get_activity_window(context, target_user_id, from_date, to_date) -> ActivityWindowResponse`; `GET /api/v1/team/{user_id}/activity?from=YYYY-MM-DD&to=YYYY-MM-DD`.
 
-- [ ] **Step 1: Write failing access/range tests**
+- [x] **Step 1: Write failing access/range tests**
 
 Assert admin succeeds, manager succeeds only for an active member of an active group managed with the current role snapshot, employee receives the same 404 for self/other, manager self outside the managed membership receives 404, and foreign/inactive/missing targets are indistinguishable. Assert missing/invalid dates fail validation, reversed dates return `400 ACTIVITY_RANGE_INVALID`, and eight inclusive dates return `400 ACTIVITY_RANGE_TOO_LARGE` with “Можно выбрать не больше 7 календарных дней.”
 
-- [ ] **Step 2: Write failing timezone and response tests**
+- [x] **Step 2: Write failing timezone and response tests**
 
 Cover a seven-date range through a DST change and an overnight schedule. Seed confirmed point, calculated CRM, measured call, unconfirmed presence, overlap, and boundary-crossing intervals. Assert UTC clipping, local day assignment, no raw payload, correct aggregates, stable chronological order, point duration zero, call metadata, and `card_url` only when bounded normalized evidence matches.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 ```powershell
 ..\.venv312\Scripts\python.exe -m pytest tests/api/test_activity_window.py tests/unit/test_timezone_schedule.py -q --tb=short
 ```
 
-- [ ] **Step 4: Add strict detail access and local-date helpers**
+- [x] **Step 4: Add strict detail access and local-date helpers**
 
 `can_view_activity_detail()` must not inherit `can_view_user()` self access. It allows verified admin, or a verified manager whose current user/role pair owns an active group containing the active target membership. Add a helper that converts inclusive local dates to a half-open UTC range `[from 00:00 local, day-after-to 00:00 local)` without assuming 24-hour days.
 
-- [ ] **Step 5: Implement the bounded detail service**
+- [x] **Step 5: Implement the bounded detail service**
 
 Load the target/group once, validate access and inclusive range before activity queries, then fetch all overlapping intervals with:
 
@@ -185,17 +185,17 @@ ActivityInterval.ended_at >= utc_start
 
 Clamp presentation bounds, preserve stored `duration_source`, and split presentation across local dates only when an interval crosses a local midnight. Resolve optional `card_url`, call direction and measured duration using at most two bulk evidence queries; never read/expose raw envelopes. The response contains target/group metadata, requested dates/timezone, totals, and `days[]` with shift bounds plus ordered interval DTOs.
 
-- [ ] **Step 6: Add the route and stable errors**
+- [x] **Step 6: Add the route and stable errors**
 
 Use internal `user_id` from Task 1. Declare `from_date: date = Query(alias="from")` and `to_date: date = Query(alias="to")`. Emit `404 NOT_FOUND` for all access/identity failures and stable Russian `400` errors for range failures.
 
-- [ ] **Step 7: Run GREEN plus phase-5 interval regressions**
+- [x] **Step 7: Run GREEN plus phase-5 interval regressions**
 
 ```powershell
 ..\.venv312\Scripts\python.exe -m pytest tests/api/test_activity_window.py tests/unit/test_timezone_schedule.py tests/unit/test_activity_intervals.py tests/integration/test_activity_ingestion.py -q --tb=short
 ```
 
-- [ ] **Step 8: Independent review and commit**
+- [x] **Step 8: Independent review and commit**
 
 ```powershell
 git add backend/app/core/access_policy.py backend/app/core/business_time.py backend/app/schemas/team.py backend/app/services/team_service.py backend/app/api/v1/team.py backend/tests/api/test_activity_window.py backend/tests/unit/test_timezone_schedule.py

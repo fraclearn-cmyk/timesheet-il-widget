@@ -55,6 +55,34 @@ class AccessPolicy:
             is not None
         )
 
+    def can_view_activity_detail(self, target: User) -> bool:
+        """Apply the stricter activity-detail policy without implicit self access."""
+        if target.amocrm_account_id != self.context.account_id or not target.is_active:
+            return False
+        if self.is_admin():
+            return True
+        if not self.is_manager():
+            return False
+        return (
+            self._db.query(GroupMember.id)
+            .join(
+                WidgetGroup,
+                (WidgetGroup.id == GroupMember.group_id)
+                & (WidgetGroup.account_id == GroupMember.account_id),
+            )
+            .filter(
+                GroupMember.account_id == self.context.account_id,
+                GroupMember.user_id == target.id,
+                GroupMember.is_active.is_(True),
+                WidgetGroup.account_id == self.context.account_id,
+                WidgetGroup.manager_user_id == self.context.user.id,
+                WidgetGroup.manager_role_id == self.context.user.amocrm_role_id,
+                WidgetGroup.is_active.is_(True),
+            )
+            .first()
+            is not None
+        )
+
     def is_admin(self) -> bool:
         rights = self.context.user.amocrm_rights
         return (

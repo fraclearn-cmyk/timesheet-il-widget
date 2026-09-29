@@ -324,9 +324,7 @@ async def get_request_context(
     if connection is None:
         raise RequestContextUnauthorized()
     try:
-        account, current_users = await _load_live_amocrm_state(
-            connection, access_token
-        )
+        account, current_users = await _load_live_amocrm_state(connection, access_token)
     except (AmoCRMClientError, httpx.HTTPError):
         raise RequestContextUnauthorized()
     account_id, user_id = account.get("id"), account.get("current_user_id")
@@ -350,9 +348,7 @@ async def get_request_context(
     return _context_from_live_users(db, account_id, user, current_users)
 
 
-async def _get_widget_request_context(
-    widget_token: str, db: Session
-) -> RequestContext:
+async def _get_widget_request_context(widget_token: str, db: Session) -> RequestContext:
     try:
         claims = decode_widget_token(
             widget_token,
@@ -384,14 +380,10 @@ async def _get_widget_request_context(
         access_token = OAuthTokenCipher.from_secret(settings.SECRET_KEY).decrypt(
             connection.encrypted_access_token
         )
-        account, current_users = await _load_live_amocrm_state(
-            connection, access_token
-        )
+        account, current_users = await _load_live_amocrm_state(connection, access_token)
         if account.get("id") != claims.account_id:
             raise WidgetTokenInvalid("widget token is invalid")
-        return _context_from_live_users(
-            db, claims.account_id, user, current_users
-        )
+        return _context_from_live_users(db, claims.account_id, user, current_users)
     except (
         WidgetTokenInvalid,
         RequestContextUnauthorized,
@@ -402,9 +394,7 @@ async def _get_widget_request_context(
         raise widget_token_invalid() from error
 
 
-async def _load_live_amocrm_state(
-    connection: OAuthConnection, access_token: str
-):
+async def _load_live_amocrm_state(connection: OAuthConnection, access_token: str):
     async with httpx.AsyncClient() as http:
         client = AmoCRMClient(http)
         account = await client.get_account(connection.account_url, access_token)
@@ -454,6 +444,7 @@ async def enforce_route_scope(
         "employee_id" in values
         or "/kpi/user/" in route_path
         or "/kpi/chart/user/" in route_path
+        or (route_path.startswith("/api/v1/team/") and route_path.endswith("/activity"))
     ):
         for name in ("employee_id", "target_user_id"):
             if name in values:

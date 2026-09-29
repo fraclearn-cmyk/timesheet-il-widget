@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -10,16 +10,37 @@ from app.models.group_member import GroupMember
 from app.models.status_transition import StatusTransition
 from app.models.user import User
 from app.models.widget_group import WidgetGroup
+from app.models.crm_event import CrmEvent
+from app.models.call_event import CallEvent
 from app.core.access_policy import AccessPolicy, RequestContext
-from app.core.business_time import business_date, shift_start_utc
+from app.core.business_time import (
+    business_date,
+    local_date_range_utc_bounds,
+    local_period_utc_bounds,
+    local_shift_utc_bounds,
+    shift_start_utc,
+)
 from app.core.time_utils import utc_now
 from app.schemas.team import (
+    ActivityWindowDay,
+    ActivityWindowGroup,
+    ActivityWindowInterval,
+    ActivityWindowResponse,
+    ActivityWindowTarget,
+    ActivityWindowTotals,
     TeamGroupSummary,
     TeamMemberSummary,
     TeamStatusResponse,
     TeamStatusTotals,
     TeamViewer,
 )
+
+
+class ActivityRangeError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
 
 
 class TeamService:
@@ -95,6 +116,271 @@ class TeamService:
         segment_end = session.end_time or now
         add_span(cursor, segment_end, state)
         return totals[WorkStatus.WORKING.value], totals[WorkStatus.BREAK.value]
+
+    @staticmethod
+    def _merged_seconds(ranges: list[tuple[datetime, datetime]]) -> int:
+        merged: list[list[datetime]] = []
+        for start, end in sorted(ranges):
+            if end <= start:
+                continue
+            if not merged or start > merged[-1][1]:
+                merged.append([start, end])
+            else:
+                merged[-1][1] = max(merged[-1][1], end)
+        return sum(int((end - start).total_seconds()) for start, end in merged)
+
+    def get_activity_window(
+        self,
+        context: RequestContext,
+        target_user_id: int,
+        from_date: date,
+        to_date: date,
+    ) -> ActivityWindowResponse:
+        """Return one bounded, account-scoped activity window in group-local dates."""
+        row = (
+            self.db.query(User, GroupMember, WidgetGroup)
+            .outerjoin(
+                GroupMember,
+                (GroupMember.account_id == User.amocrm_account_id)
+                & (GroupMember.user_id == User.id)
+                & (GroupMember.is_active.is_(True)),
+            )
+            .outerjoin(
+                WidgetGroup,
+                (WidgetGroup.account_id == GroupMember.account_id)
+                & (WidgetGroup.id == GroupMember.group_id)
+                & (WidgetGroup.is_active.is_(True)),
+            )
+            .filter(
+                User.id == target_user_id,
+                User.amocrm_account_id == context.account_id,
+                User.is_active.is_(True),
+            )
+            .one_or_none()
+        )
+        if row is None:
+            raise LookupError("target not found")
+        target, membership, group = row
+        if not AccessPolicy(self.db, context).can_view_activity_detail(target):
+            raise LookupError("target not found")
+        if to_date < from_date:
+            raise ActivityRangeError(
+                "ACTIVITY_RANGE_INVALID",
+                "Дата окончания должна быть не раньше даты начала.",
+            )
+        day_count = (to_date - from_date).days + 1
+        if day_count > 7:
+            raise ActivityRangeError(
+                "ACTIVITY_RANGE_TOO_LARGE",
+                "Можно выбрать не больше 7 календарных дней.",
+            )
+
+        zone_name = group.timezone if group is not None else "UTC"
+        utc_start, utc_end = local_date_range_utc_bounds(from_date, to_date, zone_name)
+        intervals = (
+            self.db.query(ActivityInterval)
+            .filter(
+                ActivityInterval.account_id == context.account_id,
+                ActivityInterval.user_id == target.id,
+                ActivityInterval.started_at < utc_end,
+                ActivityInterval.ended_at >= utc_start,
+            )
+            .order_by(
+                ActivityInterval.started_at,
+                ActivityInterval.ended_at,
+                ActivityInterval.id,
+            )
+            .all()
+        )
+        # Non-point intervals that merely touch the lower boundary do not
+        # overlap the half-open request window. Points at the lower bound do.
+        intervals = [
+            item
+            for item in intervals
+            if item.started_at == item.ended_at or item.ended_at > utc_start
+        ]
+
+        crm_rows = []
+        call_rows = []
+        if intervals:
+            if any(item.source == "crm_event" for item in intervals):
+                crm_rows = (
+                    self.db.query(
+                        CrmEvent.id,
+                        CrmEvent.event_type,
+                        CrmEvent.object_type,
+                        CrmEvent.object_id,
+                        CrmEvent.occurred_at,
+                        CrmEvent.card_url,
+                    )
+                    .filter(
+                        CrmEvent.account_id == context.account_id,
+                        CrmEvent.user_id == target.id,
+                        CrmEvent.is_complete == 1,
+                        CrmEvent.occurred_at >= utc_start,
+                        CrmEvent.occurred_at < utc_end,
+                    )
+                    .all()
+                )
+            if any(item.source == "call" for item in intervals):
+                call_rows = (
+                    self.db.query(
+                        CallEvent.id,
+                        CallEvent.object_type,
+                        CallEvent.object_id,
+                        CallEvent.occurred_at,
+                        CallEvent.card_url,
+                        CallEvent.direction,
+                        CallEvent.duration_seconds,
+                    )
+                    .filter(
+                        CallEvent.account_id == context.account_id,
+                        CallEvent.user_id == target.id,
+                        CallEvent.is_complete == 1,
+                        CallEvent.occurred_at >= utc_start,
+                        CallEvent.occurred_at < utc_end,
+                    )
+                    .all()
+                )
+
+        def crm_evidence(interval):
+            matches = [
+                item
+                for item in crm_rows
+                if item.event_type == interval.event_type
+                and item.object_type == interval.object_type
+                and item.object_id == interval.object_id
+                and interval.started_at <= item.occurred_at <= interval.ended_at
+            ]
+            return matches[0] if len(matches) == 1 else None
+
+        def call_evidence(interval):
+            matches = [
+                item
+                for item in call_rows
+                if item.object_type == interval.object_type
+                and item.object_id == interval.object_id
+                and interval.started_at <= item.occurred_at <= interval.ended_at
+                and item.duration_seconds
+                == int((interval.ended_at - interval.started_at).total_seconds())
+                and item.direction in {"incoming", "outgoing"}
+            ]
+            return matches[0] if len(matches) == 1 else None
+
+        crm_by_interval = {
+            item.id: crm_evidence(item)
+            for item in intervals
+            if item.source == "crm_event"
+        }
+        calls_by_interval = {
+            item.id: call_evidence(item) for item in intervals if item.source == "call"
+        }
+        days: list[ActivityWindowDay] = []
+        total_confirmed_ranges: list[tuple[datetime, datetime]] = []
+        total_unconfirmed_ranges: list[tuple[datetime, datetime]] = []
+        confirmed_ids: set[int] = set()
+        for offset in range(day_count):
+            local_day = from_date + timedelta(days=offset)
+            day_start, day_end = local_period_utc_bounds(local_day, zone_name)
+            if group is None:
+                shift_start, shift_end = day_start, day_end
+            else:
+                shift_start, shift_end = local_shift_utc_bounds(
+                    local_day,
+                    zone_name,
+                    group.work_start_time,
+                    group.work_end_time,
+                )
+            dto_intervals: list[ActivityWindowInterval] = []
+            confirmed_ranges: list[tuple[datetime, datetime]] = []
+            unconfirmed_ranges: list[tuple[datetime, datetime]] = []
+            day_confirmed_ids: set[int] = set()
+            for interval in intervals:
+                is_point = interval.started_at == interval.ended_at
+                if is_point:
+                    if not day_start <= interval.started_at < day_end:
+                        continue
+                    segment_start = segment_end = interval.started_at
+                else:
+                    segment_start = max(interval.started_at, day_start, utc_start)
+                    segment_end = min(interval.ended_at, day_end, utc_end)
+                    if segment_end <= segment_start:
+                        continue
+                if interval.kind == "confirmed":
+                    day_confirmed_ids.add(interval.id)
+                    confirmed_ids.add(interval.id)
+                    if segment_end > segment_start:
+                        confirmed_ranges.append((segment_start, segment_end))
+                        total_confirmed_ranges.append((segment_start, segment_end))
+                else:
+                    if segment_end > segment_start:
+                        unconfirmed_ranges.append((segment_start, segment_end))
+                        total_unconfirmed_ranges.append((segment_start, segment_end))
+                crm = crm_by_interval.get(interval.id)
+                call = calls_by_interval.get(interval.id)
+                dto_intervals.append(
+                    ActivityWindowInterval(
+                        id=interval.id,
+                        started_at=self._utc(segment_start),
+                        ended_at=self._utc(segment_end),
+                        duration_seconds=int(
+                            (segment_end - segment_start).total_seconds()
+                        ),
+                        kind=interval.kind,
+                        source=interval.source,
+                        duration_source=interval.duration_source,
+                        event_type=interval.event_type,
+                        object_type=interval.object_type,
+                        object_id=interval.object_id,
+                        description=interval.description,
+                        card_url=(
+                            crm.card_url if crm else call.card_url if call else None
+                        ),
+                        call_direction=call.direction if call else None,
+                        call_duration_seconds=call.duration_seconds if call else None,
+                        message=(
+                            "Нет подтверждённой активности"
+                            if interval.kind == "unconfirmed"
+                            else None
+                        ),
+                    )
+                )
+            dto_intervals.sort(
+                key=lambda item: (item.started_at, item.ended_at, item.id)
+            )
+            days.append(
+                ActivityWindowDay(
+                    date=local_day,
+                    started_at=self._utc(day_start),
+                    ended_at=self._utc(day_end),
+                    shift_started_at=self._utc(shift_start),
+                    shift_ended_at=self._utc(shift_end),
+                    confirmed_seconds=self._merged_seconds(confirmed_ranges),
+                    confirmed_events=len(day_confirmed_ids),
+                    unconfirmed_seconds=self._merged_seconds(unconfirmed_ranges),
+                    intervals=dto_intervals,
+                )
+            )
+        return ActivityWindowResponse(
+            target=ActivityWindowTarget(
+                id=target.id,
+                amocrm_user_id=target.amocrm_user_id,
+                name=target.name,
+                avatar_url=target.avatar_url,
+            ),
+            group=(
+                ActivityWindowGroup(id=group.id, name=group.name) if group else None
+            ),
+            timezone=zone_name,
+            from_date=from_date,
+            to_date=to_date,
+            totals=ActivityWindowTotals(
+                confirmed_seconds=self._merged_seconds(total_confirmed_ranges),
+                confirmed_events=len(confirmed_ids),
+                unconfirmed_seconds=self._merged_seconds(total_unconfirmed_ranges),
+            ),
+            days=days,
+        )
 
     def get_monitoring_status(
         self,

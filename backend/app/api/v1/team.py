@@ -1,20 +1,27 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.services.team_service import TeamService
-from app.api.v1.dependencies import RequestContext, get_request_context, not_found
+from app.api.v1.dependencies import (
+    APIProblem,
+    RequestContext,
+    get_request_context,
+    not_found,
+)
 from app.core.access_policy import AccessPolicy
 from app.schemas.team import (
     ActivityTimelineResponse,
     ActivityHistoryResponse,
+    ActivityWindowResponse,
     ForceFinishRequest,
     ForceFinishResponse,
     TeamStatusResponse,
 )
+from app.services.team_service import ActivityRangeError
 from app.core.time_utils import utc_now
 
 router = APIRouter()
@@ -117,6 +124,27 @@ def get_team_activity(
         account_id=context.account_id,
         visible_external_user_ids=AccessPolicy(db, context).visible_external_user_ids(),
     )
+
+
+@router.get("/{target_user_id}/activity", response_model=ActivityWindowResponse)
+def get_user_activity_window(
+    target_user_id: int,
+    from_date: date = Query(alias="from"),
+    to_date: date = Query(alias="to"),
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
+):
+    """Return up to seven inclusive local dates of safe activity detail."""
+    try:
+        return TeamService(db).get_activity_window(
+            context, target_user_id, from_date, to_date
+        )
+    except LookupError as error:
+        raise not_found() from error
+    except ActivityRangeError as error:
+        raise APIProblem(
+            status.HTTP_400_BAD_REQUEST, error.code, error.message
+        ) from error
 
 
 @router.get("/{target_user_id}/timeline", response_model=ActivityTimelineResponse)

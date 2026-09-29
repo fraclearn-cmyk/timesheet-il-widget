@@ -4,9 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 
-def business_date(
-    now_utc: datetime, zone_name: str, start: time, end: time
-) -> date:
+def business_date(now_utc: datetime, zone_name: str, start: time, end: time) -> date:
     """Return the group's workday containing a UTC-naive instant."""
     local_now = now_utc.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(zone_name))
     day = local_now.date()
@@ -32,6 +30,35 @@ def local_period_utc_bounds(day: date, zone_name: str) -> tuple[datetime, dateti
     return (
         local_start.astimezone(timezone.utc).replace(tzinfo=None),
         local_end.astimezone(timezone.utc).replace(tzinfo=None),
+    )
+
+
+def local_date_range_utc_bounds(
+    from_date: date, to_date: date, zone_name: str
+) -> tuple[datetime, datetime]:
+    """Convert inclusive local dates to half-open UTC-naive persistence bounds."""
+    zone = ZoneInfo(zone_name)
+    local_start = datetime.combine(from_date, time.min, zone)
+    local_end = datetime.combine(to_date + timedelta(days=1), time.min, zone)
+    return (
+        local_start.astimezone(timezone.utc).replace(tzinfo=None),
+        local_end.astimezone(timezone.utc).replace(tzinfo=None),
+    )
+
+
+def local_shift_utc_bounds(
+    day: date, zone_name: str, start: time, end: time
+) -> tuple[datetime, datetime]:
+    """Return UTC-naive shift bounds anchored to one local calendar date."""
+    zone = ZoneInfo(zone_name)
+    end_day = day + timedelta(days=end <= start)
+    return (
+        datetime.combine(day, start, zone)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None),
+        datetime.combine(end_day, end, zone)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None),
     )
 
 

@@ -1,7 +1,7 @@
 """Team schemas"""
 
-from pydantic import BaseModel, ConfigDict
-from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field
+from datetime import date, datetime
 from typing import Optional, Dict, List, Literal
 
 
@@ -66,6 +66,64 @@ class TeamStatusResponse(_StrictTeamModel):
     groups: list[TeamGroupSummary]
     employees: list[TeamMemberSummary]
     totals: TeamStatusTotals
+
+
+class ActivityWindowTarget(_StrictTeamModel):
+    id: int
+    amocrm_user_id: int
+    name: str
+    avatar_url: str | None
+
+
+class ActivityWindowGroup(_StrictTeamModel):
+    id: int
+    name: str
+
+
+class ActivityWindowInterval(_StrictTeamModel):
+    id: int
+    started_at: datetime
+    ended_at: datetime
+    duration_seconds: int
+    kind: Literal["confirmed", "unconfirmed"]
+    source: Literal["crm_event", "call", "unconfirmed_input"]
+    duration_source: Literal["point", "observed", "calculated"]
+    event_type: str | None
+    object_type: str | None
+    object_id: int | None
+    description: str | None
+    card_url: str | None
+    call_direction: Literal["incoming", "outgoing"] | None
+    call_duration_seconds: int | None
+    message: str | None
+
+
+class ActivityWindowDay(_StrictTeamModel):
+    date: date
+    started_at: datetime
+    ended_at: datetime
+    shift_started_at: datetime
+    shift_ended_at: datetime
+    confirmed_seconds: int
+    confirmed_events: int
+    unconfirmed_seconds: int
+    intervals: list[ActivityWindowInterval]
+
+
+class ActivityWindowTotals(_StrictTeamModel):
+    confirmed_seconds: int
+    confirmed_events: int
+    unconfirmed_seconds: int
+
+
+class ActivityWindowResponse(_StrictTeamModel):
+    target: ActivityWindowTarget
+    group: ActivityWindowGroup | None
+    timezone: str
+    from_date: date = Field(serialization_alias="from")
+    to_date: date = Field(serialization_alias="to")
+    totals: ActivityWindowTotals
+    days: list[ActivityWindowDay]
 
 
 class ForceFinishRequest(BaseModel):
