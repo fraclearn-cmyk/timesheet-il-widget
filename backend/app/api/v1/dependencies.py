@@ -440,11 +440,11 @@ async def enforce_route_scope(
     if account is not None:
         require_account(context, account)
     route_path = request.url.path
-    if route_path == "/api/v1/reports/detailed":
+    if route_path in ("/api/v1/reports/detailed", "/api/v1/reports/export-excel"):
         policy = AccessPolicy(db, context)
         if not policy.is_admin() and not policy.is_manager():
             raise access_denied()
-        # This one strict endpoint documents user_id as an internal User.id.
+        # These strict endpoints document user_id as an internal User.id.
         # Legacy reports retain their external amoCRM reference semantics.
         if "user_id" in values:
             require_visible_internal_user(db, context, values["user_id"])
@@ -486,9 +486,12 @@ async def enforce_route_scope(
     if isinstance(body, dict):
         if body.get("account_id") is not None:
             require_account(context, body["account_id"])
-        for name in ("user_id", "target_user_id"):
-            if body.get(name) is not None:
-                require_visible_external_user(db, context, body[name])
+        if route_path == "/api/v1/reports/export-excel" and body.get("user_id") is not None:
+            require_visible_internal_user(db, context, body["user_id"])
+        elif body.get("user_id") is not None:
+            require_visible_external_user(db, context, body["user_id"])
+        if body.get("target_user_id") is not None:
+            require_visible_external_user(db, context, body["target_user_id"])
         if body.get("employee_id") is not None:
             require_visible_internal_user(db, context, body["employee_id"])
         if body.get("generated_by") is not None:

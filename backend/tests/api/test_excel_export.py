@@ -139,6 +139,23 @@ def test_denial_and_foreign_filters_match_preview(scoped_client, db):
         assert (response.status_code, response.json()["error"]["code"]) == (404, "NOT_FOUND")
 
 
+@pytest.mark.parametrize("actor", ["admin", "manager"])
+def test_export_filter_uses_accessible_internal_user_id(scoped_client, db, actor):
+    add_session(db)
+    db.commit()
+    ws = sheet(export(scoped_client(actor), user_id=2, columns=["employee", "work"]))
+    assert ws.max_row == 2
+    assert [cell.value for cell in ws[2]] == ["Employee", timedelta(hours=1)]
+
+
+def test_employee_with_internal_user_filter_is_denied_before_visibility_lookup(scoped_client, db):
+    add_session(db)
+    db.commit()
+    response = export(scoped_client("employee"), user_id=2)
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ACCESS_DENIED"
+
+
 @pytest.mark.parametrize("start,end,code", [
     ("2026-09-23", "2026-09-22", "REPORT_DATE_RANGE_INVALID"),
     ("2026-01-31", "2026-05-01", "REPORT_RANGE_LIMIT"),
