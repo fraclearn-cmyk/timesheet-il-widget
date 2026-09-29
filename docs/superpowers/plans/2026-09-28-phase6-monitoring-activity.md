@@ -217,31 +217,31 @@ git commit -m "feat: expose bounded activity windows"
 - Consumes: Task 2 `ActivityWindowResponse.days[].intervals`.
 - Produces: `Timeline.normalizeDay(day)`, `Timeline.layoutDay(day, zoom)`, `Timeline.render(root, day, options)`; `ActivityModal.create(options)` with `open(payload)`, `update(payload)`, `close()`, `destroy()`, `isOpen()`.
 
-- [ ] **Step 1: Write failing Node/jsdom tests**
+- [x] **Step 1: Write failing Node/jsdom tests**
 
 Test confirmed duration segments, zero-duration point markers, non-green unconfirmed spans, overlap lanes/merge policy, clipping, empty gaps, local/DST labels, zoom `1|2|4`, tooltip fields, safe text rendering, safe card links, Escape close, focus return, body scroll restoration, and fullscreen class/ARIA toggle.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 node --test frontend/tests/monitoring-timeline.test.js
 ```
 
-- [ ] **Step 3: Implement the pure timeline module**
+- [x] **Step 3: Implement the pure timeline module**
 
 Use UMD so Node tests and amoCRM AMD both load it. Geometry is based on each day's explicit API UTC bounds; gaps remain visible. Confirmed duration is green; confirmed points are accessible markers with minimum visual width only; unconfirmed intervals use a neutral hatch and never contribute to green totals. Zoom changes pixels-per-minute/scroll width, not data or durations.
 
-- [ ] **Step 4: Implement the modal controller**
+- [x] **Step 4: Implement the modal controller**
 
 Create DOM with `createElement`/`textContent`. The modal shows seven day rows, totals, zoom controls, loading/error/empty states, close button, Escape handling, focus trap/return, and fullscreen toggle using an internal CSS class with the Fullscreen API as progressive enhancement. It must update in place when polling refreshes the selected employee.
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 ```powershell
 node --test frontend/tests/monitoring-timeline.test.js
 ```
 
-- [ ] **Step 6: Independent review and commit**
+- [x] **Step 6: Independent review and commit**
 
 Review XSS, accessibility, zero-duration semantics, timezone labels, listener cleanup, and geometry. Then:
 
