@@ -105,8 +105,9 @@ def test_rate_limited_widget_response_exposes_retry_after_only_to_allowed_origin
         for _ in range(59):
             assert client.get("/health").status_code == 200
 
+        request_id = "f35d25dd-5c58-4de2-91e9-19513ac60715"
         response = client.get(
-            "/health", headers={"Origin": allowed, "X-Request-Id": "rate-test"}
+            "/health", headers={"Origin": allowed, "X-Request-Id": request_id}
         )
         assert response.status_code == 429
         assert response.headers["Access-Control-Allow-Origin"] == allowed
@@ -118,9 +119,10 @@ def test_rate_limited_widget_response_exposes_retry_after_only_to_allowed_origin
             "error": {
                 "code": "RATE_LIMITED",
                 "message": "Слишком много запросов. Повторите попытку позже.",
-                "request_id": "rate-test",
+                "request_id": request_id,
             }
         }
+        assert response.headers["X-Request-Id"] == request_id
 
         denied = client.get("/health", headers={"Origin": hostile})
         assert denied.status_code == 429

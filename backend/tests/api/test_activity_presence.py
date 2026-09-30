@@ -123,21 +123,23 @@ def test_presence_returns_no_content_outside_working(presence_api):
 )
 def test_presence_rejects_extra_identity_and_invalid_fields(presence_api, change):
     client, db, _, _, _ = presence_api
+    request_id = "de23640a-d8de-4fea-8ac8-184b593f34e5"
     body = payload()
     body.update(change)
     response = client.post(
         "/api/v1/activity/presence",
         json=body,
-        headers={"X-Request-Id": "presence-invalid"},
+        headers={"X-Request-Id": request_id},
     )
     assert response.status_code == 422
     assert response.json() == {
         "error": {
             "code": "REQUEST_INVALID",
             "message": "Проверьте формат и значения полей запроса.",
-            "request_id": "presence-invalid",
+            "request_id": request_id,
         }
     }
+    assert response.headers["X-Request-Id"] == request_id
     assert db.query(PresenceBatch).count() == 0
 
 

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.time_utils import utc_now
 from app.api.v1.dependencies import APIProblem
+from app.core.middleware import request_id_for
 from app.models import IngestionCursor
 
 
@@ -86,7 +87,7 @@ async def amocrm_webhook(hook_id: str, request: Request, db: Session = Depends(g
                 "error": {
                     "code": "RATE_LIMITED",
                     "message": "Слишком много запросов.",
-                    "request_id": request.headers.get("X-Request-Id", ""),
+                    "request_id": request_id_for(request),
                 }
             },
         )

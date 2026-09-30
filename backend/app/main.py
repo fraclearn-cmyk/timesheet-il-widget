@@ -13,14 +13,20 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import text
 import time
 from app.api.v1.dependencies import enforce_route_scope, get_request_context
-from fastapi import HTTPException
 from app.api.v1.dependencies import APIProblem
 from app.core.access_policy import AccessPolicy
 from app.core.database import engine as database_engine, get_db
-from app.core.logging import install_webhook_access_log_filter
+from app.core.error_catalog import PUBLIC_ERRORS, public_error
+from app.core.logging import install_json_logging, install_webhook_access_log_filter
+from app.core.middleware import (
+    RequestContextMiddleware,
+    SafeExceptionMiddleware,
+    request_id_for,
+)
 
 try:
     from app.core.config import settings
@@ -33,6 +39,7 @@ except ImportError:
     settings = Settings()
 
 
+install_json_logging()
 install_webhook_access_log_filter()
 
 
@@ -143,8 +150,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 content={
                     "error": {
                         "code": "RATE_LIMITED",
-                        "message": "Слишком много запросов. Повторите попытку позже.",
-                        "request_id": request.headers.get("X-Request-Id", ""),
+                        "message": PUBLIC_ERRORS["RATE_LIMITED"],
+                        "request_id": request_id_for(request),
                     }
                 },
             )
@@ -162,27 +169,29 @@ app = FastAPI(
 )
 
 
-@app.exception_handler(HTTPException)
-async def api_error_handler(request: Request, exc: HTTPException):
+@app.exception_handler(StarletteHTTPException)
+async def api_error_handler(request: Request, exc: StarletteHTTPException):
     if isinstance(exc, APIProblem):
         code, message = exc.code, exc.message
     elif exc.status_code == 401:
-        code, message = "AMOCRM_TOKEN_EXPIRED", "Срок подключения amoCRM истёк."
+        code, message = public_error("AMOCRM_TOKEN_EXPIRED")
     elif exc.status_code == 403:
-        code, message = "ACCESS_DENIED", "У вас нет доступа к этому разделу."
+        code, message = public_error("ACCESS_DENIED")
     elif exc.status_code == 404:
-        code, message = "NOT_FOUND", "Данные не найдены."
+        code, message = public_error("NOT_FOUND")
     elif exc.status_code == 409:
-        code, message = "CONFLICT", "Операция конфликтует с текущим состоянием."
+        code, message = public_error("CONFLICT")
     else:
-        code, message = "REQUEST_INVALID", "Запрос не может быть обработан."
+        code, message = public_error("REQUEST_INVALID")
+    request_id = request_id_for(request)
     return JSONResponse(
         status_code=exc.status_code,
+        headers={"X-Request-Id": request_id},
         content={
             "error": {
                 "code": code,
                 "message": message,
-                "request_id": request.headers.get("X-Request-Id", ""),
+                "request_id": request_id,
             }
         },
     )
@@ -192,13 +201,15 @@ async def api_error_handler(request: Request, exc: HTTPException):
 async def request_validation_error_handler(
     request: Request, exc: RequestValidationError
 ):
+    request_id = request_id_for(request)
     return JSONResponse(
         status_code=422,
+        headers={"X-Request-Id": request_id},
         content={
             "error": {
                 "code": "REQUEST_INVALID",
-                "message": "Проверьте формат и значения полей запроса.",
-                "request_id": request.headers.get("X-Request-Id", ""),
+                "message": PUBLIC_ERRORS["VALIDATION_ERROR"],
+                "request_id": request_id,
             }
         },
     )
@@ -218,14 +229,17 @@ if hasattr(settings, "DEBUG") and settings.DEBUG:
 if not getattr(settings, "DEBUG", False):
     app.add_middleware(RateLimitMiddleware, calls_per_minute=60)
 
+# Unexpected route failures are normalized inside CORS.
+app.add_middleware(SafeExceptionMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_origin_regex=AMOCRM_TENANT_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Auth-Token"],
-    expose_headers=["Retry-After"],
+    allow_headers=["Authorization", "Content-Type", "X-Auth-Token", "X-Request-Id"],
+    expose_headers=["Retry-After", "X-Request-Id"],
     max_age=600,
 )
 
@@ -252,6 +266,10 @@ async def add_security_headers(request: Request, call_next):
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
 
     return response
+
+
+# Correlation is outermost so even CORS preflight receives a request ID.
+app.add_middleware(RequestContextMiddleware)
 
 
 @app.get("/")

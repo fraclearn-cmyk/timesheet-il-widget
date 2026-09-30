@@ -1,6 +1,7 @@
 """Strict, account-scoped seven-local-date activity detail contract."""
 
 from datetime import datetime, time
+from uuid import UUID
 
 from sqlalchemy import event
 
@@ -81,11 +82,11 @@ def test_activity_range_validation_has_stable_public_errors(scoped_client):
 
     too_large = client.get("/api/v1/team/2/activity?from=2026-03-26&to=2026-04-02")
     assert too_large.status_code == 400
-    assert _error(too_large) == {
-        "code": "ACTIVITY_RANGE_TOO_LARGE",
-        "message": "Можно выбрать не больше 7 календарных дней.",
-        "request_id": "",
-    }
+    error = _error(too_large)
+    assert error["code"] == "ACTIVITY_RANGE_TOO_LARGE"
+    assert error["message"] == "Можно выбрать не больше 7 календарных дней."
+    assert str(UUID(error["request_id"])) == error["request_id"]
+    assert too_large.headers["X-Request-Id"] == error["request_id"]
 
 
 def test_dst_overnight_window_clips_splits_and_resolves_safe_evidence(

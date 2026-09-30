@@ -105,6 +105,8 @@ def test_valid_webhook_only_advances_poll_and_never_persists_payload(webhook_api
 
 def test_webhook_repetition_and_oversized_bodies_are_bounded(webhook_api):
     client, _, _, _, _ = webhook_api
+    rate_request_id = "33445c1e-e101-403c-af74-6d55f9e725f9"
+    oversized_request_id = "c1690a7d-4e60-4c92-ad9a-605d0b157561"
     for _ in range(10):
         assert (
             client.post(f"/api/v1/webhooks/amocrm/{HOOK}", content=b"x").status_code
@@ -113,12 +115,12 @@ def test_webhook_repetition_and_oversized_bodies_are_bounded(webhook_api):
     limited = client.post(
         f"/api/v1/webhooks/amocrm/{HOOK}",
         content=b"x",
-        headers={"X-Request-Id": "rate-limit-test"},
+        headers={"X-Request-Id": rate_request_id},
     )
     oversized = client.post(
         "/api/v1/webhooks/amocrm/different",
         content=b"x" * (64 * 1024 + 1),
-        headers={"X-Request-Id": "oversized-test"},
+        headers={"X-Request-Id": oversized_request_id},
     )
     assert limited.status_code == 429
     assert limited.headers["Retry-After"]
@@ -126,17 +128,19 @@ def test_webhook_repetition_and_oversized_bodies_are_bounded(webhook_api):
         "error": {
             "code": "RATE_LIMITED",
             "message": "Слишком много запросов.",
-            "request_id": "rate-limit-test",
+            "request_id": rate_request_id,
         }
     }
+    assert limited.headers["X-Request-Id"] == rate_request_id
     assert oversized.status_code == 413
     assert oversized.json() == {
         "error": {
             "code": "PAYLOAD_TOO_LARGE",
             "message": "Размер запроса превышает 64 КиБ.",
-            "request_id": "oversized-test",
+            "request_id": oversized_request_id,
         }
     }
+    assert oversized.headers["X-Request-Id"] == oversized_request_id
 
 
 def test_webhook_rate_limit_bucket_count_is_bounded():
