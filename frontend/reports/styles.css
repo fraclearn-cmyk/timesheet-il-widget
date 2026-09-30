@@ -1,0 +1,15 @@
+.ts-reports { color: #243247; font: 14px/1.45 Arial, sans-serif; max-width: 100%; }
+.ts-reports__title { margin: 0 0 16px; font-size: 22px; }
+.ts-reports__controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin-bottom: 16px; }
+.ts-reports__field { display: flex; flex-direction: column; gap: 4px; }
+.ts-reports__field input, .ts-reports__field select { min-height: 34px; padding: 5px 7px; border: 1px solid #b8c4d0; border-radius: 4px; background: #fff; }
+.ts-reports button { min-height: 34px; padding: 6px 12px; border: 1px solid #8b9bab; border-radius: 4px; background: #fff; color: inherit; cursor: pointer; }
+.ts-reports button:disabled { opacity: .5; cursor: default; }
+.ts-reports__columns { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0 0 12px; padding: 10px; border: 1px solid #d7dfe7; }
+.ts-reports__columns legend { padding: 0 4px; }
+.ts-reports__column { display: inline-flex; gap: 5px; align-items: center; }
+.ts-reports__message, .ts-reports__export-message { margin: 10px 0; }
+.ts-reports__table { width: 100%; border-collapse: collapse; text-align: left; }
+.ts-reports__table th, .ts-reports__table td { padding: 8px; border-bottom: 1px solid #e0e6ec; }
+.ts-reports__pagination { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+@media (max-width: 700px) { .ts-reports__table { display: block; overflow-x: auto; white-space: nowrap; } }
