@@ -40,11 +40,11 @@
 - Modify: `backend/app/main.py`, `backend/app/api/v1/webhooks.py`, `backend/app/services/webhook_subscription_service.py`, `backend/app/core/config.py`
 - Modify tests: `backend/tests/api/test_webhooks.py`, `backend/tests/integration/test_authorized_routes.py`
 
-- [ ] Write failing tests proving 40 tenants behind one IP do not consume one shared authenticated bucket; unknown clients remain bounded.
-- [ ] Replace the process-local all-route IP policy with bounded route/identity-aware limits that preserve CORS and `Retry-After`.
-- [ ] Preserve the 64 KiB webhook limit, opaque 256-bit callback secret, constant-time lookup behavior, bounded unknown-source buckets and poll-only semantics. Document the opaque secret as the provider-compatible signature equivalent; do not invent an HMAC header amoCRM does not send.
-- [ ] Prove replay cannot create domain data, only idempotently make authoritative polling due; document the multi-worker boundary.
-- [ ] Independent security review and commit.
+- [x] Write failing tests proving 40 tenants behind one IP do not consume one shared authenticated bucket; unknown clients remain bounded.
+- [x] Replace the process-local all-route IP policy with bounded route/identity-aware limits that preserve CORS and `Retry-After`.
+- [x] Preserve the 64 KiB webhook limit, opaque 256-bit callback secret, constant-time lookup behavior, bounded unknown-source buckets and poll-only semantics. Document the opaque secret as the provider-compatible signature equivalent; do not invent an HMAC header amoCRM does not send.
+- [x] Prove replay cannot create domain data, only idempotently make authoritative polling due; document the multi-worker boundary.
+- [x] Independent security review and commit.
 
 ## Task 4: PostgreSQL indexes, query plans and SLA
 
