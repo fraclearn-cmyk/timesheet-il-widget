@@ -24,6 +24,8 @@ class RequestContext:
 
 
 class AccessPolicy:
+    """Evaluate current database state; authorization results are never cached."""
+
     def __init__(self, db: Session, context: RequestContext) -> None:
         self._db, self.context = db, context
 

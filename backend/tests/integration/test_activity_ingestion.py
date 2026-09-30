@@ -1655,6 +1655,103 @@ def test_catalog_refresh_happens_no_more_than_daily(migrated_db) -> None:
         assert db.query(EventTypeCatalog).count() == 1
 
 
+def test_expired_catalog_failure_reuses_durable_account_catalog_and_retries(
+    migrated_db,
+) -> None:
+    """A transient refresh failure must not discard the last known safe catalog."""
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+    with Session(engine) as db:
+        add_account(db)
+        db.add_all(
+            [
+                User(
+                    id=7,
+                    amocrm_user_id=456,
+                    amocrm_account_id=ACCOUNT_ID,
+                    name="Author",
+                ),
+                EventTypeCatalog(
+                    account_id=ACCOUNT_ID,
+                    event_key="durable_custom_type",
+                    label="Durable custom type",
+                    refreshed_at=now - timedelta(days=2),
+                ),
+            ]
+        )
+        db.commit()
+        client = CatalogUnavailableClient(
+            [[event("durable", event_type="durable_custom_type")]]
+        )
+        service = build_service(db, client)
+
+        assert run(service.ingest_account(account_id=ACCOUNT_ID, now=now))
+        db.expire_all()
+        stored = db.scalar(select(CrmEvent).where(CrmEvent.external_id == "durable"))
+        cursor = db.get(IngestionCursor, ACCOUNT_ID)
+        assert stored is not None
+        assert stored.is_complete == 1
+        assert cursor.catalog_refreshed_at is None
+
+        assert run(
+            service.ingest_account(
+                account_id=ACCOUNT_ID, now=now + timedelta(minutes=1)
+            )
+        )
+        assert client.catalog_calls == 2
+
+
+def test_catalog_is_account_scoped_for_forty_accounts_with_repeated_event_keys(
+    migrated_db,
+) -> None:
+    """The same provider event key must remain isolated for all 40 tenants."""
+    config, engine = migrated_db
+    command.upgrade(config, "head")
+    now = utc(2026, 9, 23, 10)
+
+    class FortyAccountCatalogClient(PagingClient):
+        async def list_event_types(self, account_url: str, access_token: str):
+            self.catalog_calls += 1
+            account_id = int(account_url.split("tenant-", 1)[1].split(".", 1)[0])
+            return [("shared_event", f"Tenant {account_id}")]
+
+    with Session(engine) as db:
+        account_ids = list(range(10_001, 10_041))
+        db.add_all(
+            OAuthConnection(
+                account_id=account_id,
+                account_url=f"https://tenant-{account_id}.amocrm.ru",
+                encrypted_access_token="encrypted-access-1",
+                encrypted_refresh_token="encrypted-refresh",
+                is_active=True,
+            )
+            for account_id in account_ids
+        )
+        db.commit()
+        client = FortyAccountCatalogClient([[]])
+        service = build_service(db, client)
+
+        for account_id in account_ids:
+            assert run(service.ingest_account(account_id=account_id, now=now))
+            assert run(
+                service.ingest_account(
+                    account_id=account_id, now=now + timedelta(hours=23, minutes=59)
+                )
+            )
+
+        rows = db.scalars(
+            select(EventTypeCatalog).order_by(EventTypeCatalog.account_id)
+        ).all()
+        assert client.catalog_calls == 40
+        assert len(rows) == 40
+        assert [row.account_id for row in rows] == account_ids
+        assert {row.event_key for row in rows} == {"shared_event"}
+        assert [row.label for row in rows] == [
+            f"Tenant {account_id}" for account_id in account_ids
+        ]
+
+
 def test_external_catalog_and_event_awaits_hold_no_database_transaction(
     migrated_db,
 ) -> None:

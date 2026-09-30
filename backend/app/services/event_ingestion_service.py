@@ -317,14 +317,14 @@ class EventIngestionService:
         if cursor is None:
             raise _LeaseLost("account ingestion cursor disappeared")
         latest = cursor.catalog_refreshed_at
-        if latest is not None and latest > now - self._CATALOG_MAX_AGE:
-            known = set(
-                self._db.scalars(
-                    select(EventTypeCatalog.event_key).where(
-                        EventTypeCatalog.account_id == account_id
-                    )
+        known = set(
+            self._db.scalars(
+                select(EventTypeCatalog.event_key).where(
+                    EventTypeCatalog.account_id == account_id
                 )
             )
+        )
+        if latest is not None and latest > now - self._CATALOG_MAX_AGE:
             self._db.commit()
             return known | OBSERVED_MINIMUM_EVENT_TYPES
 
@@ -337,9 +337,10 @@ class EventIngestionService:
             )
         except AmoCRMUnavailable:
             # The small observed floor lets polling continue safely during an
-            # initial catalog outage. Unknown types remain preserved/incomplete,
-            # and absence of a refresh timestamp retries the catalog next poll.
-            return OBSERVED_MINIMUM_EVENT_TYPES
+            # initial catalog outage. An expired durable account catalog remains
+            # safe to classify against while its unchanged timestamp forces a
+            # refresh retry on the next poll.
+            return known | OBSERVED_MINIMUM_EVENT_TYPES
         with self._db.begin():
             self._require_and_renew_lease(account_id, run_owner)
             cursor = self._db.get(IngestionCursor, account_id)
