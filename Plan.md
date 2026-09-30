@@ -283,7 +283,7 @@
 - [x] Привести `docker-compose.yml`, `Dockerfile`, `.env.example`, health checks и migrations к воспроизводимому запуску.
 - [x] Добавить correlation ID, JSON logs, redaction токенов и единый словарь пользовательских ошибок.
 - [x] Добавить rate limit, webhook signature validation, replay protection и ограничение размера payload.
-- [ ] Проверить SQL indexes по account/user/group/timestamp и N+1 запросы в командном мониторинге.
+- [x] Проверить SQL indexes по account/user/group/timestamp и N+1 запросы в командном мониторинге.
 - [ ] Добавить кэш только для безопасных справочников; не кэшировать права без TTL/invalidation.
 - [ ] Проверить polling/backoff, дедупликацию и восстановление после временного падения amoCRM.
 - [ ] Запустить smoke, integration, browser и security tests в CI.
@@ -554,7 +554,7 @@ flowchart TD
 
 ## Текущий отчёт по фазам
 
-Фаза 8 в работе: задачи 1–3 завершены — runtime/health, observability и tenant-aware ingress готовы; следующая — PostgreSQL indexes, query plans и SLA. Фазы 0–2 завершены; фазы 3–7 локально реализованы. Docker локально отсутствует, поэтому его реальный build/up остаётся внешним gate. Complete live amoCRM smoke и детальный acceptance checklist также отложены до локальной реализации всех фаз. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
+Фаза 8 в работе: задачи 1–4 завершены — runtime, observability, ingress и доказанные PostgreSQL indexes готовы; следующая — безопасный cache policy без кэширования прав. Фазы 0–2 завершены; фазы 3–7 локально реализованы. Docker локально отсутствует, поэтому его реальный build/up остаётся внешним gate. Complete live amoCRM smoke и детальный acceptance checklist также отложены до локальной реализации всех фаз. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -590,6 +590,7 @@ flowchart TD
 | 2026-09-30 | Завершена задача 1 фазы 8: production runtime и health/readiness | Compose без public DB/weak defaults/reload/bind mount, non-root image, migration entrypoint, `.dockerignore`, liveness/readiness с единственным Alembic head; PostgreSQL backend `703 passed`, affected `18 passed`, review ADDRESSED; Docker build/up — внешний gate |
 | 2026-09-30 | Завершена задача 2 фазы 8: correlation ID, JSON logs, redaction и каталог ошибок | UUID одинаков в header/body/log context включая CORS OPTIONS; safe 500 без raw traceback, recursive secret redaction и стабильные русские ошибки; PostgreSQL backend `716 passed`, focused `134 passed`, review APPROVED |
 | 2026-09-30 | Завершена задача 3 фазы 8: tenant-aware ingress и webhook hardening | 40 аккаунтов за одним NAT изолированы, ранняя auth concurrency ограничена 64/IP, public/unknown/405 имеют отдельный guard; webhook 64 КиБ/10 rpm/opaque secret/replay poll-only; focused `124 passed, 1 skipped`, broad `652 passed, 70 skipped`; review APPROVED |
+| 2026-09-30 | Завершена задача 4 фазы 8: PostgreSQL indexes, query plans и SLA | Миграция `014` добавляет только два EXPLAIN-доказанных индекса, сохраняет существующие access paths и 1 SELECT SLA; focused PostgreSQL `43 passed`, broad `159 passed`; DB rereview APPROVED |
 
 ### Возобновление фазы 5 — 2026-09-27
 

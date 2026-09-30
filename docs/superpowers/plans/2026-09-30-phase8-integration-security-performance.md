@@ -53,10 +53,10 @@
 - Modify matching SQLAlchemy model metadata only where needed
 - Create: `backend/tests/integration/test_query_plans.py`, `backend/tests/integration/test_phase8_performance.py`
 
-- [ ] Capture representative PostgreSQL EXPLAIN plans for team status, activity window, reports, worker due-account lookup and raw cleanup.
-- [ ] Add only composite indexes proven useful for account/user/group/time/status access paths; keep one Alembic head and reversible downgrade.
-- [ ] Verify index presence/use, migration roundtrip, constant monitoring query count and a documented 40-account timing threshold on the local test environment.
-- [ ] Independent database/performance review and commit.
+- [x] Capture representative PostgreSQL EXPLAIN plans for team status, activity window, reports, worker due-account lookup and raw cleanup.
+- [x] Add only composite indexes proven useful for account/user/group/time/status access paths; keep one Alembic head and reversible downgrade.
+- [x] Verify index presence/use, migration roundtrip, constant monitoring query count and a documented 40-account timing threshold on the local test environment.
+- [x] Independent database/performance review and commit.
 
 ## Task 5: Safe catalog cache and immediate authorization changes
 
