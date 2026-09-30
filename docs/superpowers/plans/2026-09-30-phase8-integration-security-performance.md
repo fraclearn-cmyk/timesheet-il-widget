@@ -15,11 +15,11 @@
 - Create: `backend/.env.example`, `backend/docker-entrypoint.sh`
 - Create/modify tests: `backend/tests/integration/test_deployment.py`, `backend/tests/integration/test_health.py`
 
-- [ ] Write failing static/deployment tests for weak defaults, host-published DB, bind mounts/reload, root user, missing migration gate and health checks.
-- [ ] Split liveness from readiness; readiness must verify PostgreSQL and the single expected Alembic head without exposing secrets.
-- [ ] Make startup run migrations before the API, add a non-root image user and a backend healthcheck. Production Compose must have no weak password fallback, source bind mount, reload or public database port.
-- [ ] Validate config parsing, Alembic head/upgrade on disposable PostgreSQL, health behavior and Compose structure. Record Docker build/up as an external gate because Docker is unavailable locally.
-- [ ] Independent review, fix all Critical/Important findings and commit.
+- [x] Write failing static/deployment tests for weak defaults, host-published DB, bind mounts/reload, root user, missing migration gate and health checks.
+- [x] Split liveness from readiness; readiness must verify PostgreSQL and the single expected Alembic head without exposing secrets.
+- [x] Make startup run migrations before the API, add a non-root image user and a backend healthcheck. Production Compose must have no weak password fallback, source bind mount, reload or public database port.
+- [x] Validate config parsing, Alembic head/upgrade on disposable PostgreSQL, health behavior and Compose structure. Record Docker build/up as an external gate because Docker is unavailable locally.
+- [x] Independent review, fix all Critical/Important findings and commit.
 
 ## Task 2: Correlation IDs, JSON logs, redaction and error catalog
 

@@ -280,7 +280,7 @@
 
 **Задачи:**
 
-- [ ] Привести `docker-compose.yml`, `Dockerfile`, `.env.example`, health checks и migrations к воспроизводимому запуску.
+- [x] Привести `docker-compose.yml`, `Dockerfile`, `.env.example`, health checks и migrations к воспроизводимому запуску.
 - [ ] Добавить correlation ID, JSON logs, redaction токенов и единый словарь пользовательских ошибок.
 - [ ] Добавить rate limit, webhook signature validation, replay protection и ограничение размера payload.
 - [ ] Проверить SQL indexes по account/user/group/timestamp и N+1 запросы в командном мониторинге.
@@ -554,7 +554,7 @@ flowchart TD
 
 ## Текущий отчёт по фазам
 
-Фаза 8 в работе: preflight завершён, создан план из семи TDD-задач; следующая — воспроизводимый production runtime и health/readiness. Фазы 0–2 завершены; фазы 3–7 локально реализованы. Docker локально отсутствует, поэтому его реальный build/up остаётся внешним gate. Complete live amoCRM smoke и детальный acceptance checklist также отложены до локальной реализации всех фаз. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
+Фаза 8 в работе: задача 1 завершена — production runtime, миграционный entrypoint и health/readiness готовы; следующая — correlation ID, JSON logs, redaction и единый каталог ошибок. Фазы 0–2 завершены; фазы 3–7 локально реализованы. Docker локально отсутствует, поэтому его реальный build/up остаётся внешним gate. Complete live amoCRM smoke и детальный acceptance checklist также отложены до локальной реализации всех фаз. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -587,6 +587,7 @@ flowchart TD
 | 2026-09-30 | Фаза 7 локально выполнена; табель до 3 месяцев и безопасный Excel прошли общий gate | PostgreSQL backend `692 passed`, Node `112`, Playwright `24`, package `14`, Alembic `013 (head)`; ZIP `25` файлов; экспорт ограничен 10 000 строками и bounded source batches; общий review APPROVED |
 | 2026-09-30 | Начата фаза 8: интеграция, безопасность и производительность | Запущен read-only preflight Docker/health/logging/webhook security/indexes/recovery/CI; чекбоксы будут закрываться только после TDD, общего gate и независимого review |
 | 2026-09-30 | Завершён preflight и создан подробный план фазы 8 | Найдены небезопасные production-настройки Compose, фиктивный health без БД/схемы и пробелы observability/CI; существующие webhook bounds, recovery и 40-account worker будут переиспользованы, а Docker execution записан внешним gate |
+| 2026-09-30 | Завершена задача 1 фазы 8: production runtime и health/readiness | Compose без public DB/weak defaults/reload/bind mount, non-root image, migration entrypoint, `.dockerignore`, liveness/readiness с единственным Alembic head; PostgreSQL backend `703 passed`, affected `18 passed`, review ADDRESSED; Docker build/up — внешний gate |
 
 ### Возобновление фазы 5 — 2026-09-27
 
