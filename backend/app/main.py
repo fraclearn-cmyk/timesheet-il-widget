@@ -1,20 +1,25 @@
 from contextlib import asynccontextmanager
 import asyncio
 from collections import OrderedDict
+from functools import lru_cache
+from pathlib import Path
 import socket
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from sqlalchemy import text
 import time
 from app.api.v1.dependencies import enforce_route_scope, get_request_context
 from fastapi import HTTPException
 from app.api.v1.dependencies import APIProblem
 from app.core.access_policy import AccessPolicy
-from app.core.database import get_db
+from app.core.database import engine as database_engine, get_db
 from app.core.logging import install_webhook_access_log_filter
 
 try:
@@ -254,9 +259,60 @@ async def root():
     return {"message": "Timesheet IL API", "version": "1.0.0", "status": "running"}
 
 
+def single_alembic_head(script_directory) -> str:
+    heads = script_directory.get_heads()
+    if len(heads) != 1:
+        raise RuntimeError("Migration graph must have exactly one Alembic head")
+    return heads[0]
+
+
+@lru_cache(maxsize=1)
+def expected_alembic_head() -> str:
+    backend_root = Path(__file__).resolve().parents[1]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "migrations"))
+    return single_alembic_head(ScriptDirectory.from_config(config))
+
+
+def readiness_status(engine, *, expected_head: str | None = None):
+    if expected_head is None:
+        try:
+            expected_head = expected_alembic_head()
+        except Exception:
+            expected_head = ""
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+            try:
+                current_heads = list(
+                    connection.scalars(text("SELECT version_num FROM alembic_version"))
+                )
+            except Exception:
+                current_heads = []
+    except Exception:
+        return 503, {
+            "status": "not_ready",
+            "checks": {"database": "unavailable", "schema": "unknown"},
+        }
+
+    schema_status = "ready" if current_heads == [expected_head] else "not_ready"
+    status = "ready" if schema_status == "ready" else "not_ready"
+    return (200 if status == "ready" else 503), {
+        "status": status,
+        "checks": {"database": "ready", "schema": schema_status},
+    }
+
+
 @app.get("/health")
+@app.get("/health/live")
 async def health():
     return {"status": "healthy", "timestamp": time.time()}
+
+
+@app.get("/health/ready")
+async def readiness():
+    status_code, payload = readiness_status(database_engine)
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 @app.get("/api/v1/me")

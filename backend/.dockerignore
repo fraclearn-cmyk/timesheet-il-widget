@@ -24,3 +24,10 @@ coverage.xml
 *.db
 *.sqlite3
 .DS_Store
+.env
+.env.*
+*.pem
+*.key
+*.crt
+secrets/
+credentials/

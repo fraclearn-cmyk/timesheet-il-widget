@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from typing import List
 import secrets
 from urllib.parse import urlsplit
@@ -43,6 +43,14 @@ class Settings(BaseSettings):
                 "DATABASE_URL must start with postgresql://, sqlite://, or mysql://"
             )
         return v
+
+    @model_validator(mode="after")
+    def require_postgresql_in_production(self):
+        if self.ENVIRONMENT == "production" and not self.DATABASE_URL.startswith(
+            "postgresql://"
+        ):
+            raise ValueError("Production DATABASE_URL must use PostgreSQL")
+        return self
 
     # amoCRM
     AMOCRM_CLIENT_ID: str
