@@ -251,11 +251,18 @@ test('report launcher appears only after admin preflight, reuses directory and i
   assert.equal(document.querySelectorAll('.ts-reports-widget__launcher').length, 1);
   assert.equal(document.querySelector('.ts-reports-widget__launcher').textContent, 'Табель');
   assert.equal(document.querySelector('.ts-reports-widget__launcher').getAttribute('aria-expanded'), 'false');
+  const firstPanelId = document.querySelector('.ts-reports-widget__launcher').getAttribute('aria-controls');
+  assert.ok(firstPanelId);
+  assert.equal(document.getElementById(firstPanelId), document.querySelector('.ts-reports-widget__panel'));
   assert.equal(requests.filter((request) => request.url.endsWith('/team/status')).length, 2);
   assert.equal(requests.filter((request) => request.url.endsWith('/reports/detailed')).length, 1);
   assert.ok(document.querySelector('link[href="/widgets/timesheet/reports/styles.css?v=3.0.2"]'));
   widget.callbacks.init(); await new Promise(setImmediate);
   assert.equal(document.querySelectorAll('.ts-reports-widget').length, 1);
+  const secondPanelId = document.querySelector('.ts-reports-widget__launcher').getAttribute('aria-controls');
+  assert.notEqual(secondPanelId, firstPanelId);
+  assert.equal(document.getElementById(firstPanelId), null);
+  assert.equal(document.getElementById(secondPanelId), document.querySelector('.ts-reports-widget__panel'));
   widget.callbacks.destroy();
   assert.equal(document.querySelector('.ts-reports-widget'), null);
   assert.equal(document.querySelector('link[href*="reports/styles.css"]'), null);

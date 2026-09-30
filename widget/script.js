@@ -26,6 +26,7 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
         });
     }
 
+    var reportPanelSequence = 0;
     var CustomWidget = function() {
         var widget = this;
         this.settingsController = null;
@@ -171,6 +172,9 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
                 launcher.setAttribute('aria-expanded', 'false');
                 var panel = document.createElement('div');
                 panel.className = 'ts-reports-widget__panel';
+                do { panel.id = 'ts-reports-widget-panel-' + (++reportPanelSequence); }
+                while (document.getElementById(panel.id));
+                launcher.setAttribute('aria-controls', panel.id);
                 panel.hidden = true;
                 var toggle = function() {
                     panel.hidden = !panel.hidden;

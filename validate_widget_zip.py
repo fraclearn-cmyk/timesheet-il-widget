@@ -71,6 +71,47 @@ def has_named_secret_literal(content):
     return False
 
 
+def amd_dependencies(content):
+    """Read literal AMD dependencies while ignoring comments inside the array."""
+    opener = re.match(r"\s*define\s*\(\s*\[", content)
+    if not opener:
+        return []
+    index = opener.end()
+    dependencies = []
+    while index < len(content):
+        char = content[index]
+        if char.isspace() or char == ",":
+            index += 1
+        elif char == "]":
+            return dependencies
+        elif content.startswith("//", index):
+            end = content.find("\n", index + 2)
+            index = len(content) if end < 0 else end + 1
+        elif content.startswith("/*", index):
+            end = content.find("*/", index + 2)
+            if end < 0:
+                return []
+            index = end + 2
+        elif char in ("'", '"'):
+            quote = char
+            start = index + 1
+            index = start
+            while index < len(content):
+                if content[index] == "\\":
+                    index += 2
+                elif content[index] == quote:
+                    dependencies.append(content[start:index])
+                    index += 1
+                    break
+                else:
+                    index += 1
+            else:
+                return []
+        else:
+            return []
+    return []
+
+
 class WidgetValidator:
     def __init__(self, zip_path):
         self.zip_path = Path(zip_path)
@@ -145,8 +186,7 @@ class WidgetValidator:
                         "script.js must define advancedSettings callback"
                     )
                 if "script.js" in text:
-                    amd = re.search(r"\bdefine\s*\(\s*\[([^\]]*)\]", text["script.js"], re.DOTALL)
-                    dependencies = re.findall(r"['\"]([^'\"]+)['\"]", amd.group(1)) if amd else []
+                    dependencies = amd_dependencies(text["script.js"])
                     if "./reports/controller" not in dependencies:
                         self.errors.append("Missing AMD dependency: reports/controller.js")
                     for dependency, member in (

@@ -65,6 +65,9 @@ test('admin report launcher opens its own panel and leaves native CRM content in
   await expect(launcher).toHaveCount(1);
   await expect(launcher).toHaveText('Табель');
   await expect(launcher).toHaveAttribute('aria-expanded', 'false');
+  const panelId = await launcher.getAttribute('aria-controls');
+  expect(panelId).toBeTruthy();
+  await expect(page.locator(`#${panelId}.ts-reports-widget__panel`)).toHaveCount(1);
   await launcher.click();
   await expect(launcher).toHaveAttribute('aria-expanded', 'true');
   await expect(page.locator('.ts-reports__title')).toBeVisible();

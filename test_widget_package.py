@@ -94,6 +94,15 @@ class WidgetPackageTests(unittest.TestCase):
         self.assertFalse(validator.validate())
         self.assertTrue(any("reports/styles.css" in error for error in validator.errors))
 
+    def test_validator_rejects_report_dependency_only_inside_amd_array_comment(self):
+        entries = self.entries()
+        entries["script.js"] = entries["script.js"].replace(
+            b"'./reports/controller'", b"'./reports/missing', /* './reports/controller' */", 1
+        )
+        validator = WidgetValidator(self.make_zip(entries))
+        self.assertFalse(validator.validate())
+        self.assertIn("Missing AMD dependency: reports/controller.js", validator.errors)
+
     def test_validator_rejects_extra_secret_or_source_map(self):
         for name in [
             ".env",
