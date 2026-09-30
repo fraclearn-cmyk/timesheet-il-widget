@@ -28,11 +28,11 @@
 - Modify: `backend/app/core/logging.py`, `backend/app/main.py`
 - Create: `backend/tests/integration/test_request_observability.py`, `backend/tests/integration/test_security.py`
 
-- [ ] Write failing tests for malformed/untrusted request IDs, response correlation, safe generic 500, JSON fields and recursive secret redaction.
-- [ ] Generate or validate a bounded request ID, propagate it through response headers/error bodies/context and structured logs.
-- [ ] Centralize stable Russian public messages and redact authorization, cookie, token, password, secret and webhook identifiers from values and nested structures.
-- [ ] Verify that unexpected exceptions expose only the catalog error and support request ID while logs retain safe diagnostic context.
-- [ ] Independent security review and commit.
+- [x] Write failing tests for malformed/untrusted request IDs, response correlation, safe generic 500, JSON fields and recursive secret redaction.
+- [x] Generate or validate a bounded request ID, propagate it through response headers/error bodies/context and structured logs.
+- [x] Centralize stable Russian public messages and redact authorization, cookie, token, password, secret and webhook identifiers from values and nested structures.
+- [x] Verify that unexpected exceptions expose only the catalog error and support request ID while logs retain safe diagnostic context.
+- [x] Independent security review and commit.
 
 ## Task 3: Ingress and rate-limit hardening for 40 accounts
 
