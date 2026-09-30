@@ -75,10 +75,10 @@
 - Create: `backend/tests/integration/test_failure_recovery.py`, `frontend/tests/smoke.spec.js`
 - Modify recovery code only when a failing scenario proves a defect
 
-- [ ] Cover amoCRM 429/5xx/timeout, later-page rollback, token refresh, lease takeover, worker cancellation and restart without cursor or normalized-data loss.
-- [ ] Cover backend-down/recovery in the widget: no false success/Working state, simple Russian error, bounded retry and clean lifecycle.
-- [ ] Verify deduplication and replay behavior across retries for 40 isolated accounts.
-- [ ] Independent recovery review and commit.
+- [x] Cover amoCRM 429/5xx/timeout, later-page rollback, token refresh, lease takeover, worker cancellation and restart without cursor or normalized-data loss.
+- [x] Cover backend-down/recovery in the widget: no false success/Working state, simple Russian error, bounded retry and clean lifecycle.
+- [x] Verify deduplication and replay behavior across retries for 40 isolated accounts.
+- [x] Independent recovery review and commit.
 
 ## Task 7: CI, operations and phase-wide gate
 
