@@ -182,33 +182,33 @@ Review spreadsheet injection, content headers, permissions, memory bounds, timez
 - Consumes: strict detailed/export APIs and a caller-supplied authorized transport; may reuse `/team/status` for allowed group/user choices.
 - Produces: `TimesheetReports.mount(root, {transport, document, url, now})` with `refresh()`, `destroy()` and download behavior.
 
-- [ ] **Step 1: Write failing Node controller tests**
+- [x] **Step 1: Write failing Node controller tests**
 
 Assert date/group/employee filters, fixed ten-row pagination, loading/empty/error/success, Russian range errors, safe text rendering, disabled export while running, selected-column allowlist, blob download cleanup, repeat mount/destroy and no direct `fetch` or browser identity headers.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 $env:PATH='C:\Users\Lenovo\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin;' + $env:PATH
 & 'C:\Users\Lenovo\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' --test frontend/tests/reports.test.js
 ```
 
-- [ ] **Step 3: Implement the UMD/AMD controller and styles**
+- [x] **Step 3: Implement the UMD/AMD controller and styles**
 
 Use `createElement`/`textContent`, one active preview request, stale-response guards and explicit listener cleanup. Do not reuse the legacy mock `frontend/assets/js/reports.js` or its timeline/CRM columns.
 
-- [ ] **Step 4: Add browser acceptance tests**
+- [x] **Step 4: Add browser acceptance tests**
 
 Verify admin and manager filters, employee denial/no launcher, 10-row pagination, states, selected columns, successful/failed export and the complete absence of activity/CRM/call/link columns.
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 ```powershell
 & 'C:\Users\Lenovo\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' --test frontend/tests/reports.test.js
 & .\node_modules\.bin\playwright.cmd test frontend/tests/reports.spec.js
 ```
 
-- [ ] **Step 6: Independent review and commit**
+- [x] **Step 6: Independent review and commit**
 
 Review XSS, request races, URL/blob cleanup, keyboard access and error recovery. Commit as `feat: add safe timesheet report preview`.
 
