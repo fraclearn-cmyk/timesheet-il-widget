@@ -64,10 +64,10 @@
 - Modify if necessary: `backend/app/services/event_ingestion_service.py`
 - Modify tests: ingestion/catalog and access-policy integration tests
 
-- [ ] Prove the durable account-scoped event-type catalog is reused only within its one-day TTL and refreshes after expiry/failure rules.
-- [ ] Prove role/group/tracking changes are read from current database state and are never served from an uninvalidated cache.
-- [ ] Add no new cache unless measurements demonstrate a safe directory needs one; record the explicit no-rights-cache rule.
-- [ ] Independent review and commit.
+- [x] Prove the durable account-scoped event-type catalog is reused only within its one-day TTL and refreshes after expiry/failure rules.
+- [x] Prove role/group/tracking changes are read from current database state and are never served from an uninvalidated cache.
+- [x] Add no new cache unless measurements demonstrate a safe directory needs one; record the explicit no-rights-cache rule.
+- [x] Independent review and commit.
 
 ## Task 6: Failure recovery and browser smoke
 
