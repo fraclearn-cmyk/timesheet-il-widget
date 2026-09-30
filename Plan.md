@@ -54,7 +54,7 @@
 | 5 | Источник событий amoCRM и активность | Локально выполнена; live gate отложен | 2026-09-28 | PostgreSQL backend `620 passed`; Node `8 + 15 + 42 passed`; Playwright `13 passed`; package `12 passed`; `013 (head)`; общий review — APPROVED; ZIP — 19 файлов |
 | 6 | API мониторинга и окно активности | Локально выполнена; live gate отложен | 2026-09-29 | PostgreSQL backend `630 passed`; Node `91 passed`; Playwright `17 passed`; package `12 passed`; `013 (head)`; ZIP `23` файла; общий review — APPROVED |
 | 7 | Табель, отчёты и Excel | Локально выполнена; live gate отложен | 2026-09-30 | PostgreSQL backend `692 passed`; Node `112 passed`; Playwright `24 passed`; package `14 passed`; `013 (head)`; ZIP `25` файлов; общий review — APPROVED |
-| 8 | Интеграция, безопасность и производительность | Не начата | — | — |
+| 8 | Интеграция, безопасность и производительность | В работе | 2026-09-30 | Начат preflight Docker/health/logging/security/indexes/recovery/CI; фаза 7 закрыта, `test-results/` не изменяется |
 | 9 | Приёмка и документация | Не начата | — | — |
 
 ## Таблица прогресса
@@ -554,7 +554,7 @@ flowchart TD
 
 ## Текущий отчёт по фазам
 
-Фаза 7 локально выполнена: строгий табель, безопасный Excel, UI и lifecycle прошли полный gate и независимый review; все задачи и семь функциональных чекбоксов закрыты. Следующая по порядку — фаза 8. Фазы 0–2 завершены; фазы 3–7 локально реализованы. Complete live amoCRM smoke и детальный acceptance checklist отложены до локальной реализации всех фаз; они не были выполнены и не считаются закрытыми. Preflight/repair уже stamped `010` БД также остаётся отдельным deployment gate.
+Фаза 8 в работе: начат read-only preflight воспроизводимого запуска, health checks, логирования, защиты webhook, индексов, восстановления после сбоев и CI. Фазы 0–2 завершены; фазы 3–7 локально реализованы. Complete live amoCRM smoke и детальный acceptance checklist отложены до локальной реализации всех фаз; они не были выполнены и не считаются закрытыми. Preflight/repair уже stamped `010` БД также остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -585,6 +585,7 @@ flowchart TD
 | 2026-09-30 | Завершена задача 4 фазы 7: безопасный preview/download controller | UMD/AMD UI даёт фильтры, 10-строчную пагинацию, loading/empty/error/success и XLSX download; eligibility и public errors исправлены review; `105 Node`, `5 Playwright`, backend PostgreSQL focused `44 passed` |
 | 2026-09-30 | Завершена задача 5 фазы 7: widget lifecycle и упаковка отчётов | Кнопка «Табель» только для admin/manager, authorized JSON/blob transport, abort/cleanup и безопасный filename; `111 Node`, `24 Playwright`, `14 package`; ZIP `25` файлов; review fix закрыт |
 | 2026-09-30 | Фаза 7 локально выполнена; табель до 3 месяцев и безопасный Excel прошли общий gate | PostgreSQL backend `692 passed`, Node `112`, Playwright `24`, package `14`, Alembic `013 (head)`; ZIP `25` файлов; экспорт ограничен 10 000 строками и bounded source batches; общий review APPROVED |
+| 2026-09-30 | Начата фаза 8: интеграция, безопасность и производительность | Запущен read-only preflight Docker/health/logging/webhook security/indexes/recovery/CI; чекбоксы будут закрываться только после TDD, общего gate и независимого review |
 
 ### Возобновление фазы 5 — 2026-09-27
 
