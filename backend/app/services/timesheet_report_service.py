@@ -25,6 +25,7 @@ from app.schemas.report import (
 
 MAX_EXPORT_ROWS = 10000
 REPORT_ROW_BATCH_SIZE = 250
+REPORT_SOURCE_ROW_LIMIT = 25000
 
 
 def _utc_naive(value: datetime) -> datetime:
@@ -35,6 +36,18 @@ def _utc_naive(value: datetime) -> datetime:
 
 def _seconds(start: datetime, end: datetime) -> int:
     return max(0, int((end - start).total_seconds()))
+
+
+def _bounded_source_rows(query):
+    """Materialize one detail query with an explicit per-batch memory ceiling."""
+    rows = query.limit(REPORT_SOURCE_ROW_LIMIT + 1).all()
+    if len(rows) > REPORT_SOURCE_ROW_LIMIT:
+        raise APIProblem(
+            413,
+            "REPORT_EXPORT_SOURCE_TOO_LARGE",
+            "Слишком много исходных записей для выгрузки отчёта.",
+        )
+    return rows
 
 
 def _elapsed(
@@ -410,7 +423,7 @@ class TimesheetReportService:
                 tuple_(User.id, WorkSession.business_date).in_(page_keys),
             )
         )
-        sessions = sessions_query.all() if page_keys else []
+        sessions = _bounded_source_rows(sessions_query) if page_keys else []
         by_key: dict[tuple[int, date], list[WorkSession]] = defaultdict(list)
         for session, internal_id in sessions:
             by_key[(internal_id, session.business_date)].append(session)
@@ -434,7 +447,7 @@ class TimesheetReportService:
                     tuple_(User.id, WorkSession.business_date).in_(page_keys),
                 )
             )
-            for transition in transition_query.all():
+            for transition in _bounded_source_rows(transition_query):
                 transitions_by_session[transition.work_session_id].append(transition)
 
         page_rows = {}

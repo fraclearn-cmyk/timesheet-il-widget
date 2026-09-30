@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timedelta
 from io import BytesIO
+from types import SimpleNamespace
 from zipfile import ZipFile
 import xml.etree.ElementTree as ET
 import os
@@ -534,6 +535,61 @@ def test_export_fetches_employee_days_in_bounded_batches(db, monkeypatch):
     assert [row.employee_name for row in rows] == [
         f"Person {offset}" for offset in range(8)
     ]
+
+
+def test_employee_day_details_reject_unbounded_session_source(db, monkeypatch):
+    from app.services import timesheet_report_service
+    from app.services.timesheet_report_service import TimesheetReportService
+
+    add_session(db, start=datetime(2026, 9, 22, 6), end=datetime(2026, 9, 22, 7))
+    add_session(db, start=datetime(2026, 9, 22, 8), end=datetime(2026, 9, 22, 9))
+    db.commit()
+    visible = {2: (db.get(User, 2), db.get(WidgetGroup, 10))}
+    keys = [SimpleNamespace(id=2, business_date=date(2026, 9, 22))]
+
+    monkeypatch.setattr(timesheet_report_service, "REPORT_SOURCE_ROW_LIMIT", 1)
+    with pytest.raises(APIProblem) as error:
+        TimesheetReportService(db)._rows_for_keys(
+            10,
+            visible,
+            date(2026, 9, 22),
+            date(2026, 9, 22),
+            keys,
+            datetime(2026, 9, 22, 10),
+        )
+    assert error.value.status_code == 413
+    assert error.value.code == "REPORT_EXPORT_SOURCE_TOO_LARGE"
+
+
+def test_employee_day_details_reject_unbounded_transition_source(db, monkeypatch):
+    from app.services import timesheet_report_service
+    from app.services.timesheet_report_service import TimesheetReportService
+
+    add_session(
+        db,
+        start=datetime(2026, 9, 22, 6),
+        end=datetime(2026, 9, 22, 7),
+        transitions=[
+            ("break", datetime(2026, 9, 22, 6, 15)),
+            ("working", datetime(2026, 9, 22, 6, 30)),
+        ],
+    )
+    db.commit()
+    visible = {2: (db.get(User, 2), db.get(WidgetGroup, 10))}
+    keys = [SimpleNamespace(id=2, business_date=date(2026, 9, 22))]
+
+    monkeypatch.setattr(timesheet_report_service, "REPORT_SOURCE_ROW_LIMIT", 1)
+    with pytest.raises(APIProblem) as error:
+        TimesheetReportService(db)._rows_for_keys(
+            10,
+            visible,
+            date(2026, 9, 22),
+            date(2026, 9, 22),
+            keys,
+            datetime(2026, 9, 22, 8),
+        )
+    assert error.value.status_code == 413
+    assert error.value.code == "REPORT_EXPORT_SOURCE_TOO_LARGE"
 
 
 @pytest.fixture
