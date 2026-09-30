@@ -44,7 +44,20 @@ class WorkSession(Base):
             "active_duration >= 0 AND unconfirmed_duration >= 0 AND break_duration >= 0 AND idle_duration >= 0",
             name="ck_work_sessions_durations",
         ),
-        Index("uq_work_sessions_open_account_user", "amocrm_account_id", "amocrm_user_id", unique=True, postgresql_where=text("end_time IS NULL"), sqlite_where=text("end_time IS NULL")),
+        Index(
+            "uq_work_sessions_open_account_user",
+            "amocrm_account_id",
+            "amocrm_user_id",
+            unique=True,
+            postgresql_where=text("end_time IS NULL"),
+            sqlite_where=text("end_time IS NULL"),
+        ),
+        Index(
+            "ix_work_sessions_account_user_business_date",
+            "amocrm_account_id",
+            "amocrm_user_id",
+            "business_date",
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -138,7 +151,10 @@ class WorkSession(Base):
             if timestamp <= started_at:
                 status = transition.to_status
                 continue
-            if timestamp < ended_at and transition.to_status != WorkStatus.WORKING.value:
+            if (
+                timestamp < ended_at
+                and transition.to_status != WorkStatus.WORKING.value
+            ):
                 return False
             if timestamp >= ended_at:
                 break

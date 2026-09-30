@@ -682,7 +682,7 @@ def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):
                 column.name,
             )
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "013"
+        assert conn.scalar(text("select version_num from alembic_version")) == "014"
     assert "amocrm_user_id" in {
         c["name"] for c in inspect(engine).get_columns("work_sessions")
     }
@@ -919,7 +919,7 @@ def test_category_account_ownership_refuses_lossy_007_downgrade(migrated_db):
     ):
         command.downgrade(config, "006")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "013"
+        assert conn.scalar(text("select version_num from alembic_version")) == "014"
 
 
 def test_category_account_name_scope_allows_duplicate_names_per_account(migrated_db):
@@ -1010,7 +1010,7 @@ def test_downgrade_refuses_to_erase_membership_history(migrated_db):
     with pytest.raises(RuntimeError, match="membership history"):
         command.downgrade(config, "004")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "013"
+        assert conn.scalar(text("select version_num from alembic_version")) == "014"
         assert conn.scalar(text("select count(*) from group_members")) == 2
 
 
@@ -1062,7 +1062,7 @@ def test_department_account_names_and_downgrade_are_data_safe(migrated_db):
     with pytest.raises(RuntimeError, match="department account ownership"):
         command.downgrade(config, "008")
     with engine.connect() as conn:
-        assert conn.scalar(text("select version_num from alembic_version")) == "013"
+        assert conn.scalar(text("select version_num from alembic_version")) == "014"
         assert conn.scalar(text("select count(*) from departments")) == 2
 
 

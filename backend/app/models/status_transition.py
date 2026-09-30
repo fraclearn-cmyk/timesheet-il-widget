@@ -1,4 +1,12 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, CheckConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import relationship
 from app.core.time_utils import utc_now
 from app.core.database import Base
@@ -12,6 +20,12 @@ class StatusTransition(Base):
         CheckConstraint(
             "to_status IN ('working','break','finished') AND (from_status IS NULL OR from_status IN ('working','break','finished'))",
             name="ck_status_transitions_status",
+        ),
+        Index(
+            "ix_status_transitions_session_timestamp_id",
+            "work_session_id",
+            "timestamp",
+            "id",
         ),
     )
 
