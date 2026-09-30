@@ -16,6 +16,11 @@ def maximum_report_date(date_from: date) -> date:
     month_index = date_from.year * 12 + date_from.month - 1 + 3
     year, zero_based_month = divmod(month_index, 12)
     month = zero_based_month + 1
+    if year > date.max.year:
+        raise ReportPeriodError(
+            "REPORT_DATE_OUT_OF_RANGE",
+            "Дата начала отчёта не позволяет рассчитать период в пределах календаря.",
+        )
     return date(year, month, min(date_from.day, monthrange(year, month)[1]))
 
 

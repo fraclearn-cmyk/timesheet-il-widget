@@ -42,6 +42,11 @@
     return match ? `${match[3]}.${match[2]}.${match[1]}` : '—';
   }
 
+  function localDate(value) {
+    const pad = (part) => String(part).padStart(2, '0');
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  }
+
   function publicError(error, fallback) {
     const message = error && error.publicMessage;
     return typeof message === 'string' && message.trim().length > 0 && message.length <= 250 && !/[\r\n]/.test(message)
@@ -58,7 +63,7 @@
     }
     if (mounts.has(root)) mounts.get(root).destroy();
     const now = settings.now || (() => new Date());
-    const today = now().toISOString().slice(0, 10);
+    const today = localDate(now());
     const createObjectURL = settings.createObjectURL || ((blob) => URL.createObjectURL(blob));
     const revokeObjectURL = settings.revokeObjectURL || ((url) => URL.revokeObjectURL(url));
     const listeners = [];

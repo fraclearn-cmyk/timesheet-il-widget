@@ -289,6 +289,7 @@ def test_employee_with_internal_user_filter_is_denied_before_visibility_lookup(
     [
         ("2026-09-23", "2026-09-22", "REPORT_DATE_RANGE_INVALID"),
         ("2026-01-31", "2026-05-01", "REPORT_RANGE_LIMIT"),
+        ("9999-12-31", "9999-12-31", "REPORT_DATE_OUT_OF_RANGE"),
     ],
 )
 def test_period_errors_keep_stable_russian_contract(scoped_client, start, end, code):
@@ -480,6 +481,59 @@ def test_export_query_count_is_bounded_without_n_plus_one(db):
         event.remove(db.get_bind(), "before_cursor_execute", record)
     assert len(rows) == 40
     assert len(statements) <= 5, repr(statements)
+
+
+def test_export_fetches_employee_days_in_bounded_batches(db, monkeypatch):
+    from app.services import timesheet_report_service
+    from app.services.timesheet_report_service import TimesheetReportService
+
+    monkeypatch.setattr(timesheet_report_service, "REPORT_ROW_BATCH_SIZE", 3)
+    for offset in range(8):
+        user_id = 100 + offset
+        external_id = 200 + offset
+        db.add(
+            User(
+                id=user_id,
+                amocrm_account_id=10,
+                amocrm_user_id=external_id,
+                name=f"Person {offset}",
+                amocrm_rights={"is_admin": False},
+            )
+        )
+        db.flush()
+        db.add(
+            GroupMember(
+                id=user_id,
+                account_id=10,
+                group_id=10,
+                user_id=user_id,
+                is_active=True,
+                track_time=True,
+            )
+        )
+        add_session(db, external_id=external_id)
+    db.commit()
+
+    service = TimesheetReportService(db)
+    original = service._rows_for_keys
+    batch_sizes = []
+
+    def record_batch(*args, **kwargs):
+        ordered_keys = args[4]
+        batch_sizes.append(len(ordered_keys))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "_rows_for_keys", record_batch)
+    rows = service.export_rows(
+        RequestContext(account_id=10, user=db.get(User, 1)),
+        date(2026, 9, 22),
+        date(2026, 9, 22),
+    )
+
+    assert batch_sizes == [3, 3, 2]
+    assert [row.employee_name for row in rows] == [
+        f"Person {offset}" for offset in range(8)
+    ]
 
 
 @pytest.fixture

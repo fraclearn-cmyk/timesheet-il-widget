@@ -70,6 +70,14 @@ def test_report_period_rejects_invalid_or_over_limit_range(start, end, code, mes
     assert str(error.value) == message
 
 
+def test_report_period_rejects_start_that_cannot_represent_three_month_boundary():
+    from app.core.report_period import ReportPeriodError, validate_report_period
+
+    with pytest.raises(ReportPeriodError) as error:
+        validate_report_period(date(9999, 12, 31), date(9999, 12, 31))
+    assert error.value.code == "REPORT_DATE_OUT_OF_RANGE"
+
+
 def test_detailed_report_row_contains_only_timesheet_fields():
     from app.schemas.report import DetailedReportRow
 

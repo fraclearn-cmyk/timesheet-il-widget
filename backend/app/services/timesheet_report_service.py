@@ -24,6 +24,7 @@ from app.schemas.report import (
 )
 
 MAX_EXPORT_ROWS = 10000
+REPORT_ROW_BATCH_SIZE = 250
 
 
 def _utc_naive(value: datetime) -> datetime:
@@ -199,14 +200,20 @@ class TimesheetReportService:
                 "REPORT_EXPORT_TOO_LARGE",
                 "Слишком много строк для выгрузки отчёта.",
             )
-        return self._rows_for_keys(
-            context.account_id,
-            visible,
-            date_from,
-            date_to,
-            keys,
-            _utc_naive(now or utc_now()),
-        )
+        effective_now = _utc_naive(now or utc_now())
+        rows: list[DetailedReportRow] = []
+        for start in range(0, len(keys), REPORT_ROW_BATCH_SIZE):
+            rows.extend(
+                self._rows_for_keys(
+                    context.account_id,
+                    visible,
+                    date_from,
+                    date_to,
+                    keys[start : start + REPORT_ROW_BATCH_SIZE],
+                    effective_now,
+                )
+            )
+        return rows
 
     def _stream_totals(
         self,

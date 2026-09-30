@@ -34,7 +34,7 @@ function boot(options = {}) {
   };
   const createCalls = [], revokeCalls = [];
   const controller = Reports.mount(document.querySelector('#root'), {
-    document, transport, now: () => new Date('2026-09-29T12:00:00Z'),
+    document, transport, now: options.now || (() => new Date('2026-09-29T12:00:00Z')),
     createObjectURL(blob) { createCalls.push(blob); return 'blob:test'; },
     revokeObjectURL(url) { revokeCalls.push(url); },
   });
@@ -53,6 +53,20 @@ test('loads authorized directory before first preview and sends default calendar
   assert.deepEqual(fixture.calls[1].params, { date_from: '2026-09-29', date_to: '2026-09-29', page: 1 });
   assert.equal(select(fixture, 'date-from').value, '2026-09-29');
   assert.equal(select(fixture, 'date-to').value, '2026-09-29');
+  fixture.controller.destroy();
+});
+
+test('default date uses local calendar fields around local midnight', async () => {
+  const localMidnight = {
+    getFullYear: () => 2026,
+    getMonth: () => 8,
+    getDate: () => 30,
+    toISOString: () => '2026-09-29T21:30:00.000Z',
+  };
+  const fixture = boot({ now: () => localMidnight });
+  await fixture.controller.ready;
+  assert.deepEqual(fixture.calls[1].params,
+    { date_from: '2026-09-30', date_to: '2026-09-30', page: 1 });
   fixture.controller.destroy();
 });
 

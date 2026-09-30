@@ -332,6 +332,7 @@ def test_distinct_keys_sort_and_page_before_loading_sessions(scoped_client, db):
     [
         ("2026-09-23", "2026-09-22", "REPORT_DATE_RANGE_INVALID"),
         ("2026-01-31", "2026-05-01", "REPORT_RANGE_LIMIT"),
+        ("9999-12-31", "9999-12-31", "REPORT_DATE_OUT_OF_RANGE"),
     ],
 )
 def test_period_errors_have_russian_messages(scoped_client, start, end, code):
