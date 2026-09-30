@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker', './monitoring/timeline', './monitoring/activity-modal', './monitoring/dashboard'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard) {
+define(['jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker', './monitoring/timeline', './monitoring/activity-modal', './monitoring/dashboard', './reports/controller'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
     function apiUrl(widget) {
         var settings = widget.get_settings();
         return settings && settings.api_url ? String(settings.api_url).replace(/\/+$/, '') : null;
@@ -40,6 +40,13 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
         this.monitoringHost = null;
         this.monitoringStyle = null;
         this.monitoringStyleTimer = null;
+        this.reportController = null;
+        this.reportHost = null;
+        this.reportStyle = null;
+        this.reportStyleTimer = null;
+        this.reportRoleAbort = null;
+        this.reportGeneration = 0;
+        this.removeReportToggle = null;
         this.timesheetOverlay = Overlay.createOverlay(document);
 
         this.clearTimesheetStatus = function() { widget.timesheetOverlay.clear(); };
@@ -75,6 +82,136 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
                 signal.addEventListener('abort', abort, { once: true });
             }
             return toPromise(request);
+        }
+        function reportError(error) {
+            var message = error && error.responseJSON && error.responseJSON.error && error.responseJSON.error.message;
+            return { publicMessage: typeof message === 'string' && message.trim() && message.length <= 250 && !/[\r\n]/.test(message)
+                ? message : undefined };
+        }
+        function reportRequest(options, signal, onRequest) {
+            if (signal && signal.aborted) return Promise.reject({ publicMessage: undefined });
+            var request;
+            try { request = widget.$authorizedAjax(options); }
+            catch (error) { return Promise.reject(reportError(error)); }
+            if (onRequest) onRequest(request);
+            return new Promise(function(resolve, reject) {
+                var settled = false;
+                function finish(callback, value) {
+                    if (settled) return;
+                    settled = true;
+                    if (signal) signal.removeEventListener('abort', onAbort);
+                    callback(value);
+                }
+                function onAbort() {
+                    if (request && typeof request.abort === 'function') request.abort();
+                    finish(reject, { publicMessage: undefined });
+                }
+                if (signal) signal.addEventListener('abort', onAbort, { once: true });
+                if (signal && signal.aborted) { onAbort(); return; }
+                Promise.resolve(request).then(function(value) { finish(resolve, value); }, function(error) { finish(reject, reportError(error)); });
+            });
+        }
+        function safeReportDate(value) {
+            return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? value : '0000-00-00';
+        }
+        function reportFilename(request, body) {
+            var header = request && typeof request.getResponseHeader === 'function'
+                ? request.getResponseHeader('Content-Disposition') : null;
+            var match = typeof header === 'string' && /^attachment\s*;\s*filename="(timesheet_\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.xlsx)"\s*$/i.exec(header);
+            return match ? match[1] : 'timesheet_' + safeReportDate(body.date_from) + '_' + safeReportDate(body.date_to) + '.xlsx';
+        }
+        function stopReports() {
+            ++widget.reportGeneration;
+            if (widget.reportRoleAbort) widget.reportRoleAbort.abort();
+            widget.reportRoleAbort = null;
+            clearTimeout(widget.reportStyleTimer);
+            widget.reportStyleTimer = null;
+            if (widget.reportController) widget.reportController.destroy();
+            widget.reportController = null;
+            if (widget.removeReportToggle) widget.removeReportToggle();
+            widget.removeReportToggle = null;
+            if (widget.reportHost) widget.reportHost.remove();
+            widget.reportHost = null;
+            if (widget.reportStyle) {
+                widget.reportStyle.onload = widget.reportStyle.onerror = null;
+                widget.reportStyle.remove();
+            }
+            widget.reportStyle = null;
+        }
+        function startReports(baseUrl, settings) {
+            stopReports();
+            if (!ReportsController || typeof ReportsController.mount !== 'function' || !settings.path) return;
+            var generation = widget.reportGeneration;
+            var roleAbort = new AbortController();
+            widget.reportRoleAbort = roleAbort;
+            reportRequest({ url: baseUrl + '/team/status', method: 'GET', dataType: 'json', timeout: 10000 }, roleAbort.signal).then(function(status) {
+                if (roleAbort.signal.aborted || generation !== widget.reportGeneration ||
+                    !status || !status.viewer || ['admin', 'manager'].indexOf(status.viewer.role) === -1 ||
+                    (typeof widget.system === 'function' && ['settings', 'advanced_settings'].indexOf(widget.system().area) !== -1)) return;
+                widget.reportRoleAbort = null;
+                var style = document.createElement('link');
+                style.rel = 'stylesheet';
+                style.href = String(settings.path).replace(/\/?$/, '/') + 'reports/styles.css?v=' + encodeURIComponent(settings.version || '');
+                widget.reportStyle = style;
+                function finishStyleLoad() {
+                    clearTimeout(widget.reportStyleTimer);
+                    widget.reportStyleTimer = null;
+                    style.onload = style.onerror = null;
+                }
+                style.onload = finishStyleLoad;
+                style.onerror = finishStyleLoad;
+                widget.reportStyleTimer = setTimeout(finishStyleLoad, 10000);
+                document.head.appendChild(style);
+                var host = document.createElement('aside');
+                host.className = 'ts-reports-widget';
+                var launcher = document.createElement('button');
+                launcher.type = 'button';
+                launcher.className = 'ts-reports-widget__launcher';
+                launcher.textContent = 'Табель';
+                launcher.setAttribute('aria-expanded', 'false');
+                var panel = document.createElement('div');
+                panel.className = 'ts-reports-widget__panel';
+                panel.hidden = true;
+                var toggle = function() {
+                    panel.hidden = !panel.hidden;
+                    launcher.setAttribute('aria-expanded', String(!panel.hidden));
+                };
+                launcher.addEventListener('click', toggle);
+                widget.removeReportToggle = function() { launcher.removeEventListener('click', toggle); };
+                host.appendChild(launcher);
+                host.appendChild(panel);
+                document.body.appendChild(host);
+                widget.reportHost = host;
+                var firstDirectory = status;
+                widget.reportController = ReportsController.mount(panel, {
+                    document: document,
+                    transport: {
+                        directory: function(signal) {
+                            if (firstDirectory) {
+                                var result = firstDirectory;
+                                firstDirectory = null;
+                                return signal && signal.aborted ? Promise.reject({ publicMessage: undefined }) : Promise.resolve(result);
+                            }
+                            return reportRequest({ url: baseUrl + '/team/status', method: 'GET', dataType: 'json', timeout: 10000 }, signal);
+                        },
+                        report: function(params, signal) {
+                            return reportRequest({ url: baseUrl + '/reports/detailed', method: 'GET', dataType: 'json', timeout: 10000, data: params }, signal);
+                        },
+                        export: function(body, signal) {
+                            var request;
+                            var options = { url: baseUrl + '/reports/export-excel', method: 'POST', contentType: 'application/json',
+                                data: JSON.stringify(body), xhrFields: { responseType: 'blob' }, timeout: 10000 };
+                            return reportRequest(options, signal, function(value) { request = value; }).then(function(blob) {
+                                return { blob: blob, filename: reportFilename(request, body) };
+                            });
+                        }
+                    },
+                    now: function() { return new Date(); }
+                });
+                if (widget.reportController.ready) widget.reportController.ready.catch(function() {});
+            }).catch(function() {
+                if (generation === widget.reportGeneration) stopReports();
+            });
         }
         function startMonitoring(baseUrl, settings) {
             stopMonitoring();
@@ -133,6 +270,7 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
             }
         }
         function stopTimesheet() {
+            stopReports();
             stopMonitoring();
             clearTimeout(widget.workingStyleTimer);
             widget.workingStyleTimer = null;
@@ -167,6 +305,7 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
                 widget.workingStyleTimer = null;
                 style.onload = style.onerror = null;
                 startMonitoring(baseUrl, settings);
+                startReports(baseUrl, settings);
                 startController(baseUrl);
             };
             document.head.appendChild(style);

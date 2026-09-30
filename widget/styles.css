@@ -341,6 +341,37 @@
     display: none;
 }
 
+.ts-reports-widget {
+    position: fixed;
+    right: 20px;
+    bottom: 76px;
+    z-index: 10010;
+}
+
+.ts-reports-widget__launcher {
+    padding: 9px 14px;
+    border: 0;
+    border-radius: 5px;
+    background: #2469a8;
+    color: #fff;
+    cursor: pointer;
+}
+
+.ts-reports-widget__panel {
+    box-sizing: border-box;
+    width: min(960px, calc(100vw - 40px));
+    max-height: calc(100vh - 160px);
+    overflow: auto;
+    padding: 16px;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, .2);
+}
+
+.ts-reports-widget__panel[hidden] {
+    display: none;
+}
+
 /* Pulse Animation for Active Status */
 .status-working::before {
     content: '';

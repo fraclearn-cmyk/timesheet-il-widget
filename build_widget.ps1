@@ -9,6 +9,7 @@ $runtime = @(
     'manifest.json', 'script.js', 'overlay.js', 'activity-tracker.js', 'timesheet/controller.js', 'styles.css',
     'settings/settings.html', 'settings/settings.js', 'settings/settings.css',
     'monitoring/dashboard.js', 'monitoring/activity-modal.js', 'monitoring/timeline.js', 'monitoring/styles.css',
+    'reports/controller.js', 'reports/styles.css',
     'i18n/ru.json', 'i18n/en.json',
     'images/icon.png', 'images/logo.png', 'images/logo_main.png',
     'images/logo_medium.png', 'images/logo_min.png', 'images/logo_small.png',
@@ -28,7 +29,7 @@ try {
     New-Item -ItemType Directory -Path $stage | Out-Null
     foreach ($name in $runtime) {
         $relative = $name.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
-        if ($name.StartsWith('settings/') -or $name.StartsWith('monitoring/')) {
+        if ($name.StartsWith('settings/') -or $name.StartsWith('monitoring/') -or $name.StartsWith('reports/')) {
             $source = Join-Path (Join-Path $root 'frontend') $relative
         } else {
             $source = Join-Path (Join-Path $root 'widget') $relative

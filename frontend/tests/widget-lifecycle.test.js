@@ -9,6 +9,7 @@ const widgetSource = readFileSync(resolve(__dirname, '../../widget/script.js'), 
 const manifest = JSON.parse(readFileSync(resolve(__dirname, '../../widget/manifest.json'), 'utf8'));
 const workingCss = readFileSync(resolve(__dirname, '../../widget/styles.css'));
 const monitoringCss = readFileSync(resolve(__dirname, '../monitoring/styles.css'));
+const reportsCss = readFileSync(resolve(__dirname, '../reports/styles.css'));
 const fixtures = [];
 test.afterEach(() => {
   for (const { widget, dom } of fixtures.splice(0)) {
@@ -19,6 +20,7 @@ test.afterEach(() => {
 
 class WidgetResources extends ResourceLoader {
   fetch(url) {
+    if (url.includes('/widgets/timesheet/reports/styles.css')) return Promise.resolve(reportsCss);
     if (url.includes('/widgets/timesheet/monitoring/styles.css')) return Promise.resolve(monitoringCss);
     if (url.includes('/widgets/timesheet/styles.css')) return Promise.resolve(workingCss);
     return null;
@@ -73,12 +75,13 @@ function boot(options = {}) {
       require('../monitoring/timeline'),
       require('../monitoring/activity-modal'),
       require('../monitoring/dashboard'),
+      options.reportsController || require('../reports/controller'),
     );
   };
   window.eval(widgetSource);
   assert.deepEqual(moduleIds, [
     'jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker',
-    './monitoring/timeline', './monitoring/activity-modal', './monitoring/dashboard',
+    './monitoring/timeline', './monitoring/activity-modal', './monitoring/dashboard', './reports/controller',
   ]);
   const requests = [];
   const widget = new Widget();
@@ -89,6 +92,8 @@ function boot(options = {}) {
     requests.push(request);
     if (request.url.includes('/team/status')) return Promise.resolve(options.monitoringStatus || response());
     if (request.url.includes('/team/') && request.url.includes('/activity')) return Promise.resolve(activity());
+    if (request.url.includes('/reports/detailed')) return options.reportResponse || Promise.resolve({ items: [], page: 1, total: 0 });
+    if (request.url.includes('/reports/export-excel')) return options.exportResponse || Promise.resolve(new Blob(['xlsx']));
     if (request.method === 'GET') return options.load || Promise.resolve(snapshot());
     return options.save || Promise.resolve(snapshot());
   };
@@ -236,6 +241,147 @@ test('repeated working init replaces monitoring DOM and does not duplicate launc
   widget.callbacks.init(); await new Promise(setImmediate);
   assert.equal(document.querySelectorAll('.ts-monitoring-widget').length, 1);
   assert.equal(document.querySelectorAll('link[href*="monitoring/styles.css"]').length, 1);
+});
+
+test('report launcher appears only after admin preflight, reuses directory and is owned across init and destroy', async () => {
+  const { document, widget, requests } = boot({ area: 'lcard' });
+  widget.callbacks.init();
+  assert.equal(document.querySelector('.ts-reports-widget'), null);
+  await new Promise(setImmediate);
+  assert.equal(document.querySelectorAll('.ts-reports-widget__launcher').length, 1);
+  assert.equal(document.querySelector('.ts-reports-widget__launcher').textContent, 'Табель');
+  assert.equal(document.querySelector('.ts-reports-widget__launcher').getAttribute('aria-expanded'), 'false');
+  assert.equal(requests.filter((request) => request.url.endsWith('/team/status')).length, 2);
+  assert.equal(requests.filter((request) => request.url.endsWith('/reports/detailed')).length, 1);
+  assert.ok(document.querySelector('link[href="/widgets/timesheet/reports/styles.css?v=3.0.2"]'));
+  widget.callbacks.init(); await new Promise(setImmediate);
+  assert.equal(document.querySelectorAll('.ts-reports-widget').length, 1);
+  widget.callbacks.destroy();
+  assert.equal(document.querySelector('.ts-reports-widget'), null);
+  assert.equal(document.querySelector('link[href*="reports/styles.css"]'), null);
+  assert.ok(document.querySelector('#amo-owned'));
+});
+
+test('employee and stale preflight responses never create report DOM', async () => {
+  const employee = response(); employee.viewer.role = 'employee';
+  const employeeFixture = boot({ area: 'lcard', monitoringStatus: employee });
+  employeeFixture.widget.callbacks.init(); await new Promise(setImmediate);
+  assert.equal(employeeFixture.document.querySelector('.ts-reports-widget'), null);
+  assert.equal(employeeFixture.document.querySelector('link[href*="reports/styles.css"]'), null);
+  let finishStatus;
+  const pending = new Promise((resolve) => { finishStatus = resolve; });
+  const stale = boot({ area: 'lcard', monitoringStatus: pending });
+  stale.widget.callbacks.init(); await new Promise(setImmediate);
+  stale.widget.callbacks.destroy();
+  finishStatus(response()); await new Promise(setImmediate);
+  assert.equal(stale.document.querySelector('.ts-reports-widget'), null);
+  assert.equal(stale.document.querySelector('link[href*="reports/styles.css"]'), null);
+});
+
+test('report mount failure removes its shell without interrupting timesheet UI', async () => {
+  const { document, widget } = boot({ area: 'lcard',
+    load: Promise.resolve({ session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z', ended_at: null,
+      break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false }),
+    reportsController: { mount() { throw new Error('broken report'); } } });
+  widget.callbacks.init(); await new Promise(setImmediate);
+  assert.equal(document.querySelector('.ts-reports-widget'), null);
+  assert.equal(document.querySelector('link[href*="reports/styles.css"]'), null);
+  assert.equal(document.querySelectorAll('.timesheet-overlay').length, 1);
+  assert.equal(document.querySelectorAll('.ts-monitoring-widget').length, 1);
+});
+
+test('report preview and Excel use authorized transport, safe filename and public errors', async () => {
+  const { dom, document, widget, requests } = boot({ area: 'lcard' });
+  let downloaded;
+  dom.window.HTMLAnchorElement.prototype.click = function() { downloaded = this.download; };
+  const original = widget.$authorizedAjax;
+  widget.$authorizedAjax = (options) => {
+    if (options.url.endsWith('/reports/export-excel')) {
+      requests.push(options);
+      return Object.assign(Promise.resolve(new Blob(['xlsx'])), {
+        getResponseHeader: () => 'attachment; filename="../../evil.xlsx"', abort() {},
+      });
+    }
+    return original(options);
+  };
+  widget.callbacks.init(); await new Promise(setImmediate);
+  const preview = requests.find((request) => request.url.endsWith('/reports/detailed'));
+  assert.equal(preview.method, 'GET'); assert.equal(preview.dataType, 'json');
+  assert.equal(preview.data.page, 1);
+  assert.equal('headers' in preview, false);
+  const from = document.querySelector('.ts-reports__date-from');
+  const to = document.querySelector('.ts-reports__date-to');
+  from.value = '2026-09-01'; to.value = '2026-09-30';
+  document.querySelector('.ts-reports__export').click(); await new Promise(setImmediate);
+  const request = requests.find((item) => item.url.endsWith('/reports/export-excel'));
+  assert.equal(request.method, 'POST');
+  assert.equal(request.contentType, 'application/json');
+  assert.equal(request.xhrFields.responseType, 'blob');
+  assert.deepEqual(JSON.parse(request.data).columns, ['employee', 'date', 'start', 'end', 'break', 'work', 'lateness', 'status']);
+  assert.equal('headers' in request, false);
+  assert.equal(downloaded, 'timesheet_2026-09-01_2026-09-30.xlsx');
+});
+
+test('valid disposition filename is used and report errors expose only bounded backend messages', async () => {
+  const { dom, document, widget, requests } = boot({ area: 'lcard' });
+  let downloaded;
+  dom.window.HTMLAnchorElement.prototype.click = function() { downloaded = this.download; };
+  const original = widget.$authorizedAjax;
+  widget.$authorizedAjax = (request) => {
+    if (request.url.endsWith('/reports/export-excel')) {
+      requests.push(request);
+      return Object.assign(Promise.resolve(new Blob(['xlsx'])), {
+        getResponseHeader: () => 'attachment; filename="timesheet_2026-09-03_2026-09-29.xlsx"', abort() {},
+      });
+    }
+    if (request.url.endsWith('/reports/detailed')) {
+      requests.push(request);
+      return Promise.reject({ message: 'private token', responseText: 'private stack',
+        responseJSON: { error: { message: 'Публичная ошибка' } } });
+    }
+    return original(request);
+  };
+  widget.callbacks.init(); await new Promise(setImmediate);
+  assert.match(document.querySelector('.ts-reports__message').textContent, /Публичная ошибка/);
+  assert.doesNotMatch(document.querySelector('.ts-reports-widget').textContent, /private token|private stack/);
+  document.querySelector('.ts-reports__export').click(); await new Promise(setImmediate);
+  assert.equal(downloaded, 'timesheet_2026-09-03_2026-09-29.xlsx');
+});
+
+test('destroy aborts report role and export jqXHR without late report DOM or download', async () => {
+  const preflight = boot({ area: 'lcard' });
+  let statusCalls = 0;
+  let roleAborted = false;
+  let resolveRole;
+  preflight.widget.$authorizedAjax = (request) => {
+    if (request.url.endsWith('/team/status')) {
+      ++statusCalls;
+      const pending = new Promise((resolve) => { if (statusCalls === 2) resolveRole = resolve; });
+      return Object.assign(pending, { abort() { if (statusCalls === 2) roleAborted = true; } });
+    }
+    return Promise.resolve({});
+  };
+  preflight.widget.callbacks.init(); await new Promise(setImmediate);
+  preflight.widget.callbacks.destroy();
+  assert.equal(roleAborted, true);
+  resolveRole(response()); await new Promise(setImmediate);
+  assert.equal(preflight.document.querySelector('.ts-reports-widget'), null);
+
+  const exporting = boot({ area: 'lcard' });
+  let exportAborted = false;
+  let resolveExport;
+  let downloaded = false;
+  exporting.dom.window.HTMLAnchorElement.prototype.click = function() { downloaded = true; };
+  const original = exporting.widget.$authorizedAjax;
+  exporting.widget.$authorizedAjax = (request) => request.url.endsWith('/reports/export-excel')
+    ? Object.assign(new Promise((resolve) => { resolveExport = resolve; }), { abort() { exportAborted = true; } })
+    : original(request);
+  exporting.widget.callbacks.init(); await new Promise(setImmediate);
+  exporting.document.querySelector('.ts-reports__export').click();
+  exporting.widget.callbacks.destroy();
+  assert.equal(exportAborted, true);
+  resolveExport(new Blob(['late'])); await new Promise(setImmediate);
+  assert.equal(downloaded, false);
 });
 
 test('repeated working init replaces its controller and focus refresh listener', async () => {

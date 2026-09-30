@@ -34,6 +34,8 @@ RUNTIME = {
     "monitoring/activity-modal.js",
     "monitoring/timeline.js",
     "monitoring/styles.css",
+    "reports/controller.js",
+    "reports/styles.css",
     "i18n/ru.json",
     "i18n/en.json",
     "images/icon.png",
@@ -62,7 +64,7 @@ class WidgetPackageTests(unittest.TestCase):
         for name in RUNTIME:
             source_root = (
                 "frontend"
-                if name.startswith(("settings/", "monitoring/"))
+                if name.startswith(("settings/", "monitoring/", "reports/"))
                 else "widget"
             )
             source = ROOT / source_root / name
@@ -77,6 +79,20 @@ class WidgetPackageTests(unittest.TestCase):
         self.assertTrue(
             any("settings/settings.js" in error for error in validator.errors)
         )
+
+    def test_validator_requires_report_dependency_and_exact_report_assets(self):
+        entries = self.entries()
+        entries["script.js"] = entries["script.js"].replace(
+            b"'./reports/controller'", b"'./reports/missing'"
+        ) + b"\n// './reports/controller'\n"
+        validator = WidgetValidator(self.make_zip(entries))
+        self.assertFalse(validator.validate())
+        self.assertTrue(any("reports/controller" in error for error in validator.errors))
+        entries = self.entries()
+        del entries["reports/styles.css"]
+        validator = WidgetValidator(self.make_zip(entries))
+        self.assertFalse(validator.validate())
+        self.assertTrue(any("reports/styles.css" in error for error in validator.errors))
 
     def test_validator_rejects_extra_secret_or_source_map(self):
         for name in [
@@ -167,6 +183,7 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
+            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"
@@ -231,6 +248,7 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
+            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"
@@ -287,6 +305,7 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
+            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"
@@ -327,6 +346,7 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
+            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"
@@ -369,6 +389,7 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
+            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"

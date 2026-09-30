@@ -9,20 +9,25 @@ const sources = Object.fromEntries([
   ['overlay', 'widget/overlay.js'], ['tracker', 'widget/activity-tracker.js'],
   ['timeline', 'frontend/monitoring/timeline.js'], ['modal', 'frontend/monitoring/activity-modal.js'],
   ['dashboard', 'frontend/monitoring/dashboard.js'], ['widget', 'widget/script.js'],
+  ['reports', 'frontend/reports/controller.js'],
 ].map(([key, file]) => [key, readFileSync(resolve(__dirname, '../..', file), 'utf8')]));
 const css = readFileSync(resolve(__dirname, '../../widget/styles.css'), 'utf8');
 const monitoringCss = readFileSync(resolve(__dirname, '../monitoring/styles.css'), 'utf8');
+const reportsCss = readFileSync(resolve(__dirname, '../reports/styles.css'), 'utf8');
 
-async function boot(page, cssHandler) {
+async function boot(page, cssHandler, role = 'employee', timesheetStatus = 'on_break') {
   await page.route('https://widget.test/**', async (route) => {
     if (route.request().url().includes('/monitoring/styles.css')) {
       return route.fulfill({ contentType: 'text/css', body: monitoringCss });
+    }
+    if (route.request().url().includes('/reports/styles.css')) {
+      return route.fulfill({ contentType: 'text/css', body: reportsCss });
     }
     if (route.request().url().includes('/styles.css')) return cssHandler(route);
     return route.fulfill({ contentType: 'text/html', body: '<button id="crm">CRM</button><div id="list_page_holder"></div>' });
   });
   await page.goto('https://widget.test/');
-  await page.evaluate((code) => {
+  await page.evaluate(({ code, role, timesheetStatus }) => {
     const modules = {};
     for (const name of ['settings', 'controller', 'overlay', 'tracker']) {
       window.define = (factory) => { modules[name] = factory(); };
@@ -32,8 +37,9 @@ async function boot(page, cssHandler) {
     window.define = (_ids, factory) => { modules.timeline = factory(); }; window.define.amd = {}; (0, eval)(code.timeline);
     window.define = (_ids, factory) => { modules.modal = factory(modules.timeline); }; window.define.amd = {}; (0, eval)(code.modal);
     window.define = (_ids, factory) => { modules.dashboard = factory(modules.modal); }; window.define.amd = {}; (0, eval)(code.dashboard);
+    window.define = (_ids, factory) => { modules.reports = factory(); }; window.define.amd = {}; (0, eval)(code.reports);
     window.define = (_ids, factory) => { window.Widget = factory({}, modules.settings, modules.controller, modules.overlay,
-      modules.tracker, modules.timeline, modules.modal, modules.dashboard); };
+      modules.tracker, modules.timeline, modules.modal, modules.dashboard, modules.reports); };
     (0, eval)(code.widget);
     window.widget = new window.Widget();
     window.area = 'lcard'; window.calls = [];
@@ -43,14 +49,37 @@ async function boot(page, cssHandler) {
       window.calls.push(request);
       if (request.url.includes('/settings/')) return new Promise(() => {});
       if (request.url.includes('/team/status')) return Promise.resolve({ generated_at: '2026-09-29T09:00:00Z',
-        viewer: { role: 'employee', can_view_activity: false }, groups: [], employees: [],
+        viewer: { role, can_view_activity: false }, groups: [], employees: [],
         totals: { employees: 0, working: 0, on_break: 0, finished: 0, not_started: 0 } });
-      return Promise.resolve({ session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z',
+      if (request.url.includes('/reports/detailed')) return Promise.resolve({ items: [], page: 1, total: 0 });
+      return Promise.resolve({ session_id: 7, status: timesheetStatus, started_at: '2026-09-22T08:00:00Z',
         ended_at: null, break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false });
     };
     window.widget.callbacks.init();
-  }, sources);
+  }, { code: sources, role, timesheetStatus });
 }
+
+test('admin report launcher opens its own panel and leaves native CRM content intact', async ({ page }) => {
+  await boot(page, (route) => route.fulfill({ contentType: 'text/css', body: css }), 'admin', 'working');
+  const launcher = page.locator('.ts-reports-widget__launcher');
+  await expect(launcher).toHaveCount(1);
+  await expect(launcher).toHaveText('Табель');
+  await expect(launcher).toHaveAttribute('aria-expanded', 'false');
+  await launcher.click();
+  await expect(launcher).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.ts-reports__title')).toBeVisible();
+  await expect(page.locator('.ts-reports-widget__panel')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await page.evaluate(() => window.widget.callbacks.destroy());
+  await expect(page.locator('.ts-reports-widget, link[href*="reports/styles.css"]')).toHaveCount(0);
+  await expect(page.locator('#crm')).toHaveCount(1);
+});
+
+test('employee receives no report launcher or panel', async ({ page }) => {
+  await boot(page, (route) => route.fulfill({ contentType: 'text/css', body: css }));
+  await expect(page.locator('.timesheet-overlay')).toHaveCount(1);
+  await expect(page.locator('.ts-reports-widget')).toHaveCount(0);
+  await expect(page.locator('link[href*="reports/styles.css"]')).toHaveCount(0);
+});
 
 test('widget init loads versioned CSS before real blocking UI and removes it on destroy', async ({ page }) => {
   let release;

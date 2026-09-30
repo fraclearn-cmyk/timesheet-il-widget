@@ -23,6 +23,8 @@ RUNTIME_FILES = frozenset(
         "monitoring/activity-modal.js",
         "monitoring/timeline.js",
         "monitoring/styles.css",
+        "reports/controller.js",
+        "reports/styles.css",
         "i18n/ru.json",
         "i18n/en.json",
         "images/icon.png",
@@ -143,6 +145,10 @@ class WidgetValidator:
                         "script.js must define advancedSettings callback"
                     )
                 if "script.js" in text:
+                    amd = re.search(r"\bdefine\s*\(\s*\[([^\]]*)\]", text["script.js"], re.DOTALL)
+                    dependencies = re.findall(r"['\"]([^'\"]+)['\"]", amd.group(1)) if amd else []
+                    if "./reports/controller" not in dependencies:
+                        self.errors.append("Missing AMD dependency: reports/controller.js")
                     for dependency, member in (
                         ("./settings/settings", "settings/settings.js"),
                         ("./timesheet/controller", "timesheet/controller.js"),
@@ -151,6 +157,7 @@ class WidgetValidator:
                         ("./monitoring/timeline", "monitoring/timeline.js"),
                         ("./monitoring/activity-modal", "monitoring/activity-modal.js"),
                         ("./monitoring/dashboard", "monitoring/dashboard.js"),
+                        ("./reports/controller", "reports/controller.js"),
                     ):
                         if dependency in text["script.js"] and member not in names:
                             self.errors.append(f"Missing AMD dependency: {member}")
