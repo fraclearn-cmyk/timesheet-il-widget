@@ -21,7 +21,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import User, WorkSession, WorkStatus, GroupMember, WidgetGroup, CrmEvent, CallEvent, PresenceBatch, StatusTransition, OAuthConnection
+from app.models import (
+    User,
+    WorkSession,
+    WorkStatus,
+    GroupMember,
+    WidgetGroup,
+    CrmEvent,
+    CallEvent,
+    PresenceBatch,
+    StatusTransition,
+    OAuthConnection,
+)
 from app.core.database import Base
 from app.models import ActivityInterval
 from app.core.access_policy import RequestContext
@@ -32,19 +43,44 @@ from datetime import datetime, timezone
 from datetime import timedelta
 
 
-def test_011_backfills_group_business_date_and_rejects_duplicate_open_sessions(migrated_db):
+def test_011_backfills_group_business_date_and_rejects_duplicate_open_sessions(
+    migrated_db,
+):
     config, engine = migrated_db
     command.upgrade(config, "010")
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
-        conn.execute(text("INSERT INTO widget_groups (id,account_id,name,name_key,timezone,work_start_time,work_end_time,is_active,allow_restart_session,created_at,updated_at) VALUES (10,100,'Night','night','Europe/Minsk','22:00','06:00',true,false,now(),now())"))
-        conn.execute(text("INSERT INTO group_members (id,account_id,group_id,user_id,track_time,hide_widget,is_active,created_at,updated_at) VALUES (20,100,10,7,true,false,true,now(),now())"))
-        conn.execute(text("INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,end_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-21 23:00:00','2026-09-22 02:00:00','finished',now(),now())"))
+        conn.execute(
+            text(
+                "INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO widget_groups (id,account_id,name,name_key,timezone,work_start_time,work_end_time,is_active,allow_restart_session,created_at,updated_at) VALUES (10,100,'Night','night','Europe/Minsk','22:00','06:00',true,false,now(),now())"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO group_members (id,account_id,group_id,user_id,track_time,hide_widget,is_active,created_at,updated_at) VALUES (20,100,10,7,true,false,true,now(),now())"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,end_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-21 23:00:00','2026-09-22 02:00:00','finished',now(),now())"
+            )
+        )
     command.upgrade(config, "011")
     with engine.connect() as conn:
-        assert str(conn.scalar(text("SELECT business_date FROM work_sessions WHERE id=1"))) == "2026-09-21"
+        assert (
+            str(conn.scalar(text("SELECT business_date FROM work_sessions WHERE id=1")))
+            == "2026-09-21"
+        )
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO timesheet_commands (account_id,amocrm_user_id,key,action,response,created_at) VALUES (100,700,'11111111-1111-4111-8111-111111111111','start-work','{}',now())"))
+        conn.execute(
+            text(
+                "INSERT INTO timesheet_commands (account_id,amocrm_user_id,key,action,response,created_at) VALUES (100,700,'11111111-1111-4111-8111-111111111111','start-work','{}',now())"
+            )
+        )
     with pytest.raises(RuntimeError, match="phase-4 data"):
         command.downgrade(config, "010")
 
@@ -53,8 +89,16 @@ def test_011_rejects_preexisting_duplicate_open_sessions_without_rewriting(migra
     config, engine = migrated_db
     command.upgrade(config, "010")
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
-        conn.execute(text("INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-21 08:00:00','working',now(),now()), (2,100,700,'One','2026-09-22 08:00:00','working',now(),now())"))
+        conn.execute(
+            text(
+                "INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-21 08:00:00','working',now(),now()), (2,100,700,'One','2026-09-22 08:00:00','working',now(),now())"
+            )
+        )
     with pytest.raises(RuntimeError, match="duplicate open work_sessions"):
         command.upgrade(config, "011")
     with engine.connect() as conn:
@@ -66,8 +110,16 @@ def test_011_downgrade_refuses_new_session_without_command(migrated_db):
     config, engine = migrated_db
     command.upgrade(config, "011")
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
-        conn.execute(text("INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,end_time,current_status,business_date,created_at,updated_at) VALUES (100,700,'One','2026-09-22 06:00:00','2026-09-22 07:00:00','finished','2026-09-22',now(),now())"))
+        conn.execute(
+            text(
+                "INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,end_time,current_status,business_date,created_at,updated_at) VALUES (100,700,'One','2026-09-22 06:00:00','2026-09-22 07:00:00','finished','2026-09-22',now(),now())"
+            )
+        )
     with pytest.raises(RuntimeError, match="phase-4 data"):
         command.downgrade(config, "010")
     with engine.connect() as conn:
@@ -82,7 +134,11 @@ def test_011_two_connections_competing_start_create_one_session(migrated_db):
         db.add(User(id=7, amocrm_user_id=700, amocrm_account_id=100, name="One"))
         db.add(WidgetGroup(id=10, account_id=100, name="Sales", timezone="UTC"))
         db.flush()
-        db.add(GroupMember(account_id=100, user_id=7, group_id=10, is_active=True, track_time=True))
+        db.add(
+            GroupMember(
+                account_id=100, user_id=7, group_id=10, is_active=True, track_time=True
+            )
+        )
         db.commit()
     barrier = Barrier(2)
 
@@ -91,7 +147,16 @@ def test_011_two_connections_competing_start_create_one_session(migrated_db):
             user = db.get(User, 7)
             barrier.wait(timeout=10)
             try:
-                return TimesheetService(db).apply(RequestContext(100, user), "start-work", uuid4(), datetime(2026, 9, 22, 6)).status
+                return (
+                    TimesheetService(db)
+                    .apply(
+                        RequestContext(100, user),
+                        "start-work",
+                        uuid4(),
+                        datetime(2026, 9, 22, 6),
+                    )
+                    .status
+                )
             except TimesheetConflict as exc:
                 return str(exc)
 
@@ -108,11 +173,23 @@ def test_011_partial_unique_index_rejects_second_open_session(migrated_db):
     config, engine = migrated_db
     command.upgrade(config, "011")
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
-        conn.execute(text("INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (100,700,'One','2026-09-22 06:00:00','working',now(),now())"))
+        conn.execute(
+            text(
+                "INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (100,700,'One','2026-09-22 06:00:00','working',now(),now())"
+            )
+        )
     with pytest.raises(IntegrityError):
         with engine.begin() as conn:
-            conn.execute(text("INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (100,700,'One','2026-09-22 07:00:00','working',now(),now())"))
+            conn.execute(
+                text(
+                    "INSERT INTO work_sessions (amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (100,700,'One','2026-09-22 07:00:00','working',now(),now())"
+                )
+            )
 
 
 def test_012_clean_upgrade_downgrade_upgrade(migrated_db):
@@ -191,20 +268,26 @@ def test_012_preserves_legacy_event_rows_and_backfills_original_type(migrated_db
         ).one() == ("lead_added", None, {"legacy": True})
         assert conn.execute(
             text(
-                "SELECT raw_event_id,is_complete,payload "
-                "FROM call_events WHERE id=1"
+                "SELECT raw_event_id,is_complete,payload " "FROM call_events WHERE id=1"
             )
         ).one() == (None, 0, {"legacy": True})
 
     command.downgrade(config, "011")
     with engine.connect() as conn:
-        assert conn.scalar(text("SELECT external_id FROM crm_events WHERE id=1")) == "crm-1"
-        assert conn.scalar(text("SELECT source_event_id FROM call_events WHERE id=1")) == "call-1"
+        assert (
+            conn.scalar(text("SELECT external_id FROM crm_events WHERE id=1"))
+            == "crm-1"
+        )
+        assert (
+            conn.scalar(text("SELECT source_event_id FROM call_events WHERE id=1"))
+            == "call-1"
+        )
     command.upgrade(config, "012")
     with engine.connect() as conn:
-        assert conn.scalar(
-            text("SELECT original_event_type FROM crm_events WHERE id=1")
-        ) == "lead_added"
+        assert (
+            conn.scalar(text("SELECT original_event_type FROM crm_events WHERE id=1"))
+            == "lead_added"
+        )
 
 
 def test_012_downgrade_refuses_to_erase_ingestion_data(migrated_db):
@@ -334,13 +417,20 @@ def test_013_concurrent_presence_serializes_replay_and_merge(migrated_db, replay
     with Session(engine) as db:
         db.add(User(id=7, amocrm_account_id=100, amocrm_user_id=700, name="One"))
         work = WorkSession(
-            amocrm_account_id=100, amocrm_user_id=700, user_name="One",
-            start_time=started_at, business_date=started_at.date(),
+            amocrm_account_id=100,
+            amocrm_user_id=700,
+            user_name="One",
+            start_time=started_at,
+            business_date=started_at.date(),
             current_status=WorkStatus.WORKING,
         )
         db.add(work)
         db.flush()
-        db.add(StatusTransition(work_session_id=work.id, to_status="working", timestamp=started_at))
+        db.add(
+            StatusTransition(
+                work_session_id=work.id, to_status="working", timestamp=started_at
+            )
+        )
         db.commit()
 
     first_written = Event()
@@ -356,8 +446,13 @@ def test_013_concurrent_presence_serializes_replay_and_merge(migrated_db, replay
                 account_id=100,
                 user=user,
                 command_id=command_id if first or replay else uuid4(),
-                window_started_at=started_at if first or replay else started_at + timedelta(seconds=20),
-                last_seen_at=started_at + timedelta(seconds=10 if first or replay else 30),
+                window_started_at=(
+                    started_at
+                    if first or replay
+                    else started_at + timedelta(seconds=20)
+                ),
+                last_seen_at=started_at
+                + timedelta(seconds=10 if first or replay else 30),
                 signal_count=8,
                 received_at=started_at + timedelta(seconds=31),
             )
@@ -381,11 +476,15 @@ def test_013_concurrent_presence_serializes_replay_and_merge(migrated_db, replay
         intervals = db.query(ActivityInterval).all()
         assert len(intervals) == 1
         assert intervals[0].started_at == started_at
-        assert intervals[0].ended_at == started_at + timedelta(seconds=10 if replay else 30)
+        assert intervals[0].ended_at == started_at + timedelta(
+            seconds=10 if replay else 30
+        )
 
 
 @pytest.mark.parametrize("evidence", ["presence", "call"])
-def test_013_activity_waits_for_finish_before_validating_working_span(migrated_db, evidence):
+def test_013_activity_waits_for_finish_before_validating_working_span(
+    migrated_db, evidence
+):
     config, engine = migrated_db
     command.upgrade(config, "head")
     started_at = datetime(2026, 9, 23, 8)
@@ -393,16 +492,26 @@ def test_013_activity_waits_for_finish_before_validating_working_span(migrated_d
         db.add(User(id=7, amocrm_account_id=100, amocrm_user_id=700, name="One"))
         db.add(WidgetGroup(id=10, account_id=100, name="Sales", timezone="UTC"))
         db.flush()
-        db.add(GroupMember(account_id=100, user_id=7, group_id=10, track_time=True, is_active=True))
+        db.add(
+            GroupMember(
+                account_id=100, user_id=7, group_id=10, track_time=True, is_active=True
+            )
+        )
         db.commit()
         context = RequestContext(100, db.get(User, 7))
         TimesheetService(db).apply(context, "start-work", uuid4(), started_at)
-        db.add(CallEvent(
-            account_id=100, source_event_id="call-racing-finish",
-            author_amocrm_user_id=700, user_id=7, direction="outgoing",
-            occurred_at=started_at + timedelta(seconds=20),
-            duration_seconds=20, is_complete=1,
-        ))
+        db.add(
+            CallEvent(
+                account_id=100,
+                source_event_id="call-racing-finish",
+                author_amocrm_user_id=700,
+                user_id=7,
+                direction="outgoing",
+                occurred_at=started_at + timedelta(seconds=20),
+                duration_seconds=20,
+                is_complete=1,
+            )
+        )
         db.commit()
 
     finish_ready = Event()
@@ -411,6 +520,7 @@ def test_013_activity_waits_for_finish_before_validating_working_span(migrated_d
 
     def finish():
         with Session(engine) as db:
+
             def hold_commit(_):
                 finish_ready.set()
                 assert release_finish.wait(10)
@@ -427,7 +537,9 @@ def test_013_activity_waits_for_finish_before_validating_working_span(migrated_d
             service = ActivityIntervalService(db)
             if evidence == "call":
                 interval = service.attach_call(
-                    db.query(CallEvent).filter_by(source_event_id="call-racing-finish").one()
+                    db.query(CallEvent)
+                    .filter_by(source_event_id="call-racing-finish")
+                    .one()
                 )
             else:
                 interval = service.record_presence(
@@ -467,7 +579,11 @@ def test_013_future_presence_never_crosses_concurrent_finish(migrated_db, order)
         db.add(User(id=7, amocrm_account_id=100, amocrm_user_id=700, name="One"))
         db.add(WidgetGroup(id=10, account_id=100, name="Sales", timezone="UTC"))
         db.flush()
-        db.add(GroupMember(account_id=100, user_id=7, group_id=10, track_time=True, is_active=True))
+        db.add(
+            GroupMember(
+                account_id=100, user_id=7, group_id=10, track_time=True, is_active=True
+            )
+        )
         db.commit()
         TimesheetService(db).apply(
             RequestContext(100, db.get(User, 7)),
@@ -510,6 +626,7 @@ def test_013_future_presence_never_crosses_concurrent_finish(migrated_db, order)
     def finish():
         with Session(engine) as db:
             if order == "finish_first":
+
                 def hold_commit(_):
                     first_ready.set()
                     assert release_first.wait(10)
@@ -568,7 +685,14 @@ def test_013_ingestion_locks_multiple_users_in_global_order(migrated_db, monkeyp
             )
         )
         for user_id, amocrm_user_id in [(7, 700), (8, 800)]:
-            db.add(User(id=user_id, amocrm_account_id=100, amocrm_user_id=amocrm_user_id, name=str(user_id)))
+            db.add(
+                User(
+                    id=user_id,
+                    amocrm_account_id=100,
+                    amocrm_user_id=amocrm_user_id,
+                    name=str(user_id),
+                )
+            )
             work = WorkSession(
                 amocrm_account_id=100,
                 amocrm_user_id=amocrm_user_id,
@@ -579,7 +703,11 @@ def test_013_ingestion_locks_multiple_users_in_global_order(migrated_db, monkeyp
             )
             db.add(work)
             db.flush()
-            db.add(StatusTransition(work_session_id=work.id, to_status="working", timestamp=started_at))
+            db.add(
+                StatusTransition(
+                    work_session_id=work.id, to_status="working", timestamp=started_at
+                )
+            )
         db.commit()
 
     original_lock = ActivityIntervalService._lock_user
@@ -588,7 +716,9 @@ def test_013_ingestion_locks_multiple_users_in_global_order(migrated_db, monkeyp
         original_lock(self, user)
         self.db.execute(text("SELECT pg_sleep(0.2)"))
 
-    monkeypatch.setattr(ActivityIntervalService, "_lock_user", slow_after_each_user_lock)
+    monkeypatch.setattr(
+        ActivityIntervalService, "_lock_user", slow_after_each_user_lock
+    )
     start_together = Barrier(2)
 
     def payload(event_id, author):
@@ -604,12 +734,18 @@ def test_013_ingestion_locks_multiple_users_in_global_order(migrated_db, monkeyp
             "account_id": 100,
             "entity_id": author,
             "entity_type": "lead",
-            "_links": {"self": {"href": f"https://example.amocrm.ru/api/v4/events/{event_id}"}},
+            "_links": {
+                "self": {"href": f"https://example.amocrm.ru/api/v4/events/{event_id}"}
+            },
             "_embedded": {
                 "account": {"id": 100},
                 "entity": {
                     "id": author,
-                    "_links": {"self": {"href": f"https://example.amocrm.ru/api/v4/leads/{author}"}},
+                    "_links": {
+                        "self": {
+                            "href": f"https://example.amocrm.ru/api/v4/leads/{author}"
+                        }
+                    },
                 },
             },
         }
@@ -618,7 +754,9 @@ def test_013_ingestion_locks_multiple_users_in_global_order(migrated_db, monkeyp
         with Session(engine) as db:
             start_together.wait(10)
             with db.begin():
-                return EventIngestionService(db, object(), object(), owner=prefix)._persist_page(
+                return EventIngestionService(
+                    db, object(), object(), owner=prefix
+                )._persist_page(
                     account_id=100,
                     account_url="https://example.amocrm.ru",
                     known_types={"lead_status_changed"},
@@ -640,13 +778,32 @@ def test_013_downgrade_preserves_recorded_presence_closures(migrated_db):
     config, engine = migrated_db
     command.upgrade(config, "head")
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
-        conn.execute(text("INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-23 08:00:00','working',now(),now())"))
-        conn.execute(text("INSERT INTO activity_intervals (account_id,user_id,work_session_id,started_at,ended_at,kind,source,duration_source,closed_at,created_at) VALUES (100,7,1,'2026-09-23 08:00:00','2026-09-23 08:00:10','unconfirmed','unconfirmed_input','observed','2026-09-23 08:05:10',now())"))
+        conn.execute(
+            text(
+                "INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (1,100,700,'One','2026-09-23 08:00:00','working',now(),now())"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO activity_intervals (account_id,user_id,work_session_id,started_at,ended_at,kind,source,duration_source,closed_at,created_at) VALUES (100,7,1,'2026-09-23 08:00:00','2026-09-23 08:00:10','unconfirmed','unconfirmed_input','observed','2026-09-23 08:05:10',now())"
+            )
+        )
     with pytest.raises(RuntimeError, match="recorded presence closure data"):
         command.downgrade(config, "012")
     with engine.connect() as conn:
-        assert conn.scalar(text("SELECT count(*) FROM activity_intervals WHERE closed_at IS NOT NULL")) == 1
+        assert (
+            conn.scalar(
+                text(
+                    "SELECT count(*) FROM activity_intervals WHERE closed_at IS NOT NULL"
+                )
+            )
+            == 1
+        )
 
 
 def test_clean_upgrade_downgrade_upgrade_and_real_constraints(migrated_db):

@@ -55,3 +55,24 @@
 - Сборочные subprocess должны видеть рабочий `python` в PATH; штатный Windows App Execution Alias не запускает валидатор. Сам `.venv312/Scripts/python.exe` после исправления пути работает.
 
 Эти результаты подтверждают возможность продолжать разработку, но не означают завершение фазы 5.
+
+## Единый gate фазы 8 и CI
+
+На локальной машине с PostgreSQL 15 полный gate запускается с административным URL тестовой базы:
+
+```powershell
+$env:TEST_POSTGRES_ADMIN_URL='postgresql://phase5_test@127.0.0.1:55435/postgres'
+Set-Location backend
+..\.venv312\Scripts\python.exe -m alembic heads
+..\.venv312\Scripts\python.exe -m pytest -q --tb=short
+Set-Location ..
+& 'C:\Users\Lenovo\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' --test frontend/tests/*.test.js
+npx playwright test frontend/tests --workers=1 --reporter=line
+.\.venv312\Scripts\python.exe -m unittest test_widget_package.py
+.\build_widget.ps1
+.\.venv312\Scripts\python.exe validate_widget_zip.py widget.zip
+```
+
+Отдельно выполняются Black для Python-файлов фазы, `compileall` и `git diff --check`. `alembic heads` должен вернуть ровно `014 (head)`. PostgreSQL-тесты нельзя считать выполненными, если переменная `TEST_POSTGRES_ADMIN_URL` отсутствует и они были пропущены. Накатывать миграции следует только на явно заданную целевую базу по инструкции оператора, а не на административную базу тестового сервера.
+
+GitHub Actions workflow `.github/workflows/ci.yml` повторяет gate на чистом Linux runner с PostgreSQL 15, валидирует production Compose и собирает backend image. Фактический результат CI, локальный или целевой `docker compose build/up` и controlled live amoCRM остаются отдельными внешними проверками; инструкция оператора находится в `docs/operations.md`.
