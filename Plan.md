@@ -554,7 +554,7 @@ flowchart TD
 
 ## Текущий отчёт по фазам
 
-Фаза 8 в работе: начат read-only preflight воспроизводимого запуска, health checks, логирования, защиты webhook, индексов, восстановления после сбоев и CI. Фазы 0–2 завершены; фазы 3–7 локально реализованы. Complete live amoCRM smoke и детальный acceptance checklist отложены до локальной реализации всех фаз; они не были выполнены и не считаются закрытыми. Preflight/repair уже stamped `010` БД также остаётся отдельным deployment gate.
+Фаза 8 в работе: preflight завершён, создан план из семи TDD-задач; следующая — воспроизводимый production runtime и health/readiness. Фазы 0–2 завершены; фазы 3–7 локально реализованы. Docker локально отсутствует, поэтому его реальный build/up остаётся внешним gate. Complete live amoCRM smoke и детальный acceptance checklist также отложены до локальной реализации всех фаз. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -586,6 +586,7 @@ flowchart TD
 | 2026-09-30 | Завершена задача 5 фазы 7: widget lifecycle и упаковка отчётов | Кнопка «Табель» только для admin/manager, authorized JSON/blob transport, abort/cleanup и безопасный filename; `111 Node`, `24 Playwright`, `14 package`; ZIP `25` файлов; review fix закрыт |
 | 2026-09-30 | Фаза 7 локально выполнена; табель до 3 месяцев и безопасный Excel прошли общий gate | PostgreSQL backend `692 passed`, Node `112`, Playwright `24`, package `14`, Alembic `013 (head)`; ZIP `25` файлов; экспорт ограничен 10 000 строками и bounded source batches; общий review APPROVED |
 | 2026-09-30 | Начата фаза 8: интеграция, безопасность и производительность | Запущен read-only preflight Docker/health/logging/webhook security/indexes/recovery/CI; чекбоксы будут закрываться только после TDD, общего gate и независимого review |
+| 2026-09-30 | Завершён preflight и создан подробный план фазы 8 | Найдены небезопасные production-настройки Compose, фиктивный health без БД/схемы и пробелы observability/CI; существующие webhook bounds, recovery и 40-account worker будут переиспользованы, а Docker execution записан внешним gate |
 
 ### Возобновление фазы 5 — 2026-09-27
 
