@@ -77,6 +77,40 @@ def test_role_visibility_filters_and_stable_errors(scoped_client, db, monkeypatc
     assert invalid.status_code == 422
 
 
+def test_report_filter_choices_match_active_tracked_membership_and_viewer_scope(scoped_client, db):
+    db.add_all([
+        _user(5, 105, 10, "Untracked"),
+        _user(6, 106, 10, "Inactive group"),
+        _user(7, 107, 10, "Other manager group"),
+        WidgetGroup(id=12, account_id=10, name="Other", manager_user_id=3, manager_role_id=999),
+        GroupMember(account_id=10, group_id=10, user_id=5, is_active=True, track_time=False),
+        GroupMember(account_id=10, group_id=11, user_id=6, is_active=True, track_time=True),
+        GroupMember(account_id=10, group_id=12, user_id=7, is_active=True, track_time=True),
+    ])
+    db.commit()
+
+    admin = scoped_client("admin").get("/api/v1/team/status")
+    assert admin.status_code == 200
+    assert {row["id"]: row["report_filter_allowed"] for row in admin.json()["employees"]} == {
+        1: False, 2: True, 3: False, 5: False, 6: False, 7: True,
+    }
+    manager = scoped_client("manager").get("/api/v1/team/status")
+    assert manager.status_code == 200
+    assert {row["id"]: row["report_filter_allowed"] for row in manager.json()["employees"]} == {
+        2: True, 3: False, 5: False,
+    }
+    employee = scoped_client("employee").get("/api/v1/team/status")
+    assert employee.status_code == 200
+    assert employee.json()["employees"][0]["report_filter_allowed"] is False
+
+    assert scoped_client("admin").get("/api/v1/reports/detailed", params={
+        "date_from": "2026-09-29", "date_to": "2026-09-29", "user_id": 2,
+    }).status_code == 200
+    assert scoped_client("admin").get("/api/v1/reports/detailed", params={
+        "date_from": "2026-09-29", "date_to": "2026-09-29", "user_id": 5,
+    }).status_code == 404
+
+
 def test_status_workday_and_aggregate_contract(scoped_client, db, monkeypatch):
     monkeypatch.setattr("app.api.v1.team.utc_now", lambda: NOW)
     monkeypatch.setattr("app.services.team_service.utc_now", lambda: NOW)

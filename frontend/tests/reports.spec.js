@@ -22,7 +22,8 @@ async function boot(page, role = 'admin') {
     };
     const directory = { generated_at: '2026-09-29T09:00:00Z', viewer: { role: viewerRole, can_view_activity: false },
       groups: [{ id: 10, name: 'Продажи' }, { id: 20, name: 'Поддержка' }],
-      employees: [{ id: 2, name: 'Анна', group_id: 10 }, { id: 3, name: 'Борис', group_id: 20 }],
+      employees: [{ id: 2, name: 'Анна', group_id: 10, report_filter_allowed: true },
+        { id: 3, name: 'Борис', group_id: 20, report_filter_allowed: false }],
       totals: { employees: 2, working: 1, on_break: 0, finished: 1, not_started: 0 } };
     const row = (index) => ({ user_id: index + 1, amocrm_user_id: index + 101, employee_name: index === 0 ? '<b>Анна</b>' : `Сотрудник ${index}`,
       group_id: 10, group_name: 'Продажи', group_timezone: 'Europe/Moscow', date: '2026-09-29',
@@ -33,14 +34,16 @@ async function boot(page, role = 'admin') {
       directory: () => Promise.resolve(directory),
       report(params, signal) {
         window.reportCalls.push({ params, aborted: signal.aborted });
-        if (window.reportMode === 'error') return Promise.reject({ message: 'Период недоступен', detail: 'private' });
+        if (window.reportMode === 'error') return Promise.reject({ publicMessage: 'Период недоступен', detail: 'private' });
+        if (window.reportMode === 'unsafe-error') return Promise.reject({ message: 'Ошибка: token=secret' });
         const items = window.reportMode === 'empty' ? [] : params.page === 1 ? Array.from({ length: 10 }, (_, i) => row(i)) : [row(10)];
         return Promise.resolve({ items, page: params.page, page_size: 10, total: window.reportMode === 'empty' ? 0 : 11,
           totals: { work_seconds: 3600, break_seconds: 60, late_seconds: 0, days: 11, employees: 11 } });
       },
       export(body, signal) {
         window.exportCalls.push({ body, aborted: signal.aborted });
-        if (window.exportMode === 'error') return Promise.reject({ message: 'Экспорт недоступен', detail: 'private' });
+        if (window.exportMode === 'error') return Promise.reject({ publicMessage: 'Экспорт недоступен', detail: 'private' });
+        if (window.exportMode === 'unsafe-error') return Promise.reject({ message: 'Ошибка: token=secret' });
         return Promise.resolve({ blob: new Blob(['xlsx']), filename: 'точный-файл.xlsx' });
       },
     };
@@ -58,6 +61,7 @@ for (const role of ['admin', 'manager']) {
     await expect(page.locator('tbody td').first()).toHaveText('<b>Анна</b>');
     await expect(page.locator('tbody b')).toHaveCount(0);
     await expect(page.locator('.ts-reports')).not.toContainText('secret activity');
+    await expect(page.locator('[data-filter="employee"] option')).toHaveCount(2);
     await page.locator('[data-filter="date-from"]').fill('2026-09-01');
     await page.locator('[data-filter="group"]').selectOption('10');
     await expect(page.locator('[data-filter="employee"] option')).toHaveCount(2);
@@ -92,6 +96,10 @@ test('empty, safe error and retry states recover in the browser', async ({ page 
   await page.locator('[data-action="retry"]').click();
   await expect(page.locator('tbody tr')).toHaveCount(10);
   await expect(page.locator('[data-action="retry"]')).toBeHidden();
+  await page.evaluate(() => { window.reportMode = 'unsafe-error'; });
+  await page.locator('[data-action="show"]').click();
+  await expect(page.locator('.ts-reports__message')).toHaveText('Не удалось загрузить табель. Повторите попытку.');
+  await expect(page.locator('.ts-reports')).not.toContainText('token=secret');
 });
 
 test('selected Excel columns download once and release the temporary URL; failure remains retryable', async ({ page }) => {
@@ -115,6 +123,10 @@ test('selected Excel columns download once and release the temporary URL; failur
   await expect(page.locator('[data-action="export"]')).toBeEnabled();
   await expect(page.locator('.ts-reports')).not.toContainText('private');
   expect(await page.evaluate(() => window.downloads.length)).toBe(1);
+  await page.evaluate(() => { window.exportMode = 'unsafe-error'; });
+  await page.locator('[data-action="export"]').click();
+  await expect(page.locator('.ts-reports__export-message')).toHaveText('Не удалось скачать Excel. Повторите попытку.');
+  await expect(page.locator('.ts-reports')).not.toContainText('token=secret');
 });
 
 test('employee role never gets preview or download controls', async ({ page }) => {

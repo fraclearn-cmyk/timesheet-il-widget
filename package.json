@@ -7,7 +7,8 @@
     "test:activity": "node --test frontend/tests/activity-tracker.test.js",
     "test:monitoring": "node --test frontend/tests/monitoring-timeline.test.js frontend/tests/monitoring-dashboard.test.js",
     "test:settings": "node --test frontend/tests/settings-controller.test.js frontend/tests/widget-lifecycle.test.js frontend/tests/settings-smoke.test.js",
-    "test:timesheet": "node --test frontend/tests/timesheet-controller.test.js"
+    "test:timesheet": "node --test frontend/tests/timesheet-controller.test.js",
+    "test:reports": "node --test frontend/tests/reports.test.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

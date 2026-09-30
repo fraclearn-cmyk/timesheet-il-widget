@@ -46,6 +46,7 @@ class TeamMemberSummary(_StrictTeamModel):
     confirmed_seconds: int
     confirmed_events: int
     activity_detail_allowed: bool
+    report_filter_allowed: bool = False
 
 
 class TeamStatusTotals(_StrictTeamModel):

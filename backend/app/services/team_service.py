@@ -611,6 +611,12 @@ class TeamService:
                 and membership is not None
                 and membership.group_id in accessible_group_ids
             )
+            report_filter_allowed = (
+                (is_admin or is_manager)
+                and membership is not None
+                and bool(membership.track_time)
+                and group is not None
+            )
             employees.append(
                 TeamMemberSummary(
                     id=user.id,
@@ -634,6 +640,7 @@ class TeamService:
                     confirmed_seconds=confirmed_seconds,
                     confirmed_events=confirmed_events,
                     activity_detail_allowed=detail_allowed,
+                    report_filter_allowed=report_filter_allowed,
                 )
             )
 

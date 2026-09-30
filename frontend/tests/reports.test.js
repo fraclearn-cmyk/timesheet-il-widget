@@ -9,8 +9,8 @@ const directory = (role = 'admin') => ({
   generated_at: '2026-09-29T09:00:00Z', viewer: { role, can_view_activity: false },
   groups: [{ id: 10, name: 'Продажи' }, { id: 20, name: 'Поддержка' }],
   employees: [
-    { id: 2, amocrm_user_id: 102, account_id: 1, name: 'Анна', group_id: 10, group_name: 'Продажи', timezone: 'Europe/Moscow', status: 'working' },
-    { id: 3, amocrm_user_id: 103, account_id: 1, name: 'Борис', group_id: 20, group_name: 'Поддержка', timezone: 'Europe/Moscow', status: 'finished' },
+    { id: 2, amocrm_user_id: 102, account_id: 1, name: 'Анна', group_id: 10, group_name: 'Продажи', timezone: 'Europe/Moscow', status: 'working', report_filter_allowed: true },
+    { id: 3, amocrm_user_id: 103, account_id: 1, name: 'Борис', group_id: 20, group_name: 'Поддержка', timezone: 'Europe/Moscow', status: 'finished', report_filter_allowed: false },
   ],
   totals: { employees: 2, working: 1, on_break: 0, finished: 1, not_started: 0 },
 });
@@ -73,6 +73,17 @@ test('group narrows authorized employees, filters use internal ids, and clear re
   fixture.controller.destroy();
 });
 
+test('employee choices require explicit report permission from the authorized directory', async () => {
+  const payload = directory('manager');
+  payload.employees.push({ id: 4, name: 'Old member', group_id: 10 });
+  const fixture = boot({ directoryResult: Promise.resolve(payload) }); await fixture.controller.ready;
+  assert.deepEqual(Array.from(select(fixture, 'employee').options, (option) => option.value), ['', '2']);
+  select(fixture, 'group').value = '20';
+  select(fixture, 'group').dispatchEvent(new fixture.dom.window.Event('change'));
+  assert.deepEqual(Array.from(select(fixture, 'employee').options, (option) => option.value), ['']);
+  fixture.controller.destroy();
+});
+
 test('renders only eight safe columns with local clocks and readable durations', async () => {
   const poisoned = { ...row('<img src=x onerror=alert(1)>'), group_timezone: 'Europe/Moscow',
     activity: 'SECRET_ACTIVITY', crm_url: 'https://secret.invalid', calls: 'SECRET_CALL' };
@@ -114,11 +125,24 @@ test('loading, empty, generic error, safe Russian error and retry are visible', 
   result = Promise.reject(new Error('stack detail secret')); await fixture.controller.refresh();
   assert.match(fixture.document.body.textContent, /Не удалось загрузить табель\. Повторите попытку/);
   assert.doesNotMatch(fixture.document.body.textContent, /stack detail secret/);
-  result = Promise.reject({ message: '<b>Период недоступен</b>', detail: 'secret' });
+  result = Promise.reject({ publicMessage: '<b>Период недоступен</b>', detail: 'secret' });
   action(fixture, 'retry').click(); await tick();
   assert.match(fixture.document.body.textContent, /<b>Период недоступен<\/b>/);
   assert.equal(fixture.document.querySelector('.ts-reports__message b'), null);
   assert.doesNotMatch(fixture.document.body.textContent, /secret/);
+  fixture.controller.destroy();
+});
+
+test('arbitrary Russian error.message cannot reveal private detail', async () => {
+  const fixture = boot({ reportResult: () => Promise.reject({ message: 'Ошибка: token=secret' }),
+    exportResult: () => Promise.reject({ message: 'Ошибка: token=secret' }) });
+  await fixture.controller.ready;
+  assert.equal(fixture.document.querySelector('.ts-reports__message').textContent,
+    'Не удалось загрузить табель. Повторите попытку.');
+  action(fixture, 'export').click(); await tick();
+  assert.equal(fixture.document.querySelector('.ts-reports__export-message').textContent,
+    'Не удалось скачать Excel. Повторите попытку.');
+  assert.doesNotMatch(fixture.document.body.textContent, /token=secret/);
   fixture.controller.destroy();
 });
 
@@ -150,7 +174,7 @@ test('export sends selected columns and filters, disables repeat, and cleans up 
 });
 
 test('export failure shows safe error and retains at least one selected column', async () => {
-  const fixture = boot({ exportResult: () => Promise.reject({ message: 'Экспорт недоступен', detail: 'private' }) });
+  const fixture = boot({ exportResult: () => Promise.reject({ publicMessage: 'Экспорт недоступен', detail: 'private' }) });
   await fixture.controller.ready;
   for (const input of fixture.document.querySelectorAll('[data-column]')) input.click();
   assert.equal(fixture.document.querySelectorAll('[data-column]:checked').length, 1);

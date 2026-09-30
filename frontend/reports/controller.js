@@ -43,8 +43,8 @@
   }
 
   function publicError(error, fallback) {
-    const message = error && error.message;
-    return typeof message === 'string' && message.length <= 250 && !/[\r\n]/.test(message) && /[А-Яа-яЁё]/.test(message)
+    const message = error && error.publicMessage;
+    return typeof message === 'string' && message.trim().length > 0 && message.length <= 250 && !/[\r\n]/.test(message)
       ? message : fallback;
   }
 
@@ -216,7 +216,8 @@
         }
         authorized = true;
         groups = Array.isArray(response.groups) ? response.groups : [];
-        employees = Array.isArray(response.employees) ? response.employees : [];
+        employees = Array.isArray(response.employees)
+          ? response.employees.filter((item) => item.report_filter_allowed === true) : [];
         updateOptions(group, groups, 'Все группы'); updateEmployees();
         exportButton.disabled = false;
         return refresh();
