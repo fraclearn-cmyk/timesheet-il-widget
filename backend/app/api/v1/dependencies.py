@@ -486,7 +486,10 @@ async def enforce_route_scope(
     if isinstance(body, dict):
         if body.get("account_id") is not None:
             require_account(context, body["account_id"])
-        if route_path == "/api/v1/reports/export-excel" and body.get("user_id") is not None:
+        if (
+            route_path == "/api/v1/reports/export-excel"
+            and body.get("user_id") is not None
+        ):
             require_visible_internal_user(db, context, body["user_id"])
         elif body.get("user_id") is not None:
             require_visible_external_user(db, context, body["user_id"])

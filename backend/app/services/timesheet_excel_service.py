@@ -43,12 +43,18 @@ def _safe_text(value: str) -> str:
 def _local_datetime(value: datetime | None, group_timezone: str) -> datetime | None:
     if value is None:
         return None
-    utc_value = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    utc_value = (
+        value.replace(tzinfo=timezone.utc)
+        if value.tzinfo is None
+        else value.astimezone(timezone.utc)
+    )
     return utc_value.astimezone(ZoneInfo(group_timezone)).replace(tzinfo=None)
 
 
 class TimesheetExcelService:
-    def render(self, rows: list[DetailedReportRow], columns: list[TimesheetColumn]) -> bytes:
+    def render(
+        self, rows: list[DetailedReportRow], columns: list[TimesheetColumn]
+    ) -> bytes:
         book = Workbook()
         sheet = book.active
         sheet.title = "Табель"
@@ -57,7 +63,9 @@ class TimesheetExcelService:
             values = {
                 TimesheetColumn.EMPLOYEE: _safe_text(row.employee_name),
                 TimesheetColumn.DATE: row.date,
-                TimesheetColumn.START: _local_datetime(row.started_at, row.group_timezone),
+                TimesheetColumn.START: _local_datetime(
+                    row.started_at, row.group_timezone
+                ),
                 TimesheetColumn.END: _local_datetime(row.ended_at, row.group_timezone),
                 TimesheetColumn.BREAK: row.break_seconds / 86400,
                 TimesheetColumn.WORK: row.work_seconds / 86400,
@@ -71,10 +79,16 @@ class TimesheetExcelService:
                 number_format = DATE_FORMAT
             elif column in (TimesheetColumn.START, TimesheetColumn.END):
                 number_format = DATETIME_FORMAT
-            elif column in (TimesheetColumn.BREAK, TimesheetColumn.WORK, TimesheetColumn.LATENESS):
+            elif column in (
+                TimesheetColumn.BREAK,
+                TimesheetColumn.WORK,
+                TimesheetColumn.LATENESS,
+            ):
                 number_format = DURATION_FORMAT
             if number_format is not None:
-                for cells in sheet.iter_cols(min_col=column_index, max_col=column_index, min_row=2):
+                for cells in sheet.iter_cols(
+                    min_col=column_index, max_col=column_index, min_row=2
+                ):
                     for cell in cells:
                         cell.number_format = number_format
         sheet.freeze_panes = "A2"

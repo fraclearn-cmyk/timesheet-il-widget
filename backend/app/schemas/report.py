@@ -2,6 +2,7 @@
 Report Schemas
 Pydantic схемы для отчётов
 """
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime, date
 from typing import Optional, Dict, Any, List
@@ -75,6 +76,7 @@ class ReportExcelRequest(_StrictReportModel):
 
 class ReportType(str, Enum):
     """Типы отчётов"""
+
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
@@ -85,6 +87,7 @@ class ReportType(str, Enum):
 
 class ReportFormat(str, Enum):
     """Форматы отчётов"""
+
     JSON = "json"
     EXCEL = "excel"
     PDF = "pdf"
@@ -93,15 +96,17 @@ class ReportFormat(str, Enum):
 
 # Request Schemas
 
+
 class ReportGenerateRequest(BaseModel):
     """Запрос на генерацию отчёта"""
+
     report_type: ReportType
     report_format: ReportFormat = ReportFormat.JSON
     start_date: date
     end_date: date
     user_id: Optional[int] = None
     department: Optional[str] = None
-    
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -110,13 +115,14 @@ class ReportGenerateRequest(BaseModel):
                 "start_date": "2026-07-01",
                 "end_date": "2026-07-31",
                 "user_id": 123,
-                "department": "Продажи"
+                "department": "Продажи",
             }
         }
 
 
 class DailyReportRequest(BaseModel):
     """Запрос дневного отчёта"""
+
     date: date
     user_id: Optional[int] = None
     department: Optional[str] = None
@@ -124,6 +130,7 @@ class DailyReportRequest(BaseModel):
 
 class WeeklyReportRequest(BaseModel):
     """Запрос недельного отчёта"""
+
     week_start: date
     user_id: Optional[int] = None
     department: Optional[str] = None
@@ -131,6 +138,7 @@ class WeeklyReportRequest(BaseModel):
 
 class MonthlyReportRequest(BaseModel):
     """Запрос месячного отчёта"""
+
     year: int
     month: int
     user_id: Optional[int] = None
@@ -139,8 +147,10 @@ class MonthlyReportRequest(BaseModel):
 
 # Response Schemas
 
+
 class WorkSessionSummary(BaseModel):
     """Сводка по рабочей сессии"""
+
     session_id: int
     user_id: int
     user_name: str
@@ -156,6 +166,7 @@ class WorkSessionSummary(BaseModel):
 
 class DailySummary(BaseModel):
     """Дневная сводка"""
+
     date: date
     total_users: int
     total_work_time: int  # seconds
@@ -166,6 +177,7 @@ class DailySummary(BaseModel):
 
 class WeeklySummary(BaseModel):
     """Недельная сводка"""
+
     week_start: date
     week_end: date
     total_users: int
@@ -177,6 +189,7 @@ class WeeklySummary(BaseModel):
 
 class MonthlySummary(BaseModel):
     """Месячная сводка"""
+
     year: int
     month: int
     total_users: int
@@ -188,6 +201,7 @@ class MonthlySummary(BaseModel):
 
 class ActivitySummary(BaseModel):
     """Сводка по активности"""
+
     entity_type: str
     entity_count: int
     total_time: int  # seconds
@@ -197,6 +211,7 @@ class ActivitySummary(BaseModel):
 
 class EmployeeReport(BaseModel):
     """Отчёт по сотруднику"""
+
     user_id: int
     user_name: str
     department: Optional[str]
@@ -212,6 +227,7 @@ class EmployeeReport(BaseModel):
 
 class DepartmentReport(BaseModel):
     """Отчёт по отделу"""
+
     department: str
     period_start: date
     period_end: date
@@ -224,6 +240,7 @@ class DepartmentReport(BaseModel):
 
 class ReportResponse(BaseModel):
     """Ответ с отчётом"""
+
     id: int
     report_type: ReportType
     report_format: ReportFormat
@@ -240,21 +257,24 @@ class ReportResponse(BaseModel):
     file_size: Optional[int]
     generated_by: int
     generated_at: datetime
-    
+
     class Config:
         from_attributes = True
 
 
 class ReportListResponse(BaseModel):
     """Список отчётов"""
+
     total: int
     reports: List[ReportResponse]
 
 
 # Statistics Schemas
 
+
 class TimeStatistics(BaseModel):
     """Статистика по времени"""
+
     total_seconds: int
     hours: int
     minutes: int
@@ -263,6 +283,7 @@ class TimeStatistics(BaseModel):
 
 class UserStatistics(BaseModel):
     """Статистика по пользователю"""
+
     user_id: int
     user_name: str
     sessions_count: int
@@ -275,6 +296,7 @@ class UserStatistics(BaseModel):
 
 class PeriodStatistics(BaseModel):
     """Статистика за период"""
+
     start_date: date
     end_date: date
     total_users: int

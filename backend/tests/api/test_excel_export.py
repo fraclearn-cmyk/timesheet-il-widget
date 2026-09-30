@@ -16,7 +16,14 @@ from sqlalchemy.orm import sessionmaker
 from app.core.access_policy import RequestContext
 from app.core.database import Base
 from app.api.v1.dependencies import APIProblem
-from app.models import GroupMember, StatusTransition, User, WidgetGroup, WorkSession, WorkStatus
+from app.models import (
+    GroupMember,
+    StatusTransition,
+    User,
+    WidgetGroup,
+    WorkSession,
+    WorkStatus,
+)
 
 
 PATH = "/api/v1/reports/export-excel"
@@ -29,21 +36,42 @@ def export(client, **body):
 
 def sheet(response):
     assert response.status_code == 200, response.text
-    assert response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert (
+        response.headers["content-type"]
+        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
     book = load_workbook(BytesIO(response.content))
     assert book.sheetnames == ["Табель"]
     return book.active
 
 
-def add_session(db, *, day=date(2026, 9, 22), external_id=102, account=10,
-                start=datetime(2026, 9, 22, 6), end=datetime(2026, 9, 22, 7),
-                status=WorkStatus.FINISHED, work=3600, breaks=0, late=0, transitions=()):
+def add_session(
+    db,
+    *,
+    day=date(2026, 9, 22),
+    external_id=102,
+    account=10,
+    start=datetime(2026, 9, 22, 6),
+    end=datetime(2026, 9, 22, 7),
+    status=WorkStatus.FINISHED,
+    work=3600,
+    breaks=0,
+    late=0,
+    transitions=(),
+):
     row = WorkSession(
-        amocrm_account_id=account, amocrm_user_id=external_id,
-        user_name="PRIVATE CRM snapshot", department="PRIVATE department",
-        business_date=day, start_time=start, end_time=end,
-        current_status=status, total_work_time=work, total_break_time=breaks,
-        late_minutes=late, late_reason="PRIVATE payload https://example.invalid",
+        amocrm_account_id=account,
+        amocrm_user_id=external_id,
+        user_name="PRIVATE CRM snapshot",
+        department="PRIVATE department",
+        business_date=day,
+        start_time=start,
+        end_time=end,
+        current_status=status,
+        total_work_time=work,
+        total_break_time=breaks,
+        late_minutes=late,
+        late_reason="PRIVATE payload https://example.invalid",
     )
     db.add(row)
     db.flush()
@@ -53,47 +81,124 @@ def add_session(db, *, day=date(2026, 9, 22), external_id=102, account=10,
     return row
 
 
-@pytest.mark.parametrize("start,end,days", [
-    ("2026-09-22", "2026-09-22", [date(2026, 9, 22)]),
-    ("2026-09-22", "2026-09-28", [date(2026, 9, 22), date(2026, 9, 28)]),
-    ("2026-09-01", "2026-09-30", [date(2026, 9, 22), date(2026, 9, 30)]),
-    ("2026-06-22", "2026-09-22", [date(2026, 6, 22), date(2026, 9, 22)]),
-])
+@pytest.mark.parametrize(
+    "start,end,days",
+    [
+        ("2026-09-22", "2026-09-22", [date(2026, 9, 22)]),
+        ("2026-09-22", "2026-09-28", [date(2026, 9, 22), date(2026, 9, 28)]),
+        ("2026-09-01", "2026-09-30", [date(2026, 9, 22), date(2026, 9, 30)]),
+        ("2026-06-22", "2026-09-22", [date(2026, 6, 22), date(2026, 9, 22)]),
+    ],
+)
 def test_periods_include_exact_employee_days(scoped_client, db, start, end, days):
     add_session(db)
     if end == "2026-09-28":
-        add_session(db, day=date(2026, 9, 28), start=datetime(2026, 9, 28, 6), end=datetime(2026, 9, 28, 7))
+        add_session(
+            db,
+            day=date(2026, 9, 28),
+            start=datetime(2026, 9, 28, 6),
+            end=datetime(2026, 9, 28, 7),
+        )
     if end == "2026-09-30":
-        add_session(db, day=date(2026, 9, 30), start=datetime(2026, 9, 30, 6), end=datetime(2026, 9, 30, 7))
+        add_session(
+            db,
+            day=date(2026, 9, 30),
+            start=datetime(2026, 9, 30, 6),
+            end=datetime(2026, 9, 30, 7),
+        )
     if start == "2026-06-22":
-        add_session(db, day=date(2026, 6, 22), start=datetime(2026, 6, 22, 6), end=datetime(2026, 6, 22, 7))
+        add_session(
+            db,
+            day=date(2026, 6, 22),
+            start=datetime(2026, 6, 22, 6),
+            end=datetime(2026, 6, 22, 7),
+        )
     db.commit()
     response = export(scoped_client("admin"), date_from=start, date_to=end)
     ws = sheet(response)
     assert [cell.value.date() for cell in ws["B"][1:]] == list(reversed(days))
-    assert response.headers["content-disposition"] == f'attachment; filename="timesheet_{start}_{end}.xlsx"'
+    assert (
+        response.headers["content-disposition"]
+        == f'attachment; filename="timesheet_{start}_{end}.xlsx"'
+    )
 
 
-def test_selected_columns_local_times_durations_and_same_day_merge(scoped_client, db, monkeypatch):
+def test_selected_columns_local_times_durations_and_same_day_merge(
+    scoped_client, db, monkeypatch
+):
     from app.services import timesheet_report_service
 
-    monkeypatch.setattr(timesheet_report_service, "utc_now", lambda: datetime(2026, 9, 22, 9))
-    add_session(db, start=datetime(2026, 9, 22, 6, 15), end=datetime(2026, 9, 22, 7, 15),
-                work=99999, breaks=99999, late=15,
-                transitions=[("working", datetime(2026, 9, 22, 6, 15)),
-                             ("finished", datetime(2026, 9, 22, 7, 15))])
-    add_session(db, start=datetime(2026, 9, 22, 8), end=None, status=WorkStatus.BREAK,
-                work=99999, breaks=99999, late=180,
-                transitions=[("working", datetime(2026, 9, 22, 8)),
-                             ("break", datetime(2026, 9, 22, 8, 30))])
+    monkeypatch.setattr(
+        timesheet_report_service, "utc_now", lambda: datetime(2026, 9, 22, 9)
+    )
+    add_session(
+        db,
+        start=datetime(2026, 9, 22, 6, 15),
+        end=datetime(2026, 9, 22, 7, 15),
+        work=99999,
+        breaks=99999,
+        late=15,
+        transitions=[
+            ("working", datetime(2026, 9, 22, 6, 15)),
+            ("finished", datetime(2026, 9, 22, 7, 15)),
+        ],
+    )
+    add_session(
+        db,
+        start=datetime(2026, 9, 22, 8),
+        end=None,
+        status=WorkStatus.BREAK,
+        work=99999,
+        breaks=99999,
+        late=180,
+        transitions=[
+            ("working", datetime(2026, 9, 22, 8)),
+            ("break", datetime(2026, 9, 22, 8, 30)),
+        ],
+    )
     db.commit()
-    ws = sheet(export(scoped_client("admin"), columns=["status", "end", "start", "work", "break", "lateness", "employee", "date"]))
-    assert [cell.value for cell in ws[1]] == ["Статус", "Окончание", "Начало", "Работа", "Перерыв", "Опоздание", "Сотрудник", "Дата"]
-    assert [cell.value for cell in ws[2]] == ["Перерыв", None, datetime(2026, 9, 22, 9, 15),
-                                              timedelta(seconds=5400), timedelta(seconds=1800), timedelta(seconds=900),
-                                              "Employee", datetime(2026, 9, 22)]
+    ws = sheet(
+        export(
+            scoped_client("admin"),
+            columns=[
+                "status",
+                "end",
+                "start",
+                "work",
+                "break",
+                "lateness",
+                "employee",
+                "date",
+            ],
+        )
+    )
+    assert [cell.value for cell in ws[1]] == [
+        "Статус",
+        "Окончание",
+        "Начало",
+        "Работа",
+        "Перерыв",
+        "Опоздание",
+        "Сотрудник",
+        "Дата",
+    ]
+    assert [cell.value for cell in ws[2]] == [
+        "Перерыв",
+        None,
+        datetime(2026, 9, 22, 9, 15),
+        timedelta(seconds=5400),
+        timedelta(seconds=1800),
+        timedelta(seconds=900),
+        "Employee",
+        datetime(2026, 9, 22),
+    ]
     assert [ws.cell(2, col).number_format for col in (3, 4, 5, 6, 8)] == [
-        "dd.mm.yyyy hh:mm", "[h]:mm", "[h]:mm", "[h]:mm", "dd.mm.yyyy"]
+        "dd.mm.yyyy hh:mm",
+        "[h]:mm",
+        "[h]:mm",
+        "[h]:mm",
+        "dd.mm.yyyy",
+    ]
     assert ws.freeze_panes == "A2"
     assert ws.auto_filter.ref == "A1:H2"
 
@@ -118,15 +223,33 @@ def test_distinct_group_timezones_and_status_labels(scoped_client, db):
     group = WidgetGroup(id=12, account_id=10, name="Berlin", timezone="Europe/Berlin")
     db.add(group)
     db.flush()
-    db.add(User(id=5, amocrm_account_id=10, amocrm_user_id=105, name="Berlin employee", amocrm_rights={"is_admin": False}))
+    db.add(
+        User(
+            id=5,
+            amocrm_account_id=10,
+            amocrm_user_id=105,
+            name="Berlin employee",
+            amocrm_rights={"is_admin": False},
+        )
+    )
     db.flush()
-    db.add(GroupMember(id=5, account_id=10, group_id=12, user_id=5, is_active=True, track_time=True))
+    db.add(
+        GroupMember(
+            id=5, account_id=10, group_id=12, user_id=5, is_active=True, track_time=True
+        )
+    )
     add_session(db, external_id=105, end=None, status=WorkStatus.WORKING)
     add_session(db, status=WorkStatus.FINISHED)
     db.commit()
-    ws = sheet(export(scoped_client("admin"), columns=["employee", "start", "end", "status"]))
+    ws = sheet(
+        export(scoped_client("admin"), columns=["employee", "start", "end", "status"])
+    )
     values = {row[0]: row[1:] for row in ws.iter_rows(min_row=2, values_only=True)}
-    assert values["Employee"] == (datetime(2026, 9, 22, 9), datetime(2026, 9, 22, 10), "Закончил(а)")
+    assert values["Employee"] == (
+        datetime(2026, 9, 22, 9),
+        datetime(2026, 9, 22, 10),
+        "Закончил(а)",
+    )
     assert values["Berlin employee"] == (datetime(2026, 9, 22, 8), None, "Работает")
 
 
@@ -136,7 +259,10 @@ def test_denial_and_foreign_filters_match_preview(scoped_client, db):
     assert export(scoped_client("employee")).json()["error"]["code"] == "ACCESS_DENIED"
     for kwargs in ({"group_id": 20}, {"group_id": 11}, {"user_id": 4}):
         response = export(scoped_client("manager"), **kwargs)
-        assert (response.status_code, response.json()["error"]["code"]) == (404, "NOT_FOUND")
+        assert (response.status_code, response.json()["error"]["code"]) == (
+            404,
+            "NOT_FOUND",
+        )
 
 
 @pytest.mark.parametrize("actor", ["admin", "manager"])
@@ -148,7 +274,9 @@ def test_export_filter_uses_accessible_internal_user_id(scoped_client, db, actor
     assert [cell.value for cell in ws[2]] == ["Employee", timedelta(hours=1)]
 
 
-def test_employee_with_internal_user_filter_is_denied_before_visibility_lookup(scoped_client, db):
+def test_employee_with_internal_user_filter_is_denied_before_visibility_lookup(
+    scoped_client, db
+):
     add_session(db)
     db.commit()
     response = export(scoped_client("employee"), user_id=2)
@@ -156,10 +284,13 @@ def test_employee_with_internal_user_filter_is_denied_before_visibility_lookup(s
     assert response.json()["error"]["code"] == "ACCESS_DENIED"
 
 
-@pytest.mark.parametrize("start,end,code", [
-    ("2026-09-23", "2026-09-22", "REPORT_DATE_RANGE_INVALID"),
-    ("2026-01-31", "2026-05-01", "REPORT_RANGE_LIMIT"),
-])
+@pytest.mark.parametrize(
+    "start,end,code",
+    [
+        ("2026-09-23", "2026-09-22", "REPORT_DATE_RANGE_INVALID"),
+        ("2026-01-31", "2026-05-01", "REPORT_RANGE_LIMIT"),
+    ],
+)
 def test_period_errors_keep_stable_russian_contract(scoped_client, start, end, code):
     response = export(scoped_client("admin"), date_from=start, date_to=end)
     assert response.status_code == 422
@@ -172,12 +303,31 @@ def test_forty_foreign_accounts_cannot_enter_export(scoped_client, db):
     for offset in range(40):
         account = 1000 + offset
         user_id = 1000 + offset
-        db.add(User(id=user_id, amocrm_account_id=account, amocrm_user_id=102,
-                    name="PRIVATE foreign", amocrm_rights={"is_admin": False}))
-        db.add(WidgetGroup(id=user_id, account_id=account, name=f"Foreign {offset}", timezone="UTC"))
+        db.add(
+            User(
+                id=user_id,
+                amocrm_account_id=account,
+                amocrm_user_id=102,
+                name="PRIVATE foreign",
+                amocrm_rights={"is_admin": False},
+            )
+        )
+        db.add(
+            WidgetGroup(
+                id=user_id, account_id=account, name=f"Foreign {offset}", timezone="UTC"
+            )
+        )
         db.flush()
-        db.add(GroupMember(id=user_id, account_id=account, group_id=user_id, user_id=user_id,
-                           is_active=True, track_time=True))
+        db.add(
+            GroupMember(
+                id=user_id,
+                account_id=account,
+                group_id=user_id,
+                user_id=user_id,
+                is_active=True,
+                track_time=True,
+            )
+        )
         add_session(db, account=account, work=999)
     db.commit()
     ws = sheet(export(scoped_client("admin")))
@@ -187,17 +337,21 @@ def test_forty_foreign_accounts_cannot_enter_export(scoped_client, db):
 
 
 @pytest.mark.parametrize("prefix", ["=", "+", "-", "@"])
-def test_formula_text_and_private_fields_never_become_workbook_content(scoped_client, db, prefix):
-    db.get(User, 2).name = f"  {prefix}HYPERLINK(\"https://evil.invalid\")"
+def test_formula_text_and_private_fields_never_become_workbook_content(
+    scoped_client, db, prefix
+):
+    db.get(User, 2).name = f'  {prefix}HYPERLINK("https://evil.invalid")'
     add_session(db)
     db.commit()
     response = export(scoped_client("admin"))
     ws = sheet(response)
-    assert ws["A2"].value == f"'  {prefix}HYPERLINK(\"https://evil.invalid\")"
+    assert ws["A2"].value == f'\'  {prefix}HYPERLINK("https://evil.invalid")'
     assert ws["A2"].data_type == "s"
     assert all(cell.hyperlink is None for row in ws for cell in row)
     with ZipFile(BytesIO(response.content)) as archive:
-        xml = b"\n".join(archive.read(name) for name in archive.namelist() if name.endswith(".xml"))
+        xml = b"\n".join(
+            archive.read(name) for name in archive.namelist() if name.endswith(".xml")
+        )
     for secret in (b"PRIVATE", b"stale", b"amocrm", b"late_reason"):
         assert secret not in xml
 
@@ -207,7 +361,12 @@ def test_export_rejects_employee_day_count_above_limit(scoped_client, db, monkey
 
     monkeypatch.setattr(timesheet_report_service, "MAX_EXPORT_ROWS", 1)
     add_session(db)
-    add_session(db, day=date(2026, 9, 23), start=datetime(2026, 9, 23, 6), end=datetime(2026, 9, 23, 7))
+    add_session(
+        db,
+        day=date(2026, 9, 23),
+        start=datetime(2026, 9, 23, 6),
+        end=datetime(2026, 9, 23, 7),
+    )
     db.commit()
     response = export(scoped_client("admin"), date_to="2026-09-23")
     assert response.status_code == 413
@@ -218,29 +377,56 @@ def test_export_rejects_employee_day_count_above_limit(scoped_client, db, monkey
 def test_real_ten_thousand_day_boundary(db):
     from app.services.timesheet_report_service import TimesheetReportService
 
-    users = [User(id=100 + index, amocrm_account_id=10, amocrm_user_id=200 + index,
-                  name=f"Person {index:03d}", amocrm_rights={"is_admin": False})
-             for index in range(110)]
+    users = [
+        User(
+            id=100 + index,
+            amocrm_account_id=10,
+            amocrm_user_id=200 + index,
+            name=f"Person {index:03d}",
+            amocrm_rights={"is_admin": False},
+        )
+        for index in range(110)
+    ]
     db.add_all(users)
     db.flush()
-    db.add_all(GroupMember(id=100 + index, account_id=10, group_id=10, user_id=100 + index,
-                           is_active=True, track_time=True) for index in range(110))
+    db.add_all(
+        GroupMember(
+            id=100 + index,
+            account_id=10,
+            group_id=10,
+            user_id=100 + index,
+            is_active=True,
+            track_time=True,
+        )
+        for index in range(110)
+    )
     db.flush()
 
     def session_values(index):
         day = date(2026, 9, 1) + timedelta(days=index % 91)
-        return dict(amocrm_account_id=10, amocrm_user_id=200 + index // 91,
-                    user_name="old snapshot", business_date=day,
-                    start_time=datetime.combine(day, datetime.min.time()),
-                    end_time=datetime.combine(day, datetime.min.time()) + timedelta(hours=1),
-                    current_status="finished", total_work_time=3600, total_break_time=0)
+        return dict(
+            amocrm_account_id=10,
+            amocrm_user_id=200 + index // 91,
+            user_name="old snapshot",
+            business_date=day,
+            start_time=datetime.combine(day, datetime.min.time()),
+            end_time=datetime.combine(day, datetime.min.time()) + timedelta(hours=1),
+            current_status="finished",
+            total_work_time=3600,
+            total_break_time=0,
+        )
 
     for start in range(0, 10000, 1000):
-        db.execute(WorkSession.__table__.insert(), [session_values(index) for index in range(start, start + 1000)])
+        db.execute(
+            WorkSession.__table__.insert(),
+            [session_values(index) for index in range(start, start + 1000)],
+        )
     db.commit()
     service = TimesheetReportService(db)
     context = RequestContext(account_id=10, user=db.get(User, 1))
-    assert len(service.export_rows(context, date(2026, 9, 1), date(2026, 11, 30))) == 10000
+    assert (
+        len(service.export_rows(context, date(2026, 9, 1), date(2026, 11, 30))) == 10000
+    )
     db.execute(WorkSession.__table__.insert(), [session_values(10000)])
     db.commit()
     with pytest.raises(APIProblem) as error:
@@ -255,22 +441,40 @@ def test_export_query_count_is_bounded_without_n_plus_one(db):
     for offset in range(40):
         user_id = 100 + offset
         external_id = 200 + offset
-        db.add(User(id=user_id, amocrm_account_id=10, amocrm_user_id=external_id,
-                    name=f"Person {offset}", amocrm_rights={"is_admin": False}))
+        db.add(
+            User(
+                id=user_id,
+                amocrm_account_id=10,
+                amocrm_user_id=external_id,
+                name=f"Person {offset}",
+                amocrm_rights={"is_admin": False},
+            )
+        )
         db.flush()
-        db.add(GroupMember(id=user_id, account_id=10, group_id=10, user_id=user_id,
-                           is_active=True, track_time=True))
+        db.add(
+            GroupMember(
+                id=user_id,
+                account_id=10,
+                group_id=10,
+                user_id=user_id,
+                is_active=True,
+                track_time=True,
+            )
+        )
         add_session(db, external_id=external_id)
     db.commit()
     statements = []
+
     def record(_conn, _cursor, statement, _parameters, _context, _executemany):
         if statement.lstrip().upper().startswith("SELECT"):
             statements.append(statement)
+
     event.listen(db.get_bind(), "before_cursor_execute", record)
     try:
         rows = TimesheetReportService(db).export_rows(
             RequestContext(account_id=10, user=db.get(User, 1)),
-            date(2026, 9, 22), date(2026, 9, 22),
+            date(2026, 9, 22),
+            date(2026, 9, 22),
         )
     finally:
         event.remove(db.get_bind(), "before_cursor_execute", record)
@@ -308,13 +512,33 @@ def test_postgres_export_uses_scoped_canonical_rows(postgres_db):
     from app.schemas.report import TimesheetColumn
 
     db = postgres_db
-    admin = User(id=1, amocrm_user_id=101, amocrm_account_id=10, name="Admin",
-                 amocrm_rights={"is_admin": True})
-    employee = User(id=2, amocrm_user_id=102, amocrm_account_id=10, name="Employee",
-                    amocrm_rights={"is_admin": False})
-    db.add_all([admin, employee, WidgetGroup(id=10, account_id=10, name="Team", timezone="Europe/Minsk")])
+    admin = User(
+        id=1,
+        amocrm_user_id=101,
+        amocrm_account_id=10,
+        name="Admin",
+        amocrm_rights={"is_admin": True},
+    )
+    employee = User(
+        id=2,
+        amocrm_user_id=102,
+        amocrm_account_id=10,
+        name="Employee",
+        amocrm_rights={"is_admin": False},
+    )
+    db.add_all(
+        [
+            admin,
+            employee,
+            WidgetGroup(id=10, account_id=10, name="Team", timezone="Europe/Minsk"),
+        ]
+    )
     db.flush()
-    db.add(GroupMember(id=1, account_id=10, group_id=10, user_id=2, is_active=True, track_time=True))
+    db.add(
+        GroupMember(
+            id=1, account_id=10, group_id=10, user_id=2, is_active=True, track_time=True
+        )
+    )
     add_session(db, work=77)
     db.commit()
     rows = TimesheetReportService(db).export_rows(
@@ -322,7 +546,12 @@ def test_postgres_export_uses_scoped_canonical_rows(postgres_db):
     )
     assert len(rows) == 1
     assert (rows[0].employee_name, rows[0].work_seconds, rows[0].group_timezone) == (
-        "Employee", 77, "Europe/Minsk")
-    content = TimesheetExcelService().render(rows, [TimesheetColumn.EMPLOYEE, TimesheetColumn.WORK])
+        "Employee",
+        77,
+        "Europe/Minsk",
+    )
+    content = TimesheetExcelService().render(
+        rows, [TimesheetColumn.EMPLOYEE, TimesheetColumn.WORK]
+    )
     ws = load_workbook(BytesIO(content)).active
     assert [cell.value for cell in ws[2]] == ["Employee", timedelta(seconds=77)]

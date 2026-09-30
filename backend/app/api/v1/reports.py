@@ -20,7 +20,10 @@ from app.api.v1.dependencies import (
 )
 from app.services.report_service import ReportService
 from app.services.timesheet_report_service import TimesheetReportService
-from app.services.timesheet_excel_service import TimesheetExcelService, safe_report_filename
+from app.services.timesheet_excel_service import (
+    TimesheetExcelService,
+    safe_report_filename,
+)
 from app.models.report import ReportType, ReportFormat
 from app.schemas.report import (
     DetailedReportResponse,
@@ -46,15 +49,20 @@ def export_timesheet_excel(
 ):
     try:
         rows = TimesheetReportService(db).export_rows(
-            context, request.date_from, request.date_to, request.group_id, request.user_id
+            context,
+            request.date_from,
+            request.date_to,
+            request.group_id,
+            request.user_id,
         )
     except ReportPeriodError as error:
         raise APIProblem(422, error.code, error.message) from error
     return Response(
         content=TimesheetExcelService().render(rows, request.columns),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition":
-                 f'attachment; filename="{safe_report_filename(request.date_from, request.date_to)}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_report_filename(request.date_from, request.date_to)}"'
+        },
     )
 
 

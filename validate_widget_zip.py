@@ -188,7 +188,9 @@ class WidgetValidator:
                 if "script.js" in text:
                     dependencies = amd_dependencies(text["script.js"])
                     if "./reports/controller" not in dependencies:
-                        self.errors.append("Missing AMD dependency: reports/controller.js")
+                        self.errors.append(
+                            "Missing AMD dependency: reports/controller.js"
+                        )
                     for dependency, member in (
                         ("./settings/settings", "settings/settings.js"),
                         ("./timesheet/controller", "timesheet/controller.js"),

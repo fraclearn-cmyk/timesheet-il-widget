@@ -92,9 +92,19 @@ def test_detailed_report_row_contains_only_timesheet_fields():
     assert row.amocrm_user_id == 700
     assert row.ended_at is None
     assert set(row.model_dump()) == {
-        "user_id", "amocrm_user_id", "employee_name", "group_id", "group_name",
-        "group_timezone", "date", "started_at", "ended_at", "break_seconds",
-        "work_seconds", "late_seconds", "status",
+        "user_id",
+        "amocrm_user_id",
+        "employee_name",
+        "group_id",
+        "group_name",
+        "group_timezone",
+        "date",
+        "started_at",
+        "ended_at",
+        "break_seconds",
+        "work_seconds",
+        "late_seconds",
+        "status",
     }
     with pytest.raises(ValidationError):
         DetailedReportRow.model_validate({**row.model_dump(), "crm_payload": {"id": 1}})
@@ -125,13 +135,24 @@ def test_report_response_has_fixed_ten_row_page_and_strict_totals():
         with pytest.raises(ValidationError):
             DetailedReportResponse.model_validate({**payload, **change})
     with pytest.raises(ValidationError):
-        DetailedReportResponse.model_validate({**payload, "totals": {**payload["totals"], "calls": 1}})
+        DetailedReportResponse.model_validate(
+            {**payload, "totals": {**payload["totals"], "calls": 1}}
+        )
 
 
 def test_excel_columns_allow_only_eight_timesheet_fields():
     from app.schemas.report import ReportExcelRequest, TimesheetColumn
 
-    allowed = {"employee", "date", "start", "end", "break", "work", "lateness", "status"}
+    allowed = {
+        "employee",
+        "date",
+        "start",
+        "end",
+        "break",
+        "work",
+        "lateness",
+        "status",
+    }
     assert {column.value for column in TimesheetColumn} == allowed
     request = ReportExcelRequest(
         date_from=date(2026, 9, 1),
@@ -140,12 +161,31 @@ def test_excel_columns_allow_only_eight_timesheet_fields():
         user_id=7,
         columns=["status", "employee", "date"],
     )
-    assert request.columns == [TimesheetColumn.STATUS, TimesheetColumn.EMPLOYEE, TimesheetColumn.DATE]
-    assert [column.value for column in ReportExcelRequest(
-        date_from=date(2026, 9, 1), date_to=date(2026, 9, 1)
-    ).columns] == [column.value for column in TimesheetColumn]
-    for columns in ([], ["date", "date"], ["activity"], ["crm"], ["call"], ["url"], ["payload"]):
+    assert request.columns == [
+        TimesheetColumn.STATUS,
+        TimesheetColumn.EMPLOYEE,
+        TimesheetColumn.DATE,
+    ]
+    assert [
+        column.value
+        for column in ReportExcelRequest(
+            date_from=date(2026, 9, 1), date_to=date(2026, 9, 1)
+        ).columns
+    ] == [column.value for column in TimesheetColumn]
+    for columns in (
+        [],
+        ["date", "date"],
+        ["activity"],
+        ["crm"],
+        ["call"],
+        ["url"],
+        ["payload"],
+    ):
         with pytest.raises(ValidationError):
-            ReportExcelRequest(date_from=date(2026, 9, 1), date_to=date(2026, 9, 1), columns=columns)
+            ReportExcelRequest(
+                date_from=date(2026, 9, 1), date_to=date(2026, 9, 1), columns=columns
+            )
     with pytest.raises(ValidationError):
-        ReportExcelRequest(date_from=date(2026, 9, 1), date_to=date(2026, 9, 1), activity=True)
+        ReportExcelRequest(
+            date_from=date(2026, 9, 1), date_to=date(2026, 9, 1), activity=True
+        )

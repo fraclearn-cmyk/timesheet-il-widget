@@ -82,22 +82,31 @@ class WidgetPackageTests(unittest.TestCase):
 
     def test_validator_requires_report_dependency_and_exact_report_assets(self):
         entries = self.entries()
-        entries["script.js"] = entries["script.js"].replace(
-            b"'./reports/controller'", b"'./reports/missing'"
-        ) + b"\n// './reports/controller'\n"
+        entries["script.js"] = (
+            entries["script.js"].replace(
+                b"'./reports/controller'", b"'./reports/missing'"
+            )
+            + b"\n// './reports/controller'\n"
+        )
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
-        self.assertTrue(any("reports/controller" in error for error in validator.errors))
+        self.assertTrue(
+            any("reports/controller" in error for error in validator.errors)
+        )
         entries = self.entries()
         del entries["reports/styles.css"]
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
-        self.assertTrue(any("reports/styles.css" in error for error in validator.errors))
+        self.assertTrue(
+            any("reports/styles.css" in error for error in validator.errors)
+        )
 
     def test_validator_rejects_report_dependency_only_inside_amd_array_comment(self):
         entries = self.entries()
         entries["script.js"] = entries["script.js"].replace(
-            b"'./reports/controller'", b"'./reports/missing', /* './reports/controller' */", 1
+            b"'./reports/controller'",
+            b"'./reports/missing', /* './reports/controller' */",
+            1,
         )
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
@@ -192,7 +201,9 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
-            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
+            shutil.copytree(
+                ROOT / "frontend" / "reports", work / "frontend" / "reports"
+            )
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"
@@ -257,7 +268,9 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
-            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
+            shutil.copytree(
+                ROOT / "frontend" / "reports", work / "frontend" / "reports"
+            )
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"
@@ -314,7 +327,9 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
-            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
+            shutil.copytree(
+                ROOT / "frontend" / "reports", work / "frontend" / "reports"
+            )
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"
@@ -355,7 +370,9 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
-            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
+            shutil.copytree(
+                ROOT / "frontend" / "reports", work / "frontend" / "reports"
+            )
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"
@@ -398,7 +415,9 @@ class WidgetPackageTests(unittest.TestCase):
             shutil.copytree(
                 ROOT / "frontend" / "monitoring", work / "frontend" / "monitoring"
             )
-            shutil.copytree(ROOT / "frontend" / "reports", work / "frontend" / "reports")
+            shutil.copytree(
+                ROOT / "frontend" / "reports", work / "frontend" / "reports"
+            )
             shutil.copy2(ROOT / "build_widget.ps1", work / "build_widget.ps1")
             shutil.copy2(
                 ROOT / "validate_widget_zip.py", work / "validate_widget_zip.py"
