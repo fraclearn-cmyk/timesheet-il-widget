@@ -85,9 +85,16 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
             return toPromise(request);
         }
         function reportError(error) {
-            var message = error && error.responseJSON && error.responseJSON.error && error.responseJSON.error.message;
-            return { publicMessage: typeof message === 'string' && message.trim() && message.length <= 250 && !/[\r\n]/.test(message)
-                ? message : undefined };
+            var body = error && error.responseJSON && error.responseJSON.error;
+            var message = body && body.message;
+            var requestId = body && body.request_id;
+            var safeMessage = typeof message === 'string' && message.trim() && message.length <= 250 && !/[\r\n]/.test(message)
+                ? message.trim() : undefined;
+            if (safeMessage && typeof requestId === 'string' &&
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) {
+                safeMessage += ' Код обращения: ' + requestId + '.';
+            }
+            return { publicMessage: safeMessage };
         }
         function reportRequest(options, signal, onRequest) {
             if (signal && signal.aborted) return Promise.reject({ publicMessage: undefined });

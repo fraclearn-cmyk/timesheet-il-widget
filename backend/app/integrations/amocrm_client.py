@@ -86,7 +86,7 @@ class AmoCRMClient:
                     raise AmoCRMRateLimited("amoCRM rate limit exceeded")
                 await asyncio.sleep(self._retry_after(response, attempt))
                 continue
-            if response.status_code in {502, 503, 504}:
+            if 500 <= response.status_code <= 599:
                 if attempt == self._max_retries:
                     raise AmoCRMUnavailable("amoCRM is temporarily unavailable")
                 await self._sleep(attempt)
