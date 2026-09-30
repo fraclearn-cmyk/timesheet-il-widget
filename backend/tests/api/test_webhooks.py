@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.v1.dependencies import get_request_context
 from app.core.access_policy import RequestContext
 from app.core.database import Base, get_db
+from app.core.error_catalog import PUBLIC_ERRORS
 from app.models import IngestionCursor, OAuthConnection, User
 from app.integrations.oauth import OAuthTokenCipher
 from app.services.webhook_subscription_service import WebhookSubscriptionService
@@ -103,6 +104,27 @@ def test_valid_webhook_only_advances_poll_and_never_persists_payload(webhook_api
     assert db.query(ActivityInterval).count() == 0
 
 
+def test_webhook_replay_only_idempotently_makes_authoritative_poll_due(webhook_api):
+    """Replaying an accepted trigger cannot create domain data or move the due time."""
+    from app.models import ActivityInterval, CrmEvent, RawIngestionEvent
+
+    client, db, _, _, _ = webhook_api
+    payloads = [
+        {"id": "first-forgery", "created_by": 101},
+        {"id": "replayed-forgery", "created_by": 999},
+    ]
+    for payload in payloads:
+        response = client.post(f"/api/v1/webhooks/amocrm/{HOOK}", json=payload)
+        assert response.status_code == 202
+        assert response.json() == {"accepted": True}
+
+    db.expire_all()
+    assert db.get(IngestionCursor, 10).next_poll_at == NOW
+    assert db.query(RawIngestionEvent).count() == 0
+    assert db.query(CrmEvent).count() == 0
+    assert db.query(ActivityInterval).count() == 0
+
+
 def test_webhook_repetition_and_oversized_bodies_are_bounded(webhook_api):
     client, _, _, _, _ = webhook_api
     rate_request_id = "33445c1e-e101-403c-af74-6d55f9e725f9"
@@ -127,7 +149,7 @@ def test_webhook_repetition_and_oversized_bodies_are_bounded(webhook_api):
     assert limited.json() == {
         "error": {
             "code": "RATE_LIMITED",
-            "message": "Слишком много запросов.",
+            "message": PUBLIC_ERRORS["RATE_LIMITED"],
             "request_id": rate_request_id,
         }
     }

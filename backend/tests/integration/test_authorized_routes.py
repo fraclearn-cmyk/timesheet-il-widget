@@ -15,6 +15,8 @@ from app.models.department import Department
 from app.models.widget_group import WidgetGroup
 from app.models.group_member import GroupMember
 from datetime import datetime
+import asyncio
+from types import SimpleNamespace
 import pytest
 
 
@@ -129,6 +131,173 @@ def test_rate_limited_widget_response_exposes_retry_after_only_to_allowed_origin
         assert "Access-Control-Allow-Origin" not in denied.headers
     finally:
         app.dependency_overrides.clear()
+
+
+def test_40_verified_tenants_behind_one_ip_have_independent_rate_buckets(monkeypatch):
+    """A shared office/NAT address must not merge authenticated tenant quotas."""
+    from app.core.rate_limit import authenticated_request_limiter
+
+    client, app = _client(monkeypatch)
+    from app.core.database import get_db
+
+    db = app.dependency_overrides[get_db]()
+    tenants = []
+    for offset in range(40):
+        account_id = 10_000 + offset
+        user_id = 20_000 + offset
+        db.add(
+            User(
+                amocrm_user_id=user_id,
+                amocrm_account_id=account_id,
+                name=f"Tenant {offset}",
+            )
+        )
+        tenants.append((account_id, user_id))
+    db.commit()
+
+    authenticated_request_limiter.reset()
+    monkeypatch.setattr(authenticated_request_limiter, "calls_per_period", 2)
+    try:
+        for account_id, user_id in tenants:
+            headers = {
+                "X-Account-Id": str(account_id),
+                "X-User-Id": str(user_id),
+                # This browser-controlled value must never select a bucket.
+                "X-Forwarded-For": f"198.51.100.{account_id % 255}",
+            }
+            assert client.get("/api/v1/me", headers=headers).status_code == 200
+            assert client.get("/api/v1/me", headers=headers).status_code == 200
+
+        account_id, user_id = tenants[0]
+        limited = client.get(
+            "/api/v1/me",
+            headers={
+                "X-Account-Id": str(account_id),
+                "X-User-Id": str(user_id),
+                "X-Forwarded-For": "203.0.113.250",
+            },
+        )
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"]
+        assert limited.json()["error"]["code"] == "RATE_LIMITED"
+    finally:
+        authenticated_request_limiter.reset()
+        app.dependency_overrides.clear()
+
+
+def test_unknown_authenticated_route_clients_have_a_separate_bounded_ip_guard(
+    monkeypatch,
+):
+    """Failed authentication is bounded without consuming verified identities."""
+    from app.core.rate_limit import unknown_request_limiter
+
+    client, app = _client(monkeypatch)
+    unknown_request_limiter.reset()
+    monkeypatch.setattr(unknown_request_limiter, "calls_per_period", 2)
+    try:
+        assert client.get("/api/v1/me").status_code == 401
+        assert client.get("/api/v1/me").status_code == 401
+        limited = client.get("/api/v1/me", headers={"X-Forwarded-For": "198.51.100.99"})
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"]
+        assert limited.json()["error"]["code"] == "RATE_LIMITED"
+        assert (
+            len(unknown_request_limiter.requests) <= unknown_request_limiter.max_buckets
+        )
+    finally:
+        unknown_request_limiter.reset()
+        app.dependency_overrides.clear()
+
+
+def test_unknown_api_paths_are_bounded_by_the_public_ip_guard(monkeypatch):
+    """Unmatched API paths must not bypass every ingress bucket."""
+    from app.core.rate_limit import unknown_request_limiter
+
+    client, app = _client(monkeypatch)
+    unknown_request_limiter.reset()
+    monkeypatch.setattr(unknown_request_limiter, "calls_per_period", 2)
+    try:
+        assert client.get("/api/v1/not-a-route").status_code == 404
+        assert client.get("/api/v1/not-a-route").status_code == 404
+        limited = client.get(
+            "/api/v1/not-a-route",
+            headers={"X-Forwarded-For": "198.51.100.77"},
+        )
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"]
+        assert limited.json()["error"]["code"] == "RATE_LIMITED"
+    finally:
+        unknown_request_limiter.reset()
+        app.dependency_overrides.clear()
+
+
+def test_wrong_method_api_requests_are_bounded_by_the_unknown_ip_guard(monkeypatch):
+    """A 405 partial route match must not bypass every ingress guard."""
+    from app.core.rate_limit import unknown_request_limiter
+
+    client, app = _client(monkeypatch)
+    unknown_request_limiter.reset()
+    monkeypatch.setattr(unknown_request_limiter, "calls_per_period", 2)
+    try:
+        path = "/api/v1/webhooks/amocrm/wrong-method"
+        assert client.get(path).status_code == 405
+        assert client.get(path).status_code == 405
+        limited = client.get(path)
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"]
+        assert limited.json()["error"]["code"] == "RATE_LIMITED"
+    finally:
+        unknown_request_limiter.reset()
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_authentication_is_rejected_before_expensive_resolution(
+    monkeypatch,
+):
+    """The early guard must cap work before database/crypto/provider authentication."""
+    from starlette.requests import Request
+    from app.api.v1 import dependencies
+    from app.core.access_policy import RequestContext
+    from app.core.rate_limit import authentication_concurrency_guard
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+    context = RequestContext(10, SimpleNamespace(id=1, amocrm_account_id=10))
+
+    async def expensive_resolution(request, db):
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await release.wait()
+        return context
+
+    def request():
+        return Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/me",
+                "headers": [],
+                "client": ("192.0.2.10", 1234),
+            }
+        )
+
+    authentication_concurrency_guard.reset()
+    monkeypatch.setattr(authentication_concurrency_guard, "max_concurrent_per_key", 1)
+    monkeypatch.setattr(dependencies, "_resolve_request_context", expensive_resolution)
+    first = asyncio.create_task(dependencies.get_request_context(request(), None))
+    await entered.wait()
+    try:
+        with pytest.raises(dependencies.APIProblem) as error:
+            await dependencies.get_request_context(request(), None)
+        assert error.value.status_code == 429
+        assert calls == 1
+    finally:
+        release.set()
+        await first
+        authentication_concurrency_guard.reset()
 
 
 def test_duplicate_session_returns_normalized_conflict(monkeypatch):

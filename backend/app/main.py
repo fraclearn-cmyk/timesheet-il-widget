@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 import asyncio
-from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 import socket
@@ -27,6 +26,11 @@ from app.core.middleware import (
     SafeExceptionMiddleware,
     request_id_for,
 )
+from app.core.rate_limit import (
+    BoundedSlidingWindowLimiter,
+    trusted_remote_key,
+    unknown_request_limiter,
+)
 
 try:
     from app.core.config import settings
@@ -35,6 +39,9 @@ except ImportError:
     class Settings:
         DEBUG = True
         ALLOWED_ORIGINS = []
+        RATE_LIMIT_CALLS = 60
+        RATE_LIMIT_MAX_BUCKETS = 4096
+        AUTHENTICATION_MAX_CONCURRENT_PER_IP = 64
 
     settings = Settings()
 
@@ -118,46 +125,64 @@ async def lifespan(application: FastAPI):
 
 # Rate limiting middleware
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, calls_per_minute: int = 60, max_clients: int = 4096):
+    """Bound public routes by socket IP; protected APIs limit verified identity."""
+
+    def __init__(
+        self,
+        app,
+        calls_per_minute: int = 60,
+        max_clients: int = 4096,
+        public_only: bool = False,
+    ):
         super().__init__(app)
         self.calls_per_minute = calls_per_minute
         self.max_clients = max_clients
-        self.requests = OrderedDict()
+        self.public_only = public_only
+        self._limiter = BoundedSlidingWindowLimiter(
+            calls_per_period=calls_per_minute,
+            period_seconds=60,
+            max_buckets=max_clients,
+        )
+        self.requests = self._limiter.requests
 
     def record_request(self, client_ip: str, *, now: float) -> bool:
-        bucket = self.requests.get(client_ip)
-        if bucket is None:
-            if len(self.requests) >= self.max_clients:
-                self.requests.popitem(last=False)
-            bucket = []
-            self.requests[client_ip] = bucket
-        else:
-            self.requests.move_to_end(client_ip)
-        bucket[:] = [timestamp for timestamp in bucket if now - timestamp < 60]
-        if len(bucket) >= self.calls_per_minute:
-            return True
-        bucket.append(now)
-        return False
+        limited, _ = self._limiter.check(client_ip, now=now)
+        return limited
 
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.client.host if request.client else "unknown"
+        if self.public_only and request.url.path.startswith("/api/v1/"):
+            response = await call_next(request)
+            # Protected and webhook handlers set an ingress marker. Unknown paths
+            # and method mismatches have neither, so they use the bounded IP pool.
+            if not getattr(request.state, "ingress_guarded", False):
+                limited, retry_after = unknown_request_limiter.check(
+                    trusted_remote_key(request)
+                )
+                if limited:
+                    return _rate_limited_response(request, retry_after)
+            return response
+        client_ip = trusted_remote_key(request)
         current_time = time.time()
 
         if self.record_request(client_ip, now=current_time):
-            return JSONResponse(
-                status_code=429,
-                headers={"Retry-After": "60"},
-                content={
-                    "error": {
-                        "code": "RATE_LIMITED",
-                        "message": PUBLIC_ERRORS["RATE_LIMITED"],
-                        "request_id": request_id_for(request),
-                    }
-                },
-            )
+            return _rate_limited_response(request, 60)
 
         response = await call_next(request)
         return response
+
+
+def _rate_limited_response(request: Request, retry_after: int) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        headers={"Retry-After": str(retry_after)},
+        content={
+            "error": {
+                "code": "RATE_LIMITED",
+                "message": PUBLIC_ERRORS["RATE_LIMITED"],
+                "request_id": request_id_for(request),
+            }
+        },
+    )
 
 
 # Create app
@@ -184,9 +209,11 @@ async def api_error_handler(request: Request, exc: StarletteHTTPException):
     else:
         code, message = public_error("REQUEST_INVALID")
     request_id = request_id_for(request)
+    response_headers = dict(exc.headers or {})
+    response_headers["X-Request-Id"] = request_id
     return JSONResponse(
         status_code=exc.status_code,
-        headers={"X-Request-Id": request_id},
+        headers=response_headers,
         content={
             "error": {
                 "code": code,
@@ -227,7 +254,12 @@ if hasattr(settings, "DEBUG") and settings.DEBUG:
 
 # Rate limiting sits inside CORS so its 429 response is readable by the widget.
 if not getattr(settings, "DEBUG", False):
-    app.add_middleware(RateLimitMiddleware, calls_per_minute=60)
+    app.add_middleware(
+        RateLimitMiddleware,
+        calls_per_minute=settings.RATE_LIMIT_CALLS,
+        max_clients=settings.RATE_LIMIT_MAX_BUCKETS,
+        public_only=True,
+    )
 
 # Unexpected route failures are normalized inside CORS.
 app.add_middleware(SafeExceptionMiddleware)

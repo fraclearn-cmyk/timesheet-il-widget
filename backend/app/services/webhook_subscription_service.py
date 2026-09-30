@@ -29,6 +29,14 @@ class WebhookClient(Protocol):
 
 
 class WebhookSubscriptionService:
+    """Register the provider-compatible opaque callback destination.
+
+    amoCRM's supported webhook contract has no verifiable HMAC header. A fresh
+    ``token_urlsafe(32)`` path supplies 256 bits of entropy; only its SHA-256
+    digest is used for ingress lookup, while the encrypted value is retained
+    solely so server-side reconciliation can reproduce the destination.
+    """
+
     SETTINGS = (
         "add_lead",
         "update_lead",

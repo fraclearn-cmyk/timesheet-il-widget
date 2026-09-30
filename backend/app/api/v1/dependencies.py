@@ -12,6 +12,14 @@ from sqlalchemy.orm import Session
 from app.core.access_policy import AccessPolicy, RequestContext
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.error_catalog import PUBLIC_ERRORS
+from app.core.rate_limit import (
+    authentication_concurrency_guard,
+    authenticated_identity_key,
+    authenticated_request_limiter,
+    trusted_remote_key,
+    unknown_request_limiter,
+)
 from app.core.widget_auth import WidgetTokenInvalid, decode_widget_token
 from app.integrations.amocrm_client import AmoCRMClient, AmoCRMClientError
 from app.integrations.oauth import OAuthTokenCipher
@@ -37,10 +45,40 @@ class RequestContextUnauthorized(HTTPException):
 class APIProblem(HTTPException):
     """Stable public error contract without object-existence disclosure."""
 
-    def __init__(self, status_code: int, code: str, message: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.code = code
         self.message = message
-        super().__init__(status_code=status_code, detail=code)
+        super().__init__(status_code=status_code, detail=code, headers=headers)
+
+
+def _raise_rate_limited(retry_after: int) -> None:
+    raise APIProblem(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        "RATE_LIMITED",
+        PUBLIC_ERRORS["RATE_LIMITED"],
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+def _limit_verified_request(request: Request, context: RequestContext) -> None:
+    limited, retry_after = authenticated_request_limiter.check(
+        authenticated_identity_key(context)
+    )
+    if limited:
+        _raise_rate_limited(retry_after)
+
+
+def _limit_unknown_request(request: Request) -> None:
+    limited, retry_after = unknown_request_limiter.check(trusted_remote_key(request))
+    if limited:
+        _raise_rate_limited(retry_after)
 
 
 def widget_token_invalid() -> APIProblem:
@@ -298,6 +336,27 @@ async def get_request_context(
     request: Request, db: Session = Depends(get_db)
 ) -> RequestContext:
     """Resolve identity from verified OAuth state, with a test-only legacy adapter."""
+    # This early concurrent-work cap contains database/crypto/provider work. It
+    # is deliberately not a completed-request quota, so 40 tenants sharing NAT
+    # keep independent authenticated sliding-window buckets after verification.
+    request.state.ingress_guarded = True
+    remote_key = trusted_remote_key(request)
+    if not authentication_concurrency_guard.acquire(remote_key):
+        _raise_rate_limited(1)
+    try:
+        try:
+            context = await _resolve_request_context(request, db)
+        except (RequestContextUnauthorized, APIProblem):
+            _limit_unknown_request(request)
+            raise
+    finally:
+        authentication_concurrency_guard.release(remote_key)
+    _limit_verified_request(request, context)
+    return context
+
+
+async def _resolve_request_context(request: Request, db: Session) -> RequestContext:
+    """Authenticate first so browser fields can never choose a tenant bucket."""
     widget_token = request.headers.get("X-Auth-Token")
     if widget_token is not None:
         return await _get_widget_request_context(widget_token, db)
@@ -435,6 +494,7 @@ async def enforce_route_scope(
     context: RequestContext = Depends(get_request_context),
 ) -> RequestContext:
     """Bind legacy path/query identifiers to the verified account before handlers run."""
+    request.state.ingress_guarded = True
     values = {**request.path_params, **dict(request.query_params)}
     account = values.get("account_id")
     if account is not None:

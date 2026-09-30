@@ -144,6 +144,9 @@ class Settings(BaseSettings):
     # Rate limiting
     RATE_LIMIT_CALLS: int = 60
     RATE_LIMIT_PERIOD: int = 60
+    RATE_LIMIT_MAX_BUCKETS: int = Field(default=4096, ge=40, le=65536)
+    # Forty verified tenant contexts behind one NAT must fit without rejection.
+    AUTHENTICATION_MAX_CONCURRENT_PER_IP: int = Field(default=64, ge=40, le=1024)
 
     # Logging
     LOG_LEVEL: str = "INFO"
