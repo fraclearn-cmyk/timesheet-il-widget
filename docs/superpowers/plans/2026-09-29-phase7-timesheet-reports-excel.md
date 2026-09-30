@@ -229,26 +229,26 @@ Review XSS, request races, URL/blob cleanup, keyboard access and error recovery.
 - Consumes: Task 4 report controller/styles and existing widget `$authorizedAjax`, API URL, lifecycle ownership and monitoring launcher patterns.
 - Produces: one admin/manager “Табель” launcher and owned report panel; packaged `reports/controller.js` and `reports/styles.css`.
 
-- [ ] **Step 1: Write failing lifecycle/package tests**
+- [x] **Step 1: Write failing lifecycle/package tests**
 
 Assert no launcher for employee/settings contexts, one launcher after repeated init, `$authorizedAjax` only, no identity headers, correct JSON/blob requests, error recovery, and full cleanup of requests/listeners/styles/DOM on context change or destroy.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 node --test frontend/tests/widget-lifecycle.test.js frontend/tests/reports.test.js
 & .\.venv312\Scripts\python.exe -m unittest test_widget_package.py
 ```
 
-- [ ] **Step 3: Integrate reports with the widget lifecycle**
+- [x] **Step 3: Integrate reports with the widget lifecycle**
 
 Add the AMD dependency and stylesheet beside monitoring. Share only verified status/viewer information, keep controllers independently destroyable, and leave amoCRM usable on report failures.
 
-- [ ] **Step 4: Extend the exact production package**
+- [x] **Step 4: Extend the exact production package**
 
 Add two runtime files to build and validation allowlists, raising the exact archive from 23 to 25 files. Keep legacy/demo report HTML and test files outside the ZIP.
 
-- [ ] **Step 5: Run complete frontend/browser/package GREEN**
+- [x] **Step 5: Run complete frontend/browser/package GREEN**
 
 ```powershell
 node --test frontend/tests/*.test.js
@@ -258,7 +258,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build_widget.ps1
 & .\.venv312\Scripts\python.exe .\validate_widget_zip.py .\widget.zip
 ```
 
-- [ ] **Step 6: Independent review and commit**
+- [x] **Step 6: Independent review and commit**
 
 Review lifecycle ownership, role visibility, authorized transport, archive exactness and regression risk. Commit as `feat: integrate timesheet reports into widget`.
 
