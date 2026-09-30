@@ -257,32 +257,54 @@ Mouse/keyboard без CRM event образует только нейтральн
 
 ## Отчёт и экспорт
 
-`GET /api/v1/reports/detailed?date_from=&date_to=&group_id=&user_id=&page=` возвращает
-пагинированный табель:
+`GET /api/v1/reports/detailed?date_from=&date_to=&group_id=&user_id=&page=` — строгий
+account-scoped табель для `admin` и `manager`. `employee` получает `403 ACCESS_DENIED`.
+Администратор видит учитываемых сотрудников аккаунта, руководитель — только учитываемых
+участников активных групп, которыми управляет. `group_id` и `user_id` — внутренние ID;
+недоступная цель скрывается одинаковым `404 NOT_FOUND`. Страница содержит ровно 10 строк,
+`total` и `totals` относятся ко всему отфильтрованному набору.
 
 ```json
 {
   "items": [
     {
+      "user_id": 42,
       "amocrm_user_id": 456,
+      "employee_name": "Анна",
+      "group_id": 10,
+      "group_name": "Продажи",
+      "group_timezone": "Europe/Moscow",
       "date": "2026-09-11",
       "started_at": "2026-09-11T08:00:00Z",
       "ended_at": "2026-09-11T17:00:00Z",
-      "work_seconds": 28800,
       "break_seconds": 3600,
+      "work_seconds": 28800,
       "late_seconds": 0,
       "status": "finished"
     }
   ],
   "page": 1,
-  "total": 1
+  "page_size": 10,
+  "total": 1,
+  "totals": {"work_seconds": 28800, "break_seconds": 3600, "late_seconds": 0, "days": 1, "employees": 1}
 }
 ```
 
-Период более трёх месяцев возвращает `REPORT_RANGE_LIMIT`.
-`POST /api/v1/reports/export-excel` возвращает XLSX табель с
-`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`;
-activity intervals и raw CRM events в XLSX не включаются.
+Период включительный и ограничен тремя календарными месяцами от `date_from`, включая
+clamp конца месяца. Обратный диапазон возвращает `422 REPORT_DATE_RANGE_INVALID`, период
+за разрешённой границей — `422 REPORT_RANGE_LIMIT` и русское сообщение с лимитом.
+
+`POST /api/v1/reports/export-excel` принимает тот же период и фильтры, а также непустой
+уникальный allowlist `columns`: `employee`, `date`, `start`, `end`, `break`, `work`,
+`lateness`, `status`. Он возвращает XLSX с безопасным именем, локальным временем группы
+и числовыми длительностями. Preview и Excel строятся из одних канонических строк и одной
+access policy. Лимит — 10 000 строк (`REPORT_EXPORT_TOO_LARGE`), обработка идёт пакетами
+по 250 employee-day keys. Сессии и переходы внутри пакета независимо ограничены 25 000;
+превышение даёт контролируемый `413 REPORT_EXPORT_SOURCE_TOO_LARGE`. Ячейки защищены от
+formula injection; activity intervals, CRM events, calls, payload и card links отсутствуют.
+
+Новый строгий preview/export сосуществует с legacy report routes; контракт Phase 7
+относится именно к `/detailed` и `/export-excel`.
 
 ## Фактическое состояние реализации
 

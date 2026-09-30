@@ -277,7 +277,7 @@ Review lifecycle ownership, role visibility, authorized transport, archive exact
 - Consumes: Tasks 1–5 and all seven Phase 7 acceptance checkboxes.
 - Produces: reviewed Phase 7 implementation, reproducible evidence, user-checkable scenarios and updated plan status.
 
-- [ ] **Step 1: Run focused and full PostgreSQL backend gates**
+- [x] **Step 1: Run focused and full PostgreSQL backend gates**
 
 ```powershell
 Set-Location backend
@@ -286,7 +286,7 @@ $env:TEST_POSTGRES_ADMIN_URL='postgresql://phase5_test@127.0.0.1:55435/postgres'
 & ..\.venv312\Scripts\python.exe -m pytest -q --tb=short
 ```
 
-- [ ] **Step 2: Run full frontend/browser/package gates**
+- [x] **Step 2: Run full frontend/browser/package gates**
 
 ```powershell
 Set-Location ..
@@ -297,19 +297,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build_widget.ps1
 & .\.venv312\Scripts\python.exe .\validate_widget_zip.py .\widget.zip
 ```
 
-- [ ] **Step 3: Run quality, migration and security checks**
+- [x] **Step 3: Run quality, migration and security checks**
 
 Run Black on changed Python, `compileall`, `git diff --check`, one Alembic head, a scan for unsafe HTML/direct fetch/browser identity, workbook field inspection and the 40-account/query-bound tests. If no migration was added, explicitly record that decision.
 
-- [ ] **Step 4: Independent whole-phase review**
+- [x] **Step 4: Independent whole-phase review**
 
 Review the complete Phase 7 diff against all seven `Plan.md` checkboxes. Fix every Critical/Important issue and rerun affected plus full gates.
 
-- [ ] **Step 5: Update docs and Plan.md from fresh evidence**
+- [x] **Step 5: Update docs and Plan.md from fresh evidence**
 
 Document exact endpoints, roles, IDs, range semantics, pagination, columns, XLSX safety and limits. Mark every Phase 7 checkbox only after evidence; add what changed, files, commands/results, manual checks and live amoCRM limitations.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Commit as `docs: mark phase seven locally complete`.
 
