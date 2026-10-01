@@ -86,11 +86,11 @@
 - Create: `.github/workflows/ci.yml`, `docs/operations.md`
 - Modify: `docs/API.md`, `docs/development-workflow.md`, `Plan.md`
 
-- [ ] Add PostgreSQL 15 CI with Alembic upgrade/head checks, full backend, Node, Playwright, package/ZIP, Black/compileall/diff checks and static Compose validation; build the backend image on the CI runner.
-- [ ] Document clean startup, migrations, liveness/readiness, backup/restore, 40-account sizing, logs/request IDs, recovery, rate limits, SLA and the external Docker/live amoCRM gates.
-- [ ] Run fresh full PostgreSQL/backend/frontend/browser/package/security/performance gates.
-- [ ] Review the full Phase 8 diff against all seven `Plan.md` checkboxes; fix every Critical/Important finding.
-- [ ] Update every Phase 8 checkbox, status/progress tables, final report, files, exact results and user-checkable scenarios; commit only after evidence.
+- [x] Add PostgreSQL 15 CI with Alembic upgrade/head checks, full backend, Node, Playwright, package/ZIP, Black/compileall/diff checks and static Compose validation; build the backend image on the CI runner.
+- [x] Document clean startup, migrations, liveness/readiness, backup/restore, 40-account sizing, logs/request IDs, recovery, rate limits, SLA and the external Docker/live amoCRM gates.
+- [x] Run fresh full PostgreSQL/backend/frontend/browser/package/security/performance gates.
+- [x] Review the full Phase 8 diff against all seven `Plan.md` checkboxes; fix every Critical/Important finding.
+- [x] Update every Phase 8 checkbox, status/progress tables, final report, files, exact results and user-checkable scenarios; commit only after evidence.
 
 ## Boundaries and rulings
 

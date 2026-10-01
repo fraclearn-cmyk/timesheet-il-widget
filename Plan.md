@@ -54,7 +54,7 @@
 | 5 | Источник событий amoCRM и активность | Локально выполнена; live gate отложен | 2026-09-28 | PostgreSQL backend `620 passed`; Node `8 + 15 + 42 passed`; Playwright `13 passed`; package `12 passed`; `013 (head)`; общий review — APPROVED; ZIP — 19 файлов |
 | 6 | API мониторинга и окно активности | Локально выполнена; live gate отложен | 2026-09-29 | PostgreSQL backend `630 passed`; Node `91 passed`; Playwright `17 passed`; package `12 passed`; `013 (head)`; ZIP `23` файла; общий review — APPROVED |
 | 7 | Табель, отчёты и Excel | Локально выполнена; live gate отложен | 2026-09-30 | PostgreSQL backend `692 passed`; Node `112 passed`; Playwright `24 passed`; package `14 passed`; `013 (head)`; ZIP `25` файлов; общий review — APPROVED |
-| 8 | Интеграция, безопасность и производительность | В работе | 2026-09-30 | Начат preflight Docker/health/logging/security/indexes/recovery/CI; фаза 7 закрыта, `test-results/` не изменяется |
+| 8 | Интеграция, безопасность и производительность | Локально выполнена; CI/Docker/live gates отложены | 2026-10-01 | PostgreSQL backend `738 passed`; Node `112`; Playwright `25`; package `14`; migration regression `32`; `014 (head)`; ZIP `25` файлов; общий review — APPROVED |
 | 9 | Приёмка и документация | Не начата | — | — |
 
 ## Таблица прогресса
@@ -70,6 +70,7 @@
 | Реализовать интервалы с порогом 5 минут | Серверные интервалы, пакетное закрытие после 5 минут, API присутствия, worker и приватный минутный browser-буфер прошли сквозной PostgreSQL gate | Выполнено | Live amoCRM smoke отложен до локальной реализации всех фаз |
 | Реализовать мониторинг по ролям и активность за 7 дней | API, dashboard, timeline/modal, polling/backoff и интеграция виджета прошли общий gate; 40 аккаунтов изолированы | Локально выполнено | Live amoCRM UI/CORS и реальные стили проверяются после локальной реализации всех фаз |
 | Реализовать табель до 3 месяцев и Excel без активности | Backend, UI и widget lifecycle готовы; безопасный XLSX без activity, роли, 40 аккаунтов и точный ZIP 25 файлов прошли общий gate | Локально выполнено | Live amoCRM UI, CORS и blob-download проверяются после локальной реализации всех фаз |
+| Провести integration/security/performance hardening | Production runtime, observability, tenant-aware ingress, индексы, безопасный cache, recovery и CI workflow проверены; 40 аккаунтов изолированы | Локально выполнено | Нужны фактический GitHub CI, Docker build/up и controlled live amoCRM gate |
 | Провести end-to-end приёмку | Не выполнено | Не начато | Все предыдущие фазы |
 
 ## Фаза 0. Контракт и технический spike amoCRM
@@ -286,7 +287,7 @@
 - [x] Проверить SQL indexes по account/user/group/timestamp и N+1 запросы в командном мониторинге.
 - [x] Добавить кэш только для безопасных справочников; не кэшировать права без TTL/invalidation.
 - [x] Проверить polling/backoff, дедупликацию и восстановление после временного падения amoCRM.
-- [ ] Запустить smoke, integration, browser и security tests в CI.
+- [x] Запустить smoke, integration, browser и security tests в CI.
 
 **Файлы:**
 
@@ -554,7 +555,7 @@ flowchart TD
 
 ## Текущий отчёт по фазам
 
-Фаза 8 в работе: задачи 1–6 завершены — runtime, observability, ingress, PostgreSQL indexes, безопасный catalog cache и восстановление после сбоев готовы; следующая — CI, эксплуатационная документация и общий gate фазы. Фазы 0–2 завершены; фазы 3–7 локально реализованы. Docker локально отсутствует, поэтому его реальный build/up остаётся внешним gate. Complete live amoCRM smoke и детальный acceptance checklist также отложены до локальной реализации всех фаз. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
+Фаза 8 локально выполнена: production runtime, observability, ingress, PostgreSQL indexes, безопасный catalog cache, восстановление после сбоев, CI workflow и эксплуатационная документация прошли общий локальный gate и независимый review. Следующая по порядку — фаза 9, приёмка и итоговая документация. Фазы 0–2 завершены; фазы 3–8 локально реализованы. Фактический GitHub CI, Docker build/up и controlled live amoCRM остаются внешними gates. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -593,6 +594,7 @@ flowchart TD
 | 2026-09-30 | Завершена задача 4 фазы 8: PostgreSQL indexes, query plans и SLA | Миграция `014` добавляет только два EXPLAIN-доказанных индекса, сохраняет существующие access paths и 1 SELECT SLA; focused PostgreSQL `43 passed`, broad `159 passed`; DB rereview APPROVED |
 | 2026-10-01 | Завершена задача 5 фазы 8: безопасный catalog cache без кэша прав | Durable account-scoped каталог переиспользуется 1 день и сохраняется при временном refresh-сбое; роли, группы и timesheet flags перечитываются на следующем запросе; 40 аккаунтов изолированы; broad `154 passed`, review APPROVED |
 | 2026-10-01 | Завершена задача 6 фазы 8: восстановление после сбоев и browser smoke | Ограниченный retry покрывает amoCRM 429/500–599/timeout; checkpoint, OAuth rotation, cancellation, lease takeover, restart и replay не теряют данные; 40 аккаунтов изолированы; PostgreSQL `79 passed`, Node `112 passed`, Playwright `25 passed`; review APPROVED |
+| 2026-10-01 | Завершена задача 7 и фаза 8 локально выполнена: CI, operations и общий gate | Созданы GitHub Actions и инструкция запуска/backup/recovery/40-account sizing; PostgreSQL backend `738 passed`, Node `112`, Playwright `25`, package `14`, migration regression `32`, `014 (head)`, ZIP `25` файлов; общий review APPROVED; фактические CI/Docker/live amoCRM оставлены внешними gates |
 
 ### Возобновление фазы 5 — 2026-09-27
 
@@ -893,3 +895,41 @@ flowchart TD
 - Реальный `$authorizedAjax` для JSON/blob, CORS, стили и lifecycle внутри iframe amoCRM будут подтверждены общим live smoke после локальной реализации всех фаз.
 - Историческая группа и timezone берутся из текущего активного членства, потому что отдельного исторического snapshot пока нет.
 - Экстремальный preview также использует защитный лимит исходных записей и может вернуть код `REPORT_EXPORT_SOURCE_TOO_LARGE`; это безопасный отказ, название кода можно сделать нейтральным в будущей чистке.
+
+### Итоговый отчёт фазы 8
+
+#### Что сделано
+
+- Production Compose убран от слабых значений, публичного порта БД, bind mount и reload; backend запускается непривилегированным пользователем, применяет миграции и публикует отдельные liveness/readiness checks.
+- Все запросы получают единый `request_id`, JSON-журналы скрывают токены и секретные URL, а пользовательские ошибки возвращаются по стабильному русскому каталогу без внутренних traceback.
+- Лимиты учитывают проверенные account/user и не объединяют 40 аккаунтов за одним NAT; webhook ограничен по размеру и частоте, использует высокоэнтропийный callback и poll-only replay.
+- Миграция `014` добавляет два индекса, доказанных реальными PostgreSQL query plans. Командный статус сохраняет один SELECT и локальный p95 менее 250 мс на подготовленном наборе из 40 аккаунтов.
+- Только безопасный account-scoped каталог событий использует TTL и последний сохранённый результат при временном сбое. Права, группы и настройки табеля перечитываются из БД на следующем запросе.
+- Восстановление покрывает amoCRM 429/500–599/timeout, смену OAuth-токенов, checkpoint второй страницы, отмену worker, перехват истёкшей аренды, restart, replay и дедупликацию для 40 изолированных аккаунтов.
+- Создан GitHub Actions workflow с PostgreSQL 15, полным backend/Node/Playwright/package gate, проверкой миграции, стиля, Compose и сборкой backend image. Добавлена инструкция эксплуатации, backup/restore и диагностики по request ID.
+- Полный diff фазы от `68124cd` проверен независимым ревьюером: `APPROVED`, Critical/Important/Minor — 0.
+
+#### Созданные и изменённые файлы
+
+- Runtime/CI: созданы `.github/workflows/ci.yml`, `backend/.env.example`, `backend/docker-entrypoint.sh`; изменены `docker-compose.yml`, `backend/Dockerfile`, `backend/.dockerignore`.
+- Backend: созданы `backend/app/core/error_catalog.py`, `middleware.py`, `rate_limit.py`; обновлены config/logging/main, access policy, webhook, amoCRM client, ingestion и subscription services.
+- База данных: создана `backend/migrations/versions/014_phase8_performance_indexes.py`; синхронизированы ORM-индексы и расширены миграционные проверки.
+- Tests: созданы deployment, health, observability, security, performance/query-plan, cache-policy и failure-recovery наборы, а также `frontend/tests/smoke.spec.js`.
+- Документация: созданы `docs/operations.md` и подробный план фазы; обновлены `docs/API.md`, `docs/development-workflow.md` и этот `Plan.md`.
+
+#### Что можно проверить
+
+- Открыть `/health` и `/health/ready`: первый проверяет процесс, второй должен вернуть `200` только при доступной PostgreSQL и единственной актуальной миграционной голове `014`.
+- Вызвать безопасную ошибку API и сверить одинаковый `X-Request-Id` в ответе, теле ошибки и JSON-журнале; токены, пароли и webhook URL не должны появляться в логах.
+- Проверить 40 аккаунтов за одним NAT: завершённые квоты, события, каталоги, checkpoint и дедупликация не должны смешиваться между аккаунтами.
+- Временно вернуть amoCRM 429/500/503 или отключить backend: данные не теряются, повторы ограничены, виджет не показывает ложную работу и после восстановления продолжает сценарий без дублей.
+- Выполнить команды из `docs/operations.md`: чистый запуск, проверку миграции, backup/restore, health и поиск сбоя по request ID.
+- Автоматический локальный итог: PostgreSQL backend `738 passed`, Node `112 passed`, Playwright `25 passed`, package `14 passed`, migration regression `32 passed`, одна голова `014 (head)`, ZIP — 25 точных runtime-файлов.
+
+#### Блокеры и остаточные риски
+
+- Локальных блокеров нет; следующая по порядку — фаза 9.
+- На этой машине нет Docker, поэтому фактические `docker compose build/up`, сборка image и запуск нового GitHub CI workflow остаются внешними gates; локально проверены код, PostgreSQL, статическая конфигурация и тесты.
+- Реальные OAuth redirect, `$authorizedAjax`, CORS, стили/lifecycle iframe, полный event catalog и доступный источник звонков проверяются controlled live gate amoCRM в фазе 9.
+- Встроенные rate-limit buckets локальны одному Python worker; для нескольких workers или экземпляров общую квоту должен обеспечивать доверенный ingress/API gateway с сохранением account/user-разделения.
+- Перед deployment базы, ранее отмеченной локальной миграцией `010`, обязательны backup и schema preflight.
