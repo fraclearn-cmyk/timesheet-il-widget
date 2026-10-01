@@ -55,7 +55,7 @@
 | 6 | API мониторинга и окно активности | Локально выполнена; live gate отложен | 2026-09-29 | PostgreSQL backend `630 passed`; Node `91 passed`; Playwright `17 passed`; package `12 passed`; `013 (head)`; ZIP `23` файла; общий review — APPROVED |
 | 7 | Табель, отчёты и Excel | Локально выполнена; live gate отложен | 2026-09-30 | PostgreSQL backend `692 passed`; Node `112 passed`; Playwright `24 passed`; package `14 passed`; `013 (head)`; ZIP `25` файлов; общий review — APPROVED |
 | 8 | Интеграция, безопасность и производительность | Локально выполнена; CI/Docker/live gates отложены | 2026-10-01 | PostgreSQL backend `738 passed`; Node `112`; Playwright `25`; package `14`; migration regression `32`; `014 (head)`; ZIP `25` файлов; общий review — APPROVED |
-| 9 | Приёмка и документация | Не начата | — | — |
+| 9 | Приёмка и документация | В работе | 2026-10-01 | Запущен read-only preflight пользовательских сценариев, документации, release checklist и внешних gates после локального закрытия фазы 8 |
 
 ## Таблица прогресса
 
@@ -555,7 +555,7 @@ flowchart TD
 
 ## Текущий отчёт по фазам
 
-Фаза 8 локально выполнена: production runtime, observability, ingress, PostgreSQL indexes, безопасный catalog cache, восстановление после сбоев, CI workflow и эксплуатационная документация прошли общий локальный gate и независимый review. Следующая по порядку — фаза 9, приёмка и итоговая документация. Фазы 0–2 завершены; фазы 3–8 локально реализованы. Фактический GitHub CI, Docker build/up и controlled live amoCRM остаются внешними gates. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
+Фаза 9 начата: запущен read-only preflight пользовательских сценариев, документации, release checklist и остаточных рисков. Фаза 8 локально выполнена: production runtime, observability, ingress, PostgreSQL indexes, безопасный catalog cache, восстановление после сбоев, CI workflow и эксплуатационная документация прошли общий локальный gate и независимый review. Фазы 0–2 завершены; фазы 3–8 локально реализованы. Фактический GitHub CI, Docker build/up и controlled live amoCRM остаются внешними gates. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -595,6 +595,7 @@ flowchart TD
 | 2026-10-01 | Завершена задача 5 фазы 8: безопасный catalog cache без кэша прав | Durable account-scoped каталог переиспользуется 1 день и сохраняется при временном refresh-сбое; роли, группы и timesheet flags перечитываются на следующем запросе; 40 аккаунтов изолированы; broad `154 passed`, review APPROVED |
 | 2026-10-01 | Завершена задача 6 фазы 8: восстановление после сбоев и browser smoke | Ограниченный retry покрывает amoCRM 429/500–599/timeout; checkpoint, OAuth rotation, cancellation, lease takeover, restart и replay не теряют данные; 40 аккаунтов изолированы; PostgreSQL `79 passed`, Node `112 passed`, Playwright `25 passed`; review APPROVED |
 | 2026-10-01 | Завершена задача 7 и фаза 8 локально выполнена: CI, operations и общий gate | Созданы GitHub Actions и инструкция запуска/backup/recovery/40-account sizing; PostgreSQL backend `738 passed`, Node `112`, Playwright `25`, package `14`, migration regression `32`, `014 (head)`, ZIP `25` файлов; общий review APPROVED; фактические CI/Docker/live amoCRM оставлены внешними gates |
+| 2026-10-01 | Начата фаза 9: приёмка и итоговая документация | Запущен read-only QA/release preflight всех восьми чекбоксов, существующих e2e сценариев, документации и известных ограничений; реализация начнётся после фиксации минимального проверяемого плана |
 
 ### Возобновление фазы 5 — 2026-09-27
 
