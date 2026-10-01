@@ -596,6 +596,7 @@ flowchart TD
 | 2026-10-01 | Завершена задача 6 фазы 8: восстановление после сбоев и browser smoke | Ограниченный retry покрывает amoCRM 429/500–599/timeout; checkpoint, OAuth rotation, cancellation, lease takeover, restart и replay не теряют данные; 40 аккаунтов изолированы; PostgreSQL `79 passed`, Node `112 passed`, Playwright `25 passed`; review APPROVED |
 | 2026-10-01 | Завершена задача 7 и фаза 8 локально выполнена: CI, operations и общий gate | Созданы GitHub Actions и инструкция запуска/backup/recovery/40-account sizing; PostgreSQL backend `738 passed`, Node `112`, Playwright `25`, package `14`, migration regression `32`, `014 (head)`, ZIP `25` файлов; общий review APPROVED; фактические CI/Docker/live amoCRM оставлены внешними gates |
 | 2026-10-01 | Начата фаза 9: приёмка и итоговая документация | Запущен read-only QA/release preflight всех восьми чекбоксов, существующих e2e сценариев, документации и известных ограничений; реализация начнётся после фиксации минимального проверяемого плана |
+| 2026-10-01 | Завершён preflight и создан подробный план фазы 9 | Локальное покрытие ролей, UI, событий, ошибок и 40 аккаунтов переиспользуется; добавляются сквозные role/failure сценарии, актуальные README/config/deployment, acceptance report и release checklist; GitHub CI, Docker и controlled live amoCRM остаются внешними gates |
 
 ### Возобновление фазы 5 — 2026-09-27
 
