@@ -1,8 +1,72 @@
-# API мониторинга команды
+# API виджета табеля
 
-Документ описывает контракты фазы 6. Базовый путь — `/api/v1`. Аккаунт, пользователь и роль всегда берутся из проверенного серверного `RequestContext`; query-параметры и данные браузера не являются основанием для доступа.
+Базовый путь пользовательского API — `/api/v1`; Swagger UI запущенного backend доступен по `/api/docs`. На защищённых маршрутах аккаунт, пользователь и роль берутся из проверенного серверного `RequestContext`; query-параметры и данные браузера не являются основанием для доступа. Opaque webhook `/api/v1/webhooks/amocrm/{hook_id}` является отдельным публичным trigger: он ограничен по размеру и частоте, планирует авторитетный API poll и не принимает browser identity.
 
 Все сохранённые даты выдаются как ISO 8601 UTC с `Z`. Локальные календарные даты, границы рабочего дня и семидневного окна рассчитываются в часовом поясе группы, включая ночные смены и переходы DST.
+
+## Аутентификация и текущий пользователь
+
+Рабочий виджет передаёт одноразовый `X-Auth-Token`. Backend проверяет HS256-подпись секретом интеграции, audience из HTTPS origin `AMOCRM_REDIRECT_URI`, client UUID, issuer и claims аккаунта/пользователя, затем сверяет активное OAuth connection и актуальное состояние amoCRM. Альтернативный `Authorization: Bearer <access-token>` также требует сохранённого активного connection и live-проверки amoCRM. Заголовки `X-User-Id`/`X-Account-Id` разрешены только тестовым adapter-ом и в production не являются способом входа.
+
+`GET /me` возвращает проверенный account, пользователя и доступные возможности:
+
+```json
+{
+  "account_id": 77,
+  "user": {"amocrm_id": 100500, "name": "Анна", "role": "admin"},
+  "permissions": {
+    "can_configure": true,
+    "can_view_all_groups": true,
+    "can_view_own_group": true
+  }
+}
+```
+
+## Рабочий статус сотрудника
+
+- `GET /timesheet/my-status` — подтверждённое состояние текущего пользователя;
+- `POST /timesheet/start-work` — начать работу;
+- `POST /timesheet/start-break` — начать перерыв;
+- `POST /timesheet/end-break` — продолжить работу;
+- `POST /timesheet/finish-work` — завершить рабочий день.
+
+Каждая команда принимает новый UUID, например `{"idempotency_key":"c4ab45ef-4515-4b5f-84dc-3bead623a9c2"}`. Повтор той же команды с тем же ключом безопасно возвращает сохранённый результат; использование ключа для другого действия даёт `409 IDEMPOTENCY_KEY_REUSED`.
+
+```json
+{
+  "session_id": 501,
+  "status": "working",
+  "started_at": "2026-09-29T06:00:00Z",
+  "ended_at": null,
+  "break_seconds": 0,
+  "track_time": true,
+  "hide_widget": false,
+  "restart_allowed": false,
+  "message": "Работа начата."
+}
+```
+
+`track_time=false` даёт `403 TRACK_TIME_DISABLED`. Неверный переход даёт `409 STATUS_TRANSITION_INVALID`. После завершения новая сессия в тот же локальный business day разрешена только политикой группы/аккаунта.
+
+## Настройки администратора
+
+- `GET /settings/snapshot` — целый account-scoped снимок настроек;
+- `PUT /settings/snapshot` — атомарно сохранить снимок с текущей `revision`;
+- `GET /settings/users` и `GET /settings/groups` — раздельные read-only списки.
+
+Маршруты доступны только администратору. Снимок связывает account settings, группы и пользователей: timezone, расписание, руководителя, разрешение restart, `track_time`, `hide_widget` и active membership. Клиентские новые группы связываются через `client_key`/`group_ref`; устаревшая revision возвращает конфликт. Точные поля описаны Swagger-схемой `SettingsSnapshotUpdate`.
+
+## Роли
+
+| Возможность | employee | manager | admin |
+|---|---:|---:|---:|
+| Собственный рабочий статус и команды | да | да | да |
+| Снимок команды | только себя | назначенные активные группы и себя | весь текущий аккаунт |
+| Детальная активность сотрудника | нет | только участник управляемой активной группы | активный пользователь своего аккаунта |
+| Табель и Excel | нет | только управляемые группы | весь учитываемый аккаунт |
+| Настройки групп и пользователей | нет | нет | да |
+
+Отображение кнопки в браузере не является авторизацией: каждый доступ повторно проверяется backend.
 
 ## `GET /team/status`
 
@@ -77,7 +141,7 @@ Query-параметры:
 
 Поле `employees[].id` — внутренний account-scoped ID. Только его можно передавать в detail endpoint. `amocrm_user_id` не заменяет внутренний ID.
 
-## `GET /team/{user_id}/activity?from=YYYY-MM-DD&to=YYYY-MM-DD`
+## `GET /team/{target_user_id}/activity?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
 Возвращает интервалы активности для включительного диапазона от одной до семи локальных календарных дат. Оба параметра обязательны.
 
@@ -148,7 +212,7 @@ Query-параметры:
   "error": {
     "code": "NOT_FOUND",
     "message": "Данные не найдены.",
-    "request_id": ""
+    "request_id": "09b2943d-6d6a-4c07-8998-8e7e6c5d5fe7"
   }
 }
 ```
@@ -209,12 +273,113 @@ Capacity-контракт проверен для 40 изолированных 
 
 Интерфейс «Табель» загружает справочник и запросы через `$authorizedAjax`, показывается только администратору и руководителю, поддерживает состояния загрузки, пустого результата, ошибки и повторной попытки. При закрытии окна активные запросы отменяются, обработчики удаляются, временный URL скачивания освобождается.
 
-## Наблюдаемость и ограничения запросов
+## Ошибки, request ID и ограничения запросов
 
-Каждый ответ API содержит `X-Request-Id`. Если клиент передал канонический UUID, сервер сохраняет его; иначе создаёт новый UUID. В безопасном JSON ошибки то же значение находится в `error.request_id`. Его можно сообщить администратору для поиска запроса в структурированном журнале. Ответ `500` не раскрывает внутреннее исключение, адрес базы, token или traceback.
+Каждый ответ API содержит `X-Request-Id`. Если клиент передал канонический UUID не длиннее 36 символов, сервер сохраняет его; иначе создаёт новый UUID. Нормализованные ошибки повторяют это значение в `error.request_id`, и его можно сообщить администратору для поиска запроса в структурированном журнале. Специальные ошибки `PUT /settings/snapshot` сейчас возвращают `error.code/message/field` без `request_id` в JSON, но тот же correlation ID остаётся в заголовке ответа.
+
+| HTTP | Основной публичный код | Значение |
+|---:|---|---|
+| `401` | `AMO_WIDGET_TOKEN_INVALID` или `AMOCRM_TOKEN_EXPIRED` | Одноразовый widget token недействителен либо OAuth-подключение надо обновить. |
+| `403` | `ACCESS_DENIED` или `TRACK_TIME_DISABLED` | Роль/область не разрешает действие либо учёт сотрудника выключен. |
+| `404` | `NOT_FOUND` | Объект отсутствует или скрыт политикой доступа; существование чужого объекта не раскрывается. |
+| `409` | `CONFLICT`, `STATUS_TRANSITION_INVALID`, `IDEMPOTENCY_KEY_REUSED` | Состояние уже изменилось, revision устарела или ключ команды использован иначе. |
+| `422` | `REQUEST_INVALID` либо route-specific code | Неверные поля, период, список колонок или references. |
+| `429` | `RATE_LIMITED` | Повторять только после `Retry-After`. |
+| `500` | `INTERNAL_ERROR` | Безопасное общее сообщение; traceback, token и адрес базы не выдаются. |
+| `503` | readiness payload | База недоступна или schema не совпадает с текущей головой; экземпляр не готов к traffic. |
 
 Авторизованные лимиты считаются по проверенному аккаунту и пользователю, поэтому 40 аккаунтов за одним NAT не расходуют общую завершённую квоту. До авторизации действует только ограничение одновременной работы: не более 64 запросов с одного сетевого адреса. Публичные и неизвестные маршруты, а также webhook, имеют отдельные ограниченные buckets. Webhook принимает тело не более 64 КиБ и не более 10 запросов в минуту на callback. При `429 RATE_LIMITED` клиент должен выдержать `Retry-After` и не выполнять безграничные повторы.
 
 Эти встроенные счётчики действуют на один Python worker. При нескольких workers или экземплярах общую квоту должен обеспечивать доверенный ingress/API gateway; для авторизованных запросов он обязан сохранять tenant-разделение, а не объединять 40 аккаунтов по одному NAT.
 
-Технические адреса состояния не входят в `/api/v1`: `GET /health` проверяет только живой процесс, а `GET /health/ready` возвращает `200` лишь при доступной PostgreSQL и единственной актуальной голове Alembic. Порядок запуска, backup/restore и действия при сбоях описаны в `docs/operations.md`.
+Технические адреса состояния не входят в `/api/v1`: `GET /health` и `GET /health/live` проверяют только живой процесс, а `GET /health/ready` возвращает `200` лишь при доступной PostgreSQL и единственной актуальной голове Alembic. Порядок запуска, backup/restore и действия при сбоях описаны в [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## Текущий индекс маршрутов
+
+Ниже перечислены маршруты, зарегистрированные текущим приложением. Поддерживаемый интерфейс виджета использует `/timesheet`, `/team`, `/settings` и строгие `/reports/detailed`/`export-excel`; остальные маршруты сохранены для существующих модулей и совместимости.
+
+### Identity, табель и команда
+
+```text
+GET    /api/v1/me
+GET    /api/v1/timesheet/my-status
+POST   /api/v1/timesheet/start-work
+POST   /api/v1/timesheet/start-break
+POST   /api/v1/timesheet/end-break
+POST   /api/v1/timesheet/finish-work
+GET    /api/v1/team/status
+GET    /api/v1/team/stats
+GET    /api/v1/team/activity
+GET    /api/v1/team/{target_user_id}/activity
+GET    /api/v1/team/{target_user_id}/timeline
+GET    /api/v1/team/{target_user_id}/timeline/history
+POST   /api/v1/team/{target_user_id}/force-finish
+```
+
+### Настройки и справочники
+
+```text
+GET    /api/v1/settings/snapshot
+PUT    /api/v1/settings/snapshot
+GET    /api/v1/settings/users
+GET    /api/v1/settings/groups
+GET    /api/v1/categories
+POST   /api/v1/categories
+GET    /api/v1/categories/{category_id}
+PUT    /api/v1/categories/{category_id}
+DELETE /api/v1/categories/{category_id}
+GET    /api/v1/departments/
+POST   /api/v1/departments/
+GET    /api/v1/departments/{department_id}/schedule
+PUT    /api/v1/departments/{department_id}/schedule
+```
+
+### Отчёты и Excel
+
+```text
+GET    /api/v1/reports/detailed
+POST   /api/v1/reports/export-excel
+```
+
+Следующие legacy report/export routes зарегистрированы и проходят router-wide `RequestContext`/scope dependency, но текущий виджет их не вызывает. Их старые payload/role semantics отличаются от строгого табеля выше; не используйте их для новой интеграции без отдельного security и product review:
+
+```text
+GET    /api/v1/reports/daily
+GET    /api/v1/reports/weekly
+GET    /api/v1/reports/monthly
+GET    /api/v1/reports/employee/{user_id}
+GET    /api/v1/reports/statistics
+POST   /api/v1/reports/generate
+GET    /api/v1/reports
+GET    /api/v1/reports/{report_id}
+DELETE /api/v1/reports/{report_id}
+GET    /api/v1/reports/{report_id}/download
+POST   /api/v1/excel/department
+POST   /api/v1/excel/employee/{employee_id}
+POST   /api/v1/excel/late-arrivals
+```
+
+### Activity, ingestion и совместимость
+
+```text
+POST   /api/v1/activity/start
+POST   /api/v1/activity/stop/{activity_session_id}
+POST   /api/v1/activity/switch
+POST   /api/v1/activity/event
+POST   /api/v1/activity/presence
+GET    /api/v1/activity/current/{work_session_id}
+GET    /api/v1/activity/history/{work_session_id}
+GET    /api/v1/activity/events/{activity_session_id}
+GET    /api/v1/activity/stats/{work_session_id}
+POST   /api/v1/activity/ingestion/webhook/ensure
+POST   /api/v1/webhooks/amocrm/{hook_id}
+POST   /api/v1/sessions/start
+POST   /api/v1/sessions/break/{user_id}
+POST   /api/v1/sessions/resume/{user_id}
+POST   /api/v1/sessions/finish/{user_id}
+GET    /api/v1/sessions/current/{user_id}
+GET    /api/v1/sessions/history/{user_id}
+GET    /api/v1/sessions/{session_id}
+```
+
+KPI routes зарегистрированы под `/api/v1/kpi`: `my`, `user/{target_user_id}`, `department/{dept_id}`, соответствующие `chart/*` и `dashboard/settings` (`GET`/`PUT`). Их точную OpenAPI-схему смотрите в `/api/docs`.
