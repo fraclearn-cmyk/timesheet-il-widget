@@ -165,12 +165,17 @@ async function boot(page, options = {}) {
         }
         return Promise.resolve({ ...window.timesheet });
       }
-      if (request.url.includes('/team/999/activity')) {
-        return Promise.reject({ status: 403, responseJSON: { error: { code: 'FORBIDDEN' } } });
-      }
-      if (/\/team\/\d+\/activity/.test(request.url)) {
+      const activityMatch = /\/team\/(\d+)\/activity/.exec(request.url);
+      if (activityMatch) {
+        const requestedId = Number(activityMatch[1]);
+        const target = window.teamStatus.employees.find(
+          (item) => item.id === requestedId && item.activity_detail_allowed === true,
+        );
+        if (!target) {
+          return Promise.reject({ status: 403, responseJSON: { error: { code: 'FORBIDDEN' } } });
+        }
         return Promise.resolve({
-          target: window.teamStatus.employees.find((item) => request.url.includes(`/team/${item.id}/`)),
+          target,
           group: { id: 10, name: 'Продажи' },
           timezone: 'Europe/Moscow',
           from: '2026-09-25',
@@ -189,9 +194,14 @@ async function boot(page, options = {}) {
   }, { code: sources, setup: options });
 }
 
-async function clickAction(page, action) {
+async function clickAction(page, action, expectedStatus) {
+  const previousCalls = await page.evaluate(() => window.calls
+    .filter((call) => call.method === 'POST' && call.url.includes('/timesheet/')).length);
   await page.locator(`[data-action="${action}"]`).click();
-  await expect.poll(() => page.evaluate(() => window.timesheet.status)).not.toBe('');
+  await expect.poll(() => page.evaluate(() => window.timesheet.status)).toBe(expectedStatus);
+  await expect.poll(() => page.evaluate(() => window.calls
+    .filter((call) => call.method === 'POST' && call.url.includes('/timesheet/')).length))
+    .toBe(previousCalls + 1);
 }
 
 test('employee hidden state becomes a full permitted workday flow and survives a clean recovery', async ({ page }) => {
@@ -203,17 +213,17 @@ test('employee hidden state becomes a full permitted workday flow and survives a
     window.dispatchEvent(new Event('focus'));
   });
   await expect(page.locator('[data-action="start-work"]')).toHaveText('Начать рабочий день');
-  await clickAction(page, 'start-work');
+  await clickAction(page, 'start-work', 'working');
   await expect(page.locator('.timesheet-actions')).toHaveCount(1);
   await expect(page.locator('[data-action="start-break"]')).toHaveText('Перерыв');
 
-  await clickAction(page, 'start-break');
+  await clickAction(page, 'start-break', 'on_break');
   await expect(page.locator('[data-action="end-break"]')).toHaveText('Продолжить');
-  await clickAction(page, 'end-break');
+  await clickAction(page, 'end-break', 'working');
   await expect(page.locator('.timesheet-actions')).toHaveCount(1);
-  await clickAction(page, 'finish-work');
+  await clickAction(page, 'finish-work', 'finished');
   await expect(page.locator('[data-action="start-work"]')).toHaveText('Начать рабочий день');
-  await clickAction(page, 'start-work');
+  await clickAction(page, 'start-work', 'working');
   await expect(page.locator('.timesheet-actions')).toHaveCount(1);
   expect(await page.evaluate(() => window.calls
     .filter((call) => call.method === 'POST' && call.url.includes('/timesheet/'))
@@ -242,7 +252,7 @@ test('employee hidden state becomes a full permitted workday flow and survives a
   await expect(page.locator('.timesheet-overlay')).toHaveCount(0);
 });
 
-test('manager and admin affordances use server scope while a foreign resource remains forbidden', async ({ page }) => {
+test('manager and admin affordances cannot manufacture access outside server scope', async ({ page }) => {
   await boot(page, { role: 'manager', status: 'working' });
   await page.locator('.ts-monitoring-widget__launcher').click();
   await expect(page.locator('.ts-monitoring__name')).toHaveText(['Руководитель', 'Анна']);
@@ -252,18 +262,25 @@ test('manager and admin affordances use server scope while a foreign resource re
   await page.locator('.ts-reports-widget__launcher').click();
   await expect(page.locator('.ts-reports__employee option')).toHaveText(['Все сотрудники', 'Анна']);
 
-  const denial = await page.evaluate(async () => {
-    try {
-      await window.widget.$authorizedAjax({
-        url: 'https://api.test/api/v1/team/999/activity', method: 'GET', dataType: 'json',
-      });
-      return null;
-    } catch (error) {
-      return { status: error.status, code: error.responseJSON.error.code };
-    }
+  await page.locator('[data-activity-user-id="2"]').click();
+  await expect.poll(() => page.evaluate(() => window.calls
+    .filter((call) => call.url.includes('/team/2/activity')).length)).toBe(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.ts-activity-modal')).toBeHidden();
+
+  const activityCallsBeforeForgery = await page.evaluate(() => window.calls
+    .filter((call) => /\/team\/\d+\/activity/.test(call.url)).length);
+  await page.evaluate(() => {
+    const forged = document.createElement('button');
+    forged.type = 'button';
+    forged.dataset.activityUserId = '999';
+    forged.textContent = 'Forged activity';
+    document.querySelector('.ts-monitoring__content').appendChild(forged);
   });
-  expect(denial).toEqual({ status: 403, code: 'FORBIDDEN' });
-  await expect(page.locator('[data-activity-user-id="999"]')).toHaveCount(0);
+  await page.locator('[data-activity-user-id="999"]').click();
+  await expect.poll(() => page.evaluate(() => window.calls
+    .filter((call) => /\/team\/\d+\/activity/.test(call.url)).length))
+    .toBe(activityCallsBeforeForgery);
 
   await page.evaluate(() => {
     window.widget.callbacks.destroy();
