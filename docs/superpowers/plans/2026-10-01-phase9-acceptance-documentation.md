@@ -21,11 +21,11 @@ Base commit: `d445ec6`
 - Create: `frontend/tests/e2e.spec.js`
 - Reuse: existing overlay, monitoring, reports and smoke suites
 
-- [ ] Prove the stateful employee UI flow, hidden/visible behavior, permitted restart, cleanup and recovery without false Working state.
-- [ ] Prove manager/admin navigation and access affordances without trusting the browser for authorization.
-- [ ] Re-run the existing seven-day activity contract: tooltip, zoom, gaps, fullscreen and Escape.
-- [ ] Consolidate local evidence for catalog snapshots, unknown events, complete/incomplete calls, duplicates, replay, checkpoints and 40-account isolation; keep live catalog/calls/latency explicitly external.
-- [ ] Independent review and commit.
+- [x] Prove the stateful employee UI flow, hidden/visible behavior, permitted restart, cleanup and recovery without false Working state.
+- [x] Prove manager/admin navigation and access affordances without trusting the browser for authorization.
+- [x] Re-run the existing seven-day activity contract: tooltip, zoom, gaps, fullscreen and Escape.
+- [x] Consolidate local evidence for catalog snapshots, unknown events, complete/incomplete calls, duplicates, replay, checkpoints and 40-account isolation; keep live catalog/calls/latency explicitly external.
+- [x] Independent review and commit.
 
 ## Task 3: User, configuration and deployment documentation
 
