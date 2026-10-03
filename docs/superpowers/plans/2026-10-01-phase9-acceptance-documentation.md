@@ -9,11 +9,11 @@ Base commit: `d445ec6`
 - Create: `backend/tests/e2e/test_user_scenarios.py`
 - Modify production code only when a failing scenario proves a defect
 
-- [ ] Prove the employee hidden/visible lifecycle: start, break, resume, finish and an actual same-business-day restart only when the group permits it.
-- [ ] Prove the manager sees only the assigned group, cannot open own detailed activity and cannot request a foreign group or employee.
-- [ ] Prove the administrator flow connects users/groups/schedule/permissions with monitoring, detailed report and safe Excel export.
-- [ ] Cover the acceptance failure matrix for 401/403/409/422/429/500/503 with stable Russian messages, request IDs and safe logs where applicable.
-- [ ] Independent review and commit.
+- [x] Prove the employee hidden/visible lifecycle: start, break, resume, finish and an actual same-business-day restart only when the group permits it.
+- [x] Prove the manager sees only the assigned group, cannot open own detailed activity and cannot request a foreign group or employee.
+- [x] Prove the administrator flow connects users/groups/schedule/permissions with monitoring, detailed report and safe Excel export.
+- [x] Cover the acceptance failure matrix for 401/403/409/422/429/500/503 with stable Russian messages, request IDs and safe logs where applicable.
+- [x] Independent review and commit.
 
 ## Task 2: Browser acceptance and event evidence
 
