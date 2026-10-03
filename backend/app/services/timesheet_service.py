@@ -57,7 +57,18 @@ class TimesheetService:
 
     def _snapshot(self, context, now, membership, preferred_work=None):
         if membership is None:
-            return TimesheetSnapshot(None, "not_started", None, None, 0, False, False, False)
+            # Visibility remains independent when disabled tracking deactivates
+            # the group membership during a settings save.
+            return TimesheetSnapshot(
+                None,
+                "not_started",
+                None,
+                None,
+                0,
+                False,
+                bool(context.user.hide_widget),
+                False,
+            )
         member, group = membership
         day = business_date(now, group.timezone, group.work_start_time, group.work_end_time)
         sessions = self._sessions(context, day)
