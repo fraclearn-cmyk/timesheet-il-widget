@@ -73,6 +73,8 @@
 
 ## 5. GitHub CI
 
+Проверенный release candidate: `8b99846af9b806d1446f86d2bb746e28207bfaea`. Push run `37218960639` и PR run `37218963078` завершились `success` 2026-10-04; выполнены PostgreSQL 15, Alembic `014`, backend, Node, Playwright Chrome, package/ZIP, Black, compileall, diff, Compose config и Docker image build. Чекбоксы ниже остаются открытыми до выбора окончательного release commit и переноса его SHA/URL в deployment record.
+
 - [ ] **Обязательно:** реальный `.github/workflows/ci.yml` завершился успешно на точном release commit.
   - Run URL: `________________`
   - Workflow SHA: `________________`

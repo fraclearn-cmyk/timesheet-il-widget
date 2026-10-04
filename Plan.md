@@ -54,8 +54,8 @@
 | 5 | Источник событий amoCRM и активность | Локально выполнена; live gate отложен | 2026-09-28 | PostgreSQL backend `620 passed`; Node `8 + 15 + 42 passed`; Playwright `13 passed`; package `12 passed`; `013 (head)`; общий review — APPROVED; ZIP — 19 файлов |
 | 6 | API мониторинга и окно активности | Локально выполнена; live gate отложен | 2026-09-29 | PostgreSQL backend `630 passed`; Node `91 passed`; Playwright `17 passed`; package `12 passed`; `013 (head)`; ZIP `23` файла; общий review — APPROVED |
 | 7 | Табель, отчёты и Excel | Локально выполнена; live gate отложен | 2026-09-30 | PostgreSQL backend `692 passed`; Node `112 passed`; Playwright `24 passed`; package `14 passed`; `013 (head)`; ZIP `25` файлов; общий review — APPROVED |
-| 8 | Интеграция, безопасность и производительность | Локально выполнена; CI/Docker/live gates отложены | 2026-10-01 | PostgreSQL backend `738 passed`; Node `112`; Playwright `25`; package `14`; migration regression `32`; `014 (head)`; ZIP `25` файлов; общий review — APPROVED |
-| 9 | Приёмка и документация | Локально выполнена; release gates открыты | 2026-10-04 | PostgreSQL backend `743 passed`; Node `112`; Playwright `27`; package `14`; `014 (head)`; ZIP `25` файлов; общий review — APPROVED; live catalog/calls/latency, GitHub CI и Docker не запускались |
+| 8 | Интеграция, безопасность и производительность | Локально выполнена; GitHub CI подтверждён, target Docker/live gates открыты | 2026-10-04 | PostgreSQL backend `738 passed`; Node `112`; Playwright `25`; package `14`; migration regression `32`; `014 (head)`; GitHub CI PASS на `8b99846`; общий review — APPROVED |
+| 9 | Приёмка и документация | Локально выполнена; GitHub CI подтверждён, остальные release gates открыты | 2026-10-04 | PostgreSQL backend `743 passed`; Node `112`; Playwright `27`; package `14`; `014 (head)`; ZIP `25` файлов; GitHub push/PR CI PASS на `8b99846`; live catalog/calls/latency и target Docker остаются открыты |
 
 ## Таблица прогресса
 
@@ -70,8 +70,8 @@
 | Реализовать интервалы с порогом 5 минут | Серверные интервалы, пакетное закрытие после 5 минут, API присутствия, worker и приватный минутный browser-буфер прошли сквозной PostgreSQL gate | Выполнено | Live amoCRM smoke отложен до локальной реализации всех фаз |
 | Реализовать мониторинг по ролям и активность за 7 дней | API, dashboard, timeline/modal, polling/backoff и интеграция виджета прошли общий gate; 40 аккаунтов изолированы | Локально выполнено | Live amoCRM UI/CORS и реальные стили проверяются после локальной реализации всех фаз |
 | Реализовать табель до 3 месяцев и Excel без активности | Backend, UI и widget lifecycle готовы; безопасный XLSX без activity, роли, 40 аккаунтов и точный ZIP 25 файлов прошли общий gate | Локально выполнено | Live amoCRM UI, CORS и blob-download проверяются после локальной реализации всех фаз |
-| Провести integration/security/performance hardening | Production runtime, observability, tenant-aware ingress, индексы, безопасный cache, recovery и CI workflow проверены; 40 аккаунтов изолированы | Локально выполнено | Нужны фактический GitHub CI, Docker build/up и controlled live amoCRM gate |
-| Провести end-to-end приёмку | Роли, рабочий цикл, 7-дневная активность, отчёты, Excel, ошибки, recovery и 40 аккаунтов прошли локальный общий gate; документация и release checklist готовы | Локально выполнено | Controlled live amoCRM, полный каталог/звонки/latency, GitHub CI, Docker target и preflight/backup реальной stamped-010 БД |
+| Провести integration/security/performance hardening | Production runtime, observability, tenant-aware ingress, индексы, безопасный cache, recovery и CI workflow проверены; GitHub CI на `8b99846` прошёл; 40 аккаунтов изолированы | Локально выполнено; CI подтверждён | Нужны target Docker build/up/readiness и controlled live amoCRM gate |
+| Провести end-to-end приёмку | Роли, рабочий цикл, 7-дневная активность, отчёты, Excel, ошибки, recovery и 40 аккаунтов прошли локальный общий gate; GitHub CI подтверждён; документация и release checklist готовы | Локально выполнено; CI подтверждён | Controlled live amoCRM, полный каталог/звонки/latency, Docker target и preflight/backup реальной stamped-010 БД |
 
 ## Фаза 0. Контракт и технический spike amoCRM
 
@@ -603,6 +603,7 @@ flowchart TD
 | 2026-10-04 | Завершена задача 4 фазы 9: acceptance report и release checklist | Все 8 пунктов сопоставлены с automated/manual/external evidence; создано 34 обязательных release gate без предварительных отметок, включая stamped-010 preflight, secrets, CI/Docker/live amoCRM, 40 аккаунтов и ZIP traceability; rereview APPROVED |
 | 2026-10-04 | Задача 5 и локальная часть фазы 9 выполнены; полный release остаётся открытым | Fresh PostgreSQL backend `743 passed`, Node `112`, Playwright Chrome `27`, package `14`, Alembic `014`, ZIP `25` файлов / 52 019 байт / SHA-256 `96be6b9d4733eab8e4e678ba1cb2ef66bf7f0d9b1ad0e5480c754bb7cfc85e2d`; docs checks и общий review APPROVED; live/CI/Docker не запускались |
 | 2026-10-04 | Controlled live amoCRM read-only preflight остановлен сетевой недоступностью | GET account/users/events/calls завершились timeout до HTTP-ответа; токены и CRM-данные не менялись, поэтому live checkbox и release gates остаются открытыми; refresh не выполнялся |
+| 2026-10-04 | GitHub release-candidate CI подтверждён | После исправления несохранённого Black-форматирования и добавления обязательных `widget/images/icon.png`/`logo.png` push run `37218960639` и PR run `37218963078` на `8b99846` завершились `success`; выполнены PostgreSQL 15, `014`, backend, Node, Playwright Chrome, package/ZIP, Compose config и Docker image build |
 
 ### Возобновление фазы 5 — 2026-09-27
 
@@ -957,8 +958,9 @@ flowchart TD
 #### Созданные и изменённые файлы
 
 - Tests: созданы `backend/tests/e2e/__init__.py`, `backend/tests/e2e/test_user_scenarios.py`, `frontend/tests/e2e.spec.js`.
-- Backend: изменён `backend/app/services/timesheet_service.py` для независимого `hide_widget` при отключённом учёте.
-- CI: `.github/workflows/ci.yml` устанавливает Google Chrome, соответствующий `channel: chrome` всех browser-тестов.
+- Backend: изменён `backend/app/services/timesheet_service.py` для независимого `hide_widget` при отключённом учёте и отформатирован для воспроизводимого Linux CI.
+- CI: `.github/workflows/ci.yml` устанавливает Google Chrome, соответствующий `channel: chrome` всех browser-тестов; GitHub push/PR runs на `8b99846` завершились успешно.
+- Widget/package: обязательные `widget/images/icon.png` и `widget/images/logo.png` добавлены в Git; чистый GitHub checkout собирает и валидирует архив из 25 runtime-файлов.
 - Документация: обновлены `README.md`, `docs/API.md`; созданы `docs/CONFIGURATION.md`, `docs/DEPLOYMENT.md`, `docs/acceptance-report.md`, `docs/release-checklist.md` и подробный план фазы 9.
 
 #### Что можно проверить
@@ -974,7 +976,7 @@ flowchart TD
 #### Блокеры и остаточные риски
 
 - Локальная реализация завершена, но выпуск имеет статус `NO-GO`, пока не заполнены обязательные пункты `docs/release-checklist.md`.
-- На GitHub runner ещё не запускался созданный CI; Docker CLI локально отсутствует, поэтому target build/up и readiness контейнеров не подтверждены.
+- GitHub push/PR CI успешно выполнил полный workflow на `8b99846`, включая PostgreSQL 15, миграцию `014`, backend, Node, Playwright Chrome, package/ZIP, Compose config и Docker image build. Docker CLI локально отсутствует, поэтому target build/up и readiness контейнеров не подтверждены.
 - Controlled live amoCRM должен подтвердить OAuth redirect/scopes, реальные роли, callbacks settings/onSave, `$authorizedAjax`, CORS, iframe styles/lifecycle, полный актуальный каталог и pagination, фактическую задержку доставки и доступный источник звонков.
 - Read-only попытка 2026-10-04 не получила HTTP-ответ от account URL: это сетевой блокер, а не подтверждение истёкшего токена; refresh и любые изменения CRM не выполнялись.
 - Чекбокс полного перечня событий/звонков/latency остаётся открытым в фазе 9; локальные fixtures не могут его честно закрыть.

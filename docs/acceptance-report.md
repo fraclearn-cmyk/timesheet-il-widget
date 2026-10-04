@@ -12,7 +12,7 @@
 - **NOT RUN (external)** — требует GitHub runner, Docker в целевой среде или тестового аккаунта amoCRM;
 - **PARTIAL** — локальный защитный контракт подтверждён, но реальное поведение внешней системы ещё не проверено.
 
-Локальные fixtures и mock-ответы не считаются доказательством полного контракта amoCRM. Числа ниже взяты из зафиксированных результатов задач и свежего полного gate Task 5. GitHub CI, Docker build/up в целевой среде и controlled live amoCRM этим локальным gate не подтверждены.
+Локальные fixtures и mock-ответы не считаются доказательством полного контракта amoCRM. Числа ниже взяты из зафиксированных результатов задач и свежего полного gate Task 5. GitHub push/PR CI подтверждён на `8b99846`; Docker build/up в целевой среде и controlled live amoCRM остаются неподтверждёнными.
 
 ## Сопоставление восьми пунктов Phase 9
 
@@ -82,12 +82,12 @@
 
 ### 8. Release checklist и ограничения amoCRM
 
-**Статус: LOCAL PASS для документа; внешние release gates остаются NOT RUN.**
+**Статус: LOCAL PASS для документа; GitHub CI — PASS, остальные внешние release gates открыты.**
 
 - Доказательство: `docs/release-checklist.md` содержит decision rule и отдельные evidence slots для backup/restore, stamped `010` preflight, единственной головы `014`, 40 аккаунтов, секретов, GitHub CI, Docker/readiness, controlled live amoCRM, rollback/recovery и ZIP hash/content.
 - Источник ограничений: `docs/amocrm-integration-limits.md` и `docs/DEPLOYMENT.md`; актуализация конфигурации/deployment — `19d6571`.
 - Ручная проверка документа (**PASS**): checklist не содержит заранее отмеченных пунктов, а правило решения запрещает `GO` без заполненных обязательных evidence slots.
-- Внешнее доказательство: **NOT RUN** — CI runner, target Docker и controlled live amoCRM.
+- Внешнее доказательство: GitHub push run `37218960639` и PR run `37218963078` на `8b99846` — **PASS**; target Docker и controlled live amoCRM остаются открыты.
 
 ## Известные ограничения amoCRM
 
@@ -102,7 +102,7 @@
 |---|---|---|
 | Локальные Phase 9 Task 1–4 | **PASS** | `Plan.md`, commits `a005cc6..e0e9aa0` |
 | Свежий полный Phase 9 gate | **LOCAL PASS** — backend `743`, Alembic `014`, Node `112`, Playwright Chrome `27`, package `14`, exact ZIP `25`, Black/compileall/diff | Task 5 и итоговый раздел `Plan.md` |
-| GitHub Actions на выпускаемом commit | **NOT RUN (external)** | `docs/release-checklist.md` |
+| GitHub Actions на release candidate `8b99846` | **PASS** — push run `37218960639`, PR run `37218963078`; все шаги, включая Docker image build, выполнены | `docs/release-checklist.md` |
 | Docker build/up/readiness целевой среды | **NOT RUN (external)** | `docs/release-checklist.md` |
 | Controlled live amoCRM | **BLOCKED (external)** — 2026-10-04 read-only GET account/users/events/calls завершились сетевым timeout до HTTP-ответа; данные и токены не менялись | `docs/release-checklist.md` |
 
