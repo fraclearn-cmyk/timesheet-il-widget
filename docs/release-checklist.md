@@ -106,6 +106,8 @@
 
 ## 8. Controlled live amoCRM
 
+Последняя попытка: `2026-10-04`, read-only `GET /api/v4/account`, `/users`, `/events`, `/calls` — сетевой timeout до HTTP-ответа. CRM-данные и token pair не изменялись; все пункты раздела остаются незакрытыми. Перед refresh сначала восстановить сетевую доступность account URL.
+
 - [ ] **Обязательно:** exact OAuth redirect, configured scopes/permissions, authorization-code exchange, refresh и одноразовый `X-Auth-Token` подтверждены без записи секретов.
   - Account/test window/evidence: `________________`
 - [ ] **Обязательно:** реальные `rights`/`role_id` сопоставлены с Admin/руководитель/сотрудник; чужая группа и привилегированные действия запрещены backend.

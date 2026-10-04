@@ -602,6 +602,7 @@ flowchart TD
 | 2026-10-03 | Завершена задача 3 фазы 9: актуальные README, API, configuration и deployment | Созданы CONFIGURATION/DEPLOYMENT, исправлены stale routes/links/commands и Chrome install в README/CI; 62 documented routes найдены в OpenAPI, env/settings coverage полное, broken links `0`; rereview APPROVED |
 | 2026-10-04 | Завершена задача 4 фазы 9: acceptance report и release checklist | Все 8 пунктов сопоставлены с automated/manual/external evidence; создано 34 обязательных release gate без предварительных отметок, включая stamped-010 preflight, secrets, CI/Docker/live amoCRM, 40 аккаунтов и ZIP traceability; rereview APPROVED |
 | 2026-10-04 | Задача 5 и локальная часть фазы 9 выполнены; полный release остаётся открытым | Fresh PostgreSQL backend `743 passed`, Node `112`, Playwright Chrome `27`, package `14`, Alembic `014`, ZIP `25` файлов / 52 019 байт / SHA-256 `96be6b9d4733eab8e4e678ba1cb2ef66bf7f0d9b1ad0e5480c754bb7cfc85e2d`; docs checks и общий review APPROVED; live/CI/Docker не запускались |
+| 2026-10-04 | Controlled live amoCRM read-only preflight остановлен сетевой недоступностью | GET account/users/events/calls завершились timeout до HTTP-ответа; токены и CRM-данные не менялись, поэтому live checkbox и release gates остаются открытыми; refresh не выполнялся |
 
 ### Возобновление фазы 5 — 2026-09-27
 
@@ -975,5 +976,6 @@ flowchart TD
 - Локальная реализация завершена, но выпуск имеет статус `NO-GO`, пока не заполнены обязательные пункты `docs/release-checklist.md`.
 - На GitHub runner ещё не запускался созданный CI; Docker CLI локально отсутствует, поэтому target build/up и readiness контейнеров не подтверждены.
 - Controlled live amoCRM должен подтвердить OAuth redirect/scopes, реальные роли, callbacks settings/onSave, `$authorizedAjax`, CORS, iframe styles/lifecycle, полный актуальный каталог и pagination, фактическую задержку доставки и доступный источник звонков.
+- Read-only попытка 2026-10-04 не получила HTTP-ответ от account URL: это сетевой блокер, а не подтверждение истёкшего токена; refresh и любые изменения CRM не выполнялись.
 - Чекбокс полного перечня событий/звонков/latency остаётся открытым в фазе 9; локальные fixtures не могут его честно закрыть.
 - Перед обновлением реальной базы, ранее отмеченной как stamped `010`, обязательны backup с проверенным restore и полный schema preflight из release checklist.

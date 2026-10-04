@@ -104,8 +104,8 @@
 | Свежий полный Phase 9 gate | **LOCAL PASS** — backend `743`, Alembic `014`, Node `112`, Playwright Chrome `27`, package `14`, exact ZIP `25`, Black/compileall/diff | Task 5 и итоговый раздел `Plan.md` |
 | GitHub Actions на выпускаемом commit | **NOT RUN (external)** | `docs/release-checklist.md` |
 | Docker build/up/readiness целевой среды | **NOT RUN (external)** | `docs/release-checklist.md` |
-| Controlled live amoCRM | **NOT RUN (external)** | `docs/release-checklist.md` |
+| Controlled live amoCRM | **BLOCKED (external)** — 2026-10-04 read-only GET account/users/events/calls завершились сетевым timeout до HTTP-ответа; данные и токены не менялись | `docs/release-checklist.md` |
 
 Собранный `widget.zip` содержит ровно 25 разрешённых runtime-файлов, размер — 52 019 байт, SHA-256 — `96be6b9d4733eab8e4e678ba1cb2ef66bf7f0d9b1ad0e5480c754bb7cfc85e2d`.
 
-Локальный Task 5 gate пройден. Production-выпуск пока не разрешён: обязательные внешние проверки и полный live-контракт событий amoCRM остаются незакрытыми.
+Локальный Task 5 gate пройден. Production-выпуск пока не разрешён: обязательные внешние проверки и полный live-контракт событий amoCRM остаются незакрытыми. Повторять OAuth refresh следует только после восстановления сетевого доступа: текущая попытка не получила HTTP-ответ и не доказала состояние access/refresh token.
