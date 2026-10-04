@@ -88,8 +88,6 @@ credentials/
 
 # Build artifacts
 timesheet_il_widget.zip
-widget/images/logo.png
-widget/images/icon.png
 
 # Alembic
 # Keep migrations but ignore local stuff
