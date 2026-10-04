@@ -52,11 +52,11 @@ Base commit: `d445ec6`
 
 ## Task 5: Phase-wide gate and plan closure
 
-- [ ] Run a fresh full PostgreSQL backend suite with `TEST_POSTGRES_ADMIN_URL`, Node, Playwright, package/ZIP, Alembic `014`, Black, compileall and diff checks.
-- [ ] Review the complete Phase 9 diff and fix every Critical/Important finding.
-- [ ] Update only the Phase 9 checkboxes supported by evidence; mark the phase locally complete with external gates visible when live/Docker/CI have not run.
-- [ ] Update status/progress tables, journal, final report, exact files/results, user-checkable scenarios and remaining risks in `Plan.md`.
-- [ ] Commit only after evidence.
+- [x] Run a fresh full PostgreSQL backend suite with `TEST_POSTGRES_ADMIN_URL`, Node, Playwright, package/ZIP, Alembic `014`, Black, compileall and diff checks.
+- [x] Review the complete Phase 9 diff and fix every Critical/Important finding.
+- [x] Update only the Phase 9 checkboxes supported by evidence; mark the phase locally complete with external gates visible when live/Docker/CI have not run.
+- [x] Update status/progress tables, journal, final report, exact files/results, user-checkable scenarios and remaining risks in `Plan.md`.
+- [x] Commit only after evidence.
 
 ## Boundaries
 
