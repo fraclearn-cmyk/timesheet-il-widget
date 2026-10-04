@@ -4,7 +4,7 @@
 
 Проверяемая база: `d445ec6`
 
-Последний проверенный commit перед этим отчётом: `ac00863`
+Проверенный диапазон Phase 9: `d445ec6..e0e9aa0`
 
 Этот документ разделяет три вида доказательств:
 
@@ -12,7 +12,7 @@
 - **NOT RUN (external)** — требует GitHub runner, Docker в целевой среде или тестового аккаунта amoCRM;
 - **PARTIAL** — локальный защитный контракт подтверждён, но реальное поведение внешней системы ещё не проверено.
 
-Локальные fixtures и mock-ответы не считаются доказательством полного контракта amoCRM. Числа ниже взяты только из зафиксированных результатов в `Plan.md` и соответствующих коммитов. Свежий полный gate всей фазы выполняется отдельно в Task 5.
+Локальные fixtures и mock-ответы не считаются доказательством полного контракта amoCRM. Числа ниже взяты из зафиксированных результатов задач и свежего полного gate Task 5. GitHub CI, Docker build/up в целевой среде и controlled live amoCRM этим локальным gate не подтверждены.
 
 ## Сопоставление восьми пунктов Phase 9
 
@@ -76,7 +76,7 @@
 
 - Доказательство: обновлены `README.md`, `docs/API.md`, созданы `docs/CONFIGURATION.md` и `docs/DEPLOYMENT.md`; описаны актуальные маршруты, роли, настройки, backup, stamped `010` preflight, миграция до `014`, Docker/readiness, rollback и 40-account границы.
 - Commit: `19d6571`; фиксация завершения Task 3 — `ac00863`.
-- Проверка репозитория: 62 документированных route были сопоставлены OpenAPI, env/settings coverage полное, broken links — `0` (зафиксировано в `Plan.md`).
+- Проверка репозитория: все 59 пар «HTTP-метод + путь» из текущего индекса `docs/API.md` найдены среди 71 маршрута OpenAPI; 23 локальные ссылки разрешаются в существующие файлы.
 - Ручная проверка репозитория (**PASS**): относительные ссылки этого отчёта и release checklist разрешаются в существующие файлы; test IDs и health routes сопоставлены текущему коду. Docker-команды относятся к внешнему gate.
 - Внешнее доказательство: **NOT RUN** — команды Docker и целевой deployment из документа ещё не выполнены.
 
@@ -100,10 +100,12 @@
 
 | Gate | Статус на дату отчёта | Где записать доказательство |
 |---|---|---|
-| Локальные Phase 9 Task 1–3 | **PASS** | `Plan.md`, commits `a005cc6..ac00863` |
-| Свежий полный Phase 9 gate | **NOT RUN в Task 4** | Task 5 и итоговый раздел `Plan.md` |
+| Локальные Phase 9 Task 1–4 | **PASS** | `Plan.md`, commits `a005cc6..e0e9aa0` |
+| Свежий полный Phase 9 gate | **LOCAL PASS** — backend `743`, Alembic `014`, Node `112`, Playwright Chrome `27`, package `14`, exact ZIP `25`, Black/compileall/diff | Task 5 и итоговый раздел `Plan.md` |
 | GitHub Actions на выпускаемом commit | **NOT RUN (external)** | `docs/release-checklist.md` |
 | Docker build/up/readiness целевой среды | **NOT RUN (external)** | `docs/release-checklist.md` |
 | Controlled live amoCRM | **NOT RUN (external)** | `docs/release-checklist.md` |
 
-Локальный результат разрешает продолжить к общему Task 5 gate. Production-выпуск пока не разрешён.
+Собранный `widget.zip` содержит ровно 25 разрешённых runtime-файлов, размер — 52 019 байт, SHA-256 — `96be6b9d4733eab8e4e678ba1cb2ef66bf7f0d9b1ad0e5480c754bb7cfc85e2d`.
+
+Локальный Task 5 gate пройден. Production-выпуск пока не разрешён: обязательные внешние проверки и полный live-контракт событий amoCRM остаются незакрытыми.
