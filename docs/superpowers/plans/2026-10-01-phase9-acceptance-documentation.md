@@ -33,11 +33,11 @@ Base commit: `d445ec6`
 - Modify: `README.md`, `docs/API.md`
 - Create: `docs/CONFIGURATION.md`, `docs/DEPLOYMENT.md`
 
-- [ ] Replace stale routes, commands and broken links in README with the current installation and user workflow.
-- [ ] Document required/optional settings, secrets, 40-account defaults, group schedule/timezone and multi-worker rate-limit boundary.
-- [ ] Document backup, migration, Docker/health/readiness, rollback/recovery and target-environment verification without claiming an unrun Docker gate.
-- [ ] Cross-check API examples, roles, reports, errors and request IDs against current code.
-- [ ] Independent documentation review and commit.
+- [x] Replace stale routes, commands and broken links in README with the current installation and user workflow.
+- [x] Document required/optional settings, secrets, 40-account defaults, group schedule/timezone and multi-worker rate-limit boundary.
+- [x] Document backup, migration, Docker/health/readiness, rollback/recovery and target-environment verification without claiming an unrun Docker gate.
+- [x] Cross-check API examples, roles, reports, errors and request IDs against current code.
+- [x] Independent documentation review and commit.
 
 ## Task 4: Acceptance report and release checklist
 

@@ -310,7 +310,7 @@
 - [x] Проверить активность за 7 дней, tooltip, zoom, пустые интервалы и fullscreen.
 - [ ] Проверить полный перечень событий, звонки, дубликаты, задержку доставки и неизвестный тип события.
 - [x] Проверить русские сообщения ошибок и технические логи по каждому отказу.
-- [ ] Обновить `README.md`, `docs/API.md`, `docs/CONFIGURATION.md`, `docs/DEPLOYMENT.md` и таблицу прогресса в этом файле.
+- [x] Обновить `README.md`, `docs/API.md`, `docs/CONFIGURATION.md`, `docs/DEPLOYMENT.md` и таблицу прогресса в этом файле.
 - [ ] Составить release checklist и список известных ограничений amoCRM.
 
 **Файлы:**
@@ -555,7 +555,7 @@ flowchart TD
 
 ## Текущий отчёт по фазам
 
-Фаза 9 в работе: задачи 1–2 завершены — backend и browser acceptance ролей, рабочего цикла, отказов, семидневной активности и локальной обработки событий прошли; следующая — README, configuration и deployment документация. Полный live-каталог событий, реальный источник звонков и задержка доставки остаются внешним amoCRM gate. Фаза 8 локально выполнена. Фазы 0–2 завершены; фазы 3–8 локально реализованы. Фактический GitHub CI и Docker build/up также остаются внешними gates. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
+Фаза 9 в работе: задачи 1–3 завершены — backend/browser acceptance и актуальные README, API, configuration и deployment готовы; следующая — acceptance report и release checklist. Полный live-каталог событий, реальный источник звонков и задержка доставки остаются внешним amoCRM gate. Фаза 8 локально выполнена. Фазы 0–2 завершены; фазы 3–8 локально реализованы. Фактический GitHub CI и Docker build/up также остаются внешними gates. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -599,6 +599,7 @@ flowchart TD
 | 2026-10-01 | Завершён preflight и создан подробный план фазы 9 | Локальное покрытие ролей, UI, событий, ошибок и 40 аккаунтов переиспользуется; добавляются сквозные role/failure сценарии, актуальные README/config/deployment, acceptance report и release checklist; GitHub CI, Docker и controlled live amoCRM остаются внешними gates |
 | 2026-10-03 | Завершена задача 1 фазы 9: backend acceptance ролей и отказов | Employee lifecycle с реальным restart, manager/admin flows, literal RU 401/403/409/422/429/500, safe readiness 503 и 40 tenant API-действий прошли; исправлена потеря независимого hide_widget при отключении учёта; E2E `5 passed`, relevant `185 passed`, review `70 passed`; rereview APPROVED |
 | 2026-10-03 | Завершена задача 2 фазы 9: browser acceptance и локальные evidence событий | Stateful UI, forged DOM protection, cleanup/recovery и роли прошли; Node `112`, Playwright `27`, PostgreSQL ingestion/replay/calls/unknown/40-account `73 passed`; rereview APPROVED; live catalog/calls/latency остаются внешним gate |
+| 2026-10-03 | Завершена задача 3 фазы 9: актуальные README, API, configuration и deployment | Созданы CONFIGURATION/DEPLOYMENT, исправлены stale routes/links/commands и Chrome install в README/CI; 62 documented routes найдены в OpenAPI, env/settings coverage полное, broken links `0`; rereview APPROVED |
 
 ### Возобновление фазы 5 — 2026-09-27
 
