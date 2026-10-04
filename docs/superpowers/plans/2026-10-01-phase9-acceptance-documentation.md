@@ -44,11 +44,11 @@ Base commit: `d445ec6`
 **Files:**
 - Create: `docs/acceptance-report.md`, `docs/release-checklist.md`
 
-- [ ] Map every Phase 9 checkbox to current automated evidence, manual local checks and unresolved external evidence.
-- [ ] Record known amoCRM limits: OAuth/scopes/role mapping, iframe callbacks/CORS/styles, full event catalog/pagination/latency and readable call source.
-- [ ] Separate completed local gates from required GitHub CI, Docker target and controlled live amoCRM release gates.
-- [ ] Include backup/schema-preflight requirement for the previously stamped `010` database and sizing/observability checks for 40 accounts.
-- [ ] Independent release review and commit.
+- [x] Map every Phase 9 checkbox to current automated evidence, manual local checks and unresolved external evidence.
+- [x] Record known amoCRM limits: OAuth/scopes/role mapping, iframe callbacks/CORS/styles, full event catalog/pagination/latency and readable call source.
+- [x] Separate completed local gates from required GitHub CI, Docker target and controlled live amoCRM release gates.
+- [x] Include backup/schema-preflight requirement for the previously stamped `010` database and sizing/observability checks for 40 accounts.
+- [x] Independent release review and commit.
 
 ## Task 5: Phase-wide gate and plan closure
 

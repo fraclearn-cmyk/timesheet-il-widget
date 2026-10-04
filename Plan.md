@@ -311,7 +311,7 @@
 - [ ] Проверить полный перечень событий, звонки, дубликаты, задержку доставки и неизвестный тип события.
 - [x] Проверить русские сообщения ошибок и технические логи по каждому отказу.
 - [x] Обновить `README.md`, `docs/API.md`, `docs/CONFIGURATION.md`, `docs/DEPLOYMENT.md` и таблицу прогресса в этом файле.
-- [ ] Составить release checklist и список известных ограничений amoCRM.
+- [x] Составить release checklist и список известных ограничений amoCRM.
 
 **Файлы:**
 
@@ -555,7 +555,7 @@ flowchart TD
 
 ## Текущий отчёт по фазам
 
-Фаза 9 в работе: задачи 1–3 завершены — backend/browser acceptance и актуальные README, API, configuration и deployment готовы; следующая — acceptance report и release checklist. Полный live-каталог событий, реальный источник звонков и задержка доставки остаются внешним amoCRM gate. Фаза 8 локально выполнена. Фазы 0–2 завершены; фазы 3–8 локально реализованы. Фактический GitHub CI и Docker build/up также остаются внешними gates. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
+Фаза 9 в работе: задачи 1–4 завершены — backend/browser acceptance, актуальная документация, acceptance report и обязательный release checklist готовы; следующая — свежий полный gate и общий review фазы. Пункт полного live-каталога событий остаётся открытым до controlled amoCRM gate. Фаза 8 локально выполнена. Фазы 0–2 завершены; фазы 3–8 локально реализованы. Фактический GitHub CI и Docker build/up также остаются внешними gates. Preflight/repair уже stamped `010` БД остаётся отдельным deployment gate.
 
 ## Журнал изменений плана
 
@@ -600,6 +600,7 @@ flowchart TD
 | 2026-10-03 | Завершена задача 1 фазы 9: backend acceptance ролей и отказов | Employee lifecycle с реальным restart, manager/admin flows, literal RU 401/403/409/422/429/500, safe readiness 503 и 40 tenant API-действий прошли; исправлена потеря независимого hide_widget при отключении учёта; E2E `5 passed`, relevant `185 passed`, review `70 passed`; rereview APPROVED |
 | 2026-10-03 | Завершена задача 2 фазы 9: browser acceptance и локальные evidence событий | Stateful UI, forged DOM protection, cleanup/recovery и роли прошли; Node `112`, Playwright `27`, PostgreSQL ingestion/replay/calls/unknown/40-account `73 passed`; rereview APPROVED; live catalog/calls/latency остаются внешним gate |
 | 2026-10-03 | Завершена задача 3 фазы 9: актуальные README, API, configuration и deployment | Созданы CONFIGURATION/DEPLOYMENT, исправлены stale routes/links/commands и Chrome install в README/CI; 62 documented routes найдены в OpenAPI, env/settings coverage полное, broken links `0`; rereview APPROVED |
+| 2026-10-04 | Завершена задача 4 фазы 9: acceptance report и release checklist | Все 8 пунктов сопоставлены с automated/manual/external evidence; создано 34 обязательных release gate без предварительных отметок, включая stamped-010 preflight, secrets, CI/Docker/live amoCRM, 40 аккаунтов и ZIP traceability; rereview APPROVED |
 
 ### Возобновление фазы 5 — 2026-09-27
 
