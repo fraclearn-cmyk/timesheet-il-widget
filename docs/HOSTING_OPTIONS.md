@@ -24,6 +24,8 @@ cloudflared --version
 
 Запуск `cloudflared tunnel --url http://127.0.0.1:8000` публикует локальный API в интернете. Выполняйте его только на время controlled smoke; после получения нового hostname нужно согласованно обновить OAuth redirect и URL API виджета.
 
+На текущей локальной сети проверка 5 октября 2026 года не установила соединение: исходящие QUIC и TCP/HTTP2 к Cloudflare на порту `7844` заблокированы. Quick Tunnel был остановлен, API остался доступен только на localhost. Для этого подключения нужен другой интернет-канал/правило сети либо альтернативный tunnel, работающий через разрешённый исходящий порт.
+
 Источник: [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
 
 ## Бесплатные серверы
