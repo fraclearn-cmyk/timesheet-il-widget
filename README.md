@@ -52,6 +52,16 @@ npx playwright install chrome
 
 Создайте `backend/.env` для локального backend. Для production-подобного запуска используйте PostgreSQL; допустимые переменные и ограничения перечислены в [CONFIGURATION.md](docs/CONFIGURATION.md).
 
+На Windows подготовлен локальный запуск без Docker. Он использует переносимый PostgreSQL 15 в `tmp/`, применяет миграции до актуальной головы и запускает API только на localhost. Реальный сбор событий amoCRM при таком запуске отключён:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+# Swagger: http://127.0.0.1:8000/api/docs
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop-local.ps1
+```
+
+Переносимый PostgreSQL копируется в путь без кириллицы `%LOCALAPPDATA%\TimesheetIL\pgsql`, потому что Windows-сборка PostgreSQL не инициализирует кластер из каталога проекта `D:\табель`. Локальная база и журналы сохраняются рядом, в `%LOCALAPPDATA%\TimesheetIL\local-runtime`.
+
 Основные проверки из корня проекта:
 
 ```powershell
@@ -85,6 +95,7 @@ npx playwright test frontend/tests --workers=1 --reporter=line
 
 - [Конфигурация](docs/CONFIGURATION.md) — переменные окружения, секреты и настройки на 40 аккаунтов;
 - [Развёртывание](docs/DEPLOYMENT.md) — backup, миграции, Docker, health, rollback и recovery;
+- [Варианты размещения](docs/HOSTING_OPTIONS.md) — локальный запуск, бесплатные серверы и расчёт Beget;
 - [API](docs/API.md) — аутентификация, роли, рабочий статус, мониторинг, табель и ошибки;
 - [Ограничения интеграции amoCRM](docs/amocrm-integration-limits.md) — подтверждённые факты и обязательные live gates;
 - [Процесс разработки](docs/development-workflow.md) — команды проверок и порядок обновления статусов;
