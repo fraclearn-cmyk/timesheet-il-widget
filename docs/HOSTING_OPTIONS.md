@@ -15,6 +15,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop-local.ps1
 
 Для проверки из amoCRM нужен публичный HTTPS-адрес. Бесплатный Cloudflare Quick Tunnel выдаёт временный `trycloudflare.com` URL без аккаунта и домена. Он предназначен только для разработки, меняет hostname после перезапуска, не имеет SLA и ограничен 200 одновременными запросами. Для стабильного адреса нужен именованный Cloudflare Tunnel и собственный домен.
 
+На Windows клиент можно установить и проверить так:
+
+```powershell
+winget install --id Cloudflare.cloudflared --exact --scope user
+cloudflared --version
+```
+
+Запуск `cloudflared tunnel --url http://127.0.0.1:8000` публикует локальный API в интернете. Выполняйте его только на время controlled smoke; после получения нового hostname нужно согласованно обновить OAuth redirect и URL API виджета.
+
 Источник: [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
 
 ## Бесплатные серверы
