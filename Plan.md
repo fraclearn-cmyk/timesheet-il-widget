@@ -604,6 +604,7 @@ flowchart TD
 | 2026-10-04 | Задача 5 и локальная часть фазы 9 выполнены; полный release остаётся открытым | Fresh PostgreSQL backend `743 passed`, Node `112`, Playwright Chrome `27`, package `14`, Alembic `014`, ZIP `25` файлов / 52 019 байт / SHA-256 `96be6b9d4733eab8e4e678ba1cb2ef66bf7f0d9b1ad0e5480c754bb7cfc85e2d`; docs checks и общий review APPROVED; live/CI/Docker не запускались |
 | 2026-10-04 | Controlled live amoCRM read-only preflight остановлен сетевой недоступностью | GET account/users/events/calls завершились timeout до HTTP-ответа; токены и CRM-данные не менялись, поэтому live checkbox и release gates остаются открытыми; refresh не выполнялся |
 | 2026-10-04 | GitHub release-candidate CI подтверждён | После исправления несохранённого Black-форматирования и добавления обязательных `widget/images/icon.png`/`logo.png` push run `37218960639` и PR run `37218963078` на `8b99846` завершились `success`; выполнены PostgreSQL 15, `014`, backend, Node, Playwright Chrome, package/ZIP, Compose config и Docker image build |
+| 2026-10-05 | Release evidence перенесён в checklist; `main` подтверждён | `origin/main` и release candidate `42ee0c1` совпадают; main CI run `37237646760` и Pages deployment завершились `success`; повторно собран и проверен ZIP из 25 файлов, SHA-256 `8c77407b0d5fedc3a0eea748a9c7fa05b349ed958cfb53c887158c45f3738ec0`; локальные/CI/40-account пункты отмечены, решение остаётся `NO-GO` |
 
 ### Возобновление фазы 5 — 2026-09-27
 
@@ -979,5 +980,6 @@ flowchart TD
 - GitHub push/PR CI успешно выполнил полный workflow на `8b99846`, включая PostgreSQL 15, миграцию `014`, backend, Node, Playwright Chrome, package/ZIP, Compose config и Docker image build. Docker CLI локально отсутствует, поэтому target build/up и readiness контейнеров не подтверждены.
 - Controlled live amoCRM должен подтвердить OAuth redirect/scopes, реальные роли, callbacks settings/onSave, `$authorizedAjax`, CORS, iframe styles/lifecycle, полный актуальный каталог и pagination, фактическую задержку доставки и доступный источник звонков.
 - Read-only попытка 2026-10-04 не получила HTTP-ответ от account URL: это сетевой блокер, а не подтверждение истёкшего токена; refresh и любые изменения CRM не выполнялись.
+- Повторная попытка 2026-10-05 успешно разрешила DNS account URL, но HTTPS-соединение снова не дошло до HTTP-ответа; опубликованный `timesheet-backend.onrender.com` отдельно отвечает `503 Service Suspended`, поэтому live/readiness проверить нельзя.
 - Чекбокс полного перечня событий/звонков/latency остаётся открытым в фазе 9; локальные fixtures не могут его честно закрыть.
 - Перед обновлением реальной базы, ранее отмеченной как stamped `010`, обязательны backup с проверенным restore и полный schema preflight из release checklist.
