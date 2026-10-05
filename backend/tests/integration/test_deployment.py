@@ -28,6 +28,42 @@ def _compose():
     )
 
 
+def _render_blueprint():
+    return yaml.safe_load((REPOSITORY_ROOT / "render.yaml").read_text(encoding="utf-8"))
+
+
+def test_render_blueprint_is_ready_for_a_private_production_deploy():
+    blueprint = _render_blueprint()
+    backend = blueprint["services"][0]
+    database = blueprint["databases"][0]
+
+    assert backend["plan"] == "2c-4g"
+    assert database["user"] == "timesheet"
+    assert database["plan"] == "2c-4g"
+    assert database["diskSizeGB"] == 15
+    assert database["postgresMajorVersion"] == "15"
+    assert backend["healthCheckPath"] == "/health/ready"
+    assert "python -m alembic upgrade head" in backend["startCommand"]
+    assert backend["startCommand"].index("alembic upgrade head") < backend[
+        "startCommand"
+    ].index("uvicorn")
+
+    environment = {entry["key"]: entry for entry in backend["envVars"]}
+    assert environment["ENVIRONMENT"]["value"] == "production"
+    assert environment["DEBUG"]["value"] is False
+    assert environment["ALLOWED_ORIGINS"]["value"] == "https://fracreserv.amocrm.ru"
+    assert environment["INGESTION_MAX_CONCURRENT_ACCOUNTS"]["value"] == 8
+    assert environment["WEB_CONCURRENCY"]["value"] == 1
+    assert environment["PYTHON_VERSION"]["value"] == "3.11.14"
+    assert "CORS_ORIGINS" not in environment
+    for secret_name in (
+        "AMOCRM_CLIENT_ID",
+        "AMOCRM_CLIENT_SECRET",
+        "AMOCRM_REDIRECT_URI",
+    ):
+        assert environment[secret_name] == {"key": secret_name, "sync": False}
+
+
 def test_production_compose_has_no_weak_database_defaults_or_public_db_port():
     database = _compose()["services"]["db"]
 

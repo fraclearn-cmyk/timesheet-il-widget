@@ -7,32 +7,46 @@ services:
     name: timesheet-backend
     env: python
     region: frankfurt
-    plan: free
+    plan: 2c-4g
     branch: main
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log
-    healthCheckPath: /health
+    startCommand: python -m alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log
+    healthCheckPath: /health/ready
     envVars:
       - key: API_HOST
         value: 0.0.0.0
+      - key: ENVIRONMENT
+        value: production
       - key: DEBUG
-        value: False
-      - key: CORS_ORIGINS
-        value: '["https://timesheet-backend.onrender.com","https://*.amocrm.ru","https://*.amocrm.com"]'
+        value: false
+      - key: ALLOWED_ORIGINS
+        value: https://fracreserv.amocrm.ru
       - key: DATABASE_URL
         fromDatabase:
           name: timesheet-db
           property: connectionString
+      - key: AMOCRM_CLIENT_ID
+        sync: false
+      - key: AMOCRM_CLIENT_SECRET
+        sync: false
+      - key: AMOCRM_REDIRECT_URI
+        sync: false
       - key: SECRET_KEY
         generateValue: true
+      - key: INGESTION_MAX_CONCURRENT_ACCOUNTS
+        value: 8
+      - key: WEB_CONCURRENCY
+        value: 1
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.14"
 
 databases:
   # PostgreSQL Database
   - name: timesheet-db
     databaseName: timesheet_db
-    user: postgres
-    plan: free
+    user: timesheet
+    postgresMajorVersion: "15"
+    plan: 2c-4g
+    diskSizeGB: 15
     region: frankfurt
