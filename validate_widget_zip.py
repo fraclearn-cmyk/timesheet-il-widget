@@ -168,12 +168,15 @@ class WidgetValidator:
                     except json.JSONDecodeError:
                         manifest = {}
                     if manifest.get("locations") != [
+                        "lcard-1",
+                        "ccard-1",
+                        "comcard-1",
                         "settings",
                         "advanced_settings",
                         "everywhere",
                     ]:
                         self.errors.append(
-                            "manifest.json locations must be exactly settings, advanced_settings, everywhere"
+                            "manifest.json locations must include lead, contact and company cards plus settings, advanced_settings and everywhere"
                         )
                     if not isinstance(manifest.get("advanced"), dict) or not manifest[
                         "advanced"

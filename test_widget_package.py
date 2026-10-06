@@ -80,6 +80,21 @@ class WidgetPackageTests(unittest.TestCase):
             any("settings/settings.js" in error for error in validator.errors)
         )
 
+    def test_manifest_connects_widget_to_amocrm_cards(self):
+        manifest = json.loads((ROOT / "widget" / "manifest.json").read_text("utf-8"))
+        self.assertEqual(manifest["widget"]["version"], "3.0.3")
+        self.assertEqual(
+            manifest["locations"],
+            [
+                "lcard-1",
+                "ccard-1",
+                "comcard-1",
+                "settings",
+                "advanced_settings",
+                "everywhere",
+            ],
+        )
+
     def test_validator_requires_report_dependency_and_exact_report_assets(self):
         entries = self.entries()
         entries["script.js"] = (
