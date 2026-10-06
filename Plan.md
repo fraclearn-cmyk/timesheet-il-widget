@@ -1002,14 +1002,14 @@ flowchart TD
 - [x] Поднят временный публичный HTTPS-туннель к локальному backend; внешний `/health/ready` возвращает `200`.
 - [x] Backend перезапущен с OAuth redirect на HTTPS-туннель и разрешённым CORS origin `https://fracreserv.amocrm.ru`; preflight возвращает разрешение для этого origin.
 - [x] Фоновое получение данных amoCRM оставлено выключенным до завершения установки и OAuth-подключения, чтобы не создавать преждевременные запросы.
-- [ ] Подключить вкладку amoCRM в Microsoft Edge к управлению Codex; сейчас Edge не возвращается в списке доступных браузеров.
+- [x] Подключена вкладка amoCRM в Microsoft Edge без VPN; открыта форма создания приватной интеграции.
 - [ ] Создать приватную интеграцию и получить OAuth-данные.
 - [ ] Загрузить `widget.zip`, установить виджет и указать публичный API URL в настройке `api_url`.
 - [ ] Выполнить controlled live smoke по обязательным пунктам `docs/release-checklist.md` и записать фактические результаты.
 
 #### Что подготовлено и что можно проверить
 
-- Старый временный туннель завершился; новый публичный readiness доступен по адресу `https://6cea551d64b611.lhr.life/health/ready` только пока работают локальный backend и SSH-туннель.
-- OAuth redirect для формы интеграции: `https://6cea551d64b611.lhr.life/api/v1/auth/callback`.
+- Нестабильный localhost.run заменён на Serveo; публичный readiness доступен по адресу `https://15157c21da7be06d-210-16-67-115.serveousercontent.com/health/ready` только пока работают локальный backend и SSH-туннель.
+- OAuth redirect в подготовленной форме интеграции: `https://15157c21da7be06d-210-16-67-115.serveousercontent.com/api/v1/auth/callback`.
 - SHA-256 подготовленного `widget.zip`: `8C77407B0D5FEDC3A0EEA748A9C7FA05B349ED958CFB53C887158C45F3738EC0`.
 - Причина прежнего сетевого сбоя уточнена владельцем аккаунта: amoCRM не работает через используемый VPN. Для live-приёмки выбран Microsoft Edge без VPN; создание, загрузка и live smoke начнутся после подключения вкладки Edge к управлению Codex.
