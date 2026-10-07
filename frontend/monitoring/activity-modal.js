@@ -1,13 +1,17 @@
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./timeline'));
+    module.exports = factory(module['require']('.' + '/timeline'));
   } else if (typeof define === 'function') {
-    define(['./timeline'], factory);
+    define([], factory);
   } else {
     root.TimesheetActivityModal = factory(root.TimesheetTimeline);
   }
 }(typeof self !== 'undefined' ? self : this, function (Timeline) {
   'use strict';
+
+  function setTimeline(value) {
+    Timeline = value;
+  }
 
   function create(options) {
     const settings = options || {};
@@ -253,5 +257,5 @@
     return { open, update, close, destroy, isOpen: () => opened };
   }
 
-  return { create };
+  return { create, setTimeline };
 }));

@@ -80,8 +80,8 @@ function boot(options = {}) {
   };
   window.eval(widgetSource);
   assert.deepEqual(moduleIds, [
-    'jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker',
-    './monitoring/timeline', './monitoring/activity-modal', './monitoring/dashboard', './reports/controller',
+    'jquery', './settings/settings.js', './timesheet/controller.js', './overlay.js', './activity-tracker.js',
+    './monitoring/timeline.js', './monitoring/activity-modal.js', './monitoring/dashboard.js', './reports/controller.js',
   ]);
   const requests = [];
   const widget = new Widget();
@@ -127,7 +127,9 @@ test('init in settings area does not start working overlay', () => {
 });
 
 test('manifest enables working locations', () => {
-  assert.deepEqual(manifest.locations, ['settings', 'advanced_settings', 'everywhere']);
+  assert.deepEqual(manifest.locations, [
+    'lcard-0', 'ccard-0', 'comcard-0', 'settings', 'advanced_settings', 'everywhere',
+  ]);
 });
 
 test('settings script registers an AMD module for the widget dependency', () => {

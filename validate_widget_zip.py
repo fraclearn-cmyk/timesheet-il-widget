@@ -72,8 +72,12 @@ def has_named_secret_literal(content):
 
 
 def amd_dependencies(content):
-    """Read literal AMD dependencies while ignoring comments inside the array."""
-    opener = re.match(r"\s*define\s*\(\s*\[", content)
+    """Read literal AMD dependencies while ignoring comments inside the array.
+
+    Some browser modules use a UMD wrapper, so their ``define([...])`` call is
+    not necessarily the first statement in the file.
+    """
+    opener = re.search(r"\bdefine\s*\(\s*\[", content)
     if not opener:
         return []
     index = opener.end()
@@ -175,12 +179,15 @@ class WidgetValidator:
                     except json.JSONDecodeError:
                         manifest = {}
                     if manifest.get("locations") != [
+                        "lcard-0",
+                        "ccard-0",
+                        "comcard-0",
                         "settings",
                         "advanced_settings",
                         "everywhere",
                     ]:
                         self.errors.append(
-                            "manifest.json locations must use settings, advanced_settings and everywhere for the floating widget UI"
+                            "manifest.json locations must initialize cards without the sidebar and include settings, advanced_settings and everywhere"
                         )
                     if not isinstance(manifest.get("advanced"), dict) or not manifest[
                         "advanced"
@@ -201,22 +208,51 @@ class WidgetValidator:
                             "script.js widget constructor must return this"
                         )
                     dependencies = amd_dependencies(text["script.js"])
-                    if "./reports/controller" not in dependencies:
-                        self.errors.append(
-                            "Missing AMD dependency: reports/controller.js"
-                        )
                     for dependency, member in (
-                        ("./settings/settings", "settings/settings.js"),
-                        ("./timesheet/controller", "timesheet/controller.js"),
-                        ("./activity-tracker", "activity-tracker.js"),
-                        ("./overlay", "overlay.js"),
-                        ("./monitoring/timeline", "monitoring/timeline.js"),
-                        ("./monitoring/activity-modal", "monitoring/activity-modal.js"),
-                        ("./monitoring/dashboard", "monitoring/dashboard.js"),
-                        ("./reports/controller", "reports/controller.js"),
+                        ("./settings/settings.js", "settings/settings.js"),
+                        ("./timesheet/controller.js", "timesheet/controller.js"),
+                        ("./activity-tracker.js", "activity-tracker.js"),
+                        ("./overlay.js", "overlay.js"),
+                        ("./monitoring/timeline.js", "monitoring/timeline.js"),
+                        ("./monitoring/activity-modal.js", "monitoring/activity-modal.js"),
+                        ("./monitoring/dashboard.js", "monitoring/dashboard.js"),
+                        ("./reports/controller.js", "reports/controller.js"),
                     ):
-                        if dependency in text["script.js"] and member not in names:
+                        if dependency not in dependencies:
                             self.errors.append(f"Missing AMD dependency: {member}")
+                        elif member not in names:
+                            self.errors.append(f"Missing AMD dependency: {member}")
+                    nested_modules = (
+                        "monitoring/activity-modal.js",
+                        "monitoring/dashboard.js",
+                    )
+                    for module_name in nested_modules:
+                        if module_name in text and amd_dependencies(text[module_name]):
+                            self.errors.append(
+                                f"Nested AMD dependencies are not supported in {module_name}"
+                            )
+                        if module_name in text and (
+                            re.search(
+                                r"(?<![\w.])require\s*\(\s*['\"]\./",
+                                text[module_name],
+                            )
+                            or re.search(
+                                r"['\"]\./(?:timeline|activity-modal)['\"]",
+                                text[module_name],
+                            )
+                        ):
+                            self.errors.append(
+                                f"Scanner-visible CommonJS dependency in {module_name}"
+                            )
+                    if "ActivityModal.setTimeline(Timeline)" not in text["script.js"]:
+                        self.errors.append("script.js must inject Timeline into ActivityModal")
+                    if (
+                        "MonitoringDashboard.setActivityModal(ActivityModal)"
+                        not in text["script.js"]
+                    ):
+                        self.errors.append(
+                            "script.js must inject ActivityModal into MonitoringDashboard"
+                        )
                 if (
                     "settings/settings.js" in text
                     and "SettingsController" not in text["settings/settings.js"]

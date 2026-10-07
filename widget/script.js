@@ -1,4 +1,7 @@
-define(['jquery', './settings/settings', './timesheet/controller', './overlay', './activity-tracker', './monitoring/timeline', './monitoring/activity-modal', './monitoring/dashboard', './reports/controller'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
+define(['jquery', './settings/settings.js', './timesheet/controller.js', './overlay.js', './activity-tracker.js', './monitoring/timeline.js', './monitoring/activity-modal.js', './monitoring/dashboard.js', './reports/controller.js'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
+    if (ActivityModal && typeof ActivityModal.setTimeline === 'function') ActivityModal.setTimeline(Timeline);
+    if (MonitoringDashboard && typeof MonitoringDashboard.setActivityModal === 'function') MonitoringDashboard.setActivityModal(ActivityModal);
+
     function apiUrl(widget) {
         var settings = widget.get_settings();
         return settings && settings.api_url ? String(settings.api_url).replace(/\/+$/, '') : null;

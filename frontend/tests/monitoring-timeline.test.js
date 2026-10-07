@@ -70,11 +70,12 @@ test('runtime modules register through AMD as well as CommonJS', () => {
 
   let modal;
   dom.window.define = (dependencies, factory) => {
-    assert.deepEqual(Array.from(dependencies), ['./timeline']);
-    modal = factory(timeline);
+    assert.deepEqual(Array.from(dependencies), []);
+    modal = factory();
   };
   dom.window.define.amd = {};
   dom.window.eval(readFileSync(resolve(__dirname, '../monitoring/activity-modal.js'), 'utf8'));
+  modal.setTimeline(timeline);
   assert.equal(typeof modal.create, 'function');
   dom.window.close();
 });

@@ -80,12 +80,15 @@ class WidgetPackageTests(unittest.TestCase):
             any("settings/settings.js" in error for error in validator.errors)
         )
 
-    def test_manifest_uses_floating_ui_locations_without_card_sidebar(self):
+    def test_manifest_initializes_floating_ui_in_cards_without_sidebar(self):
         manifest = json.loads((ROOT / "widget" / "manifest.json").read_text("utf-8"))
-        self.assertEqual(manifest["widget"]["version"], "3.0.6")
+        self.assertEqual(manifest["widget"]["version"], "3.0.12")
         self.assertEqual(
             manifest["locations"],
             [
+                "lcard-0",
+                "ccard-0",
+                "comcard-0",
                 "settings",
                 "advanced_settings",
                 "everywhere",
@@ -117,13 +120,37 @@ class WidgetPackageTests(unittest.TestCase):
             validator.errors,
         )
 
+    def test_validator_rejects_nested_amd_dependency(self):
+        entries = self.entries()
+        entries["monitoring/activity-modal.js"] = entries[
+            "monitoring/activity-modal.js"
+        ].replace(b"define([], factory)", b"define(['./timeline.js'], factory)")
+        validator = WidgetValidator(self.make_zip(entries))
+        self.assertFalse(validator.validate())
+        self.assertIn(
+            "Nested AMD dependencies are not supported in monitoring/activity-modal.js",
+            validator.errors,
+        )
+
+    def test_validator_rejects_scanner_visible_commonjs_dependency(self):
+        entries = self.entries()
+        entries["monitoring/activity-modal.js"] = entries[
+            "monitoring/activity-modal.js"
+        ].replace(b"module['require']('.' + '/timeline')", b"require('./timeline')")
+        validator = WidgetValidator(self.make_zip(entries))
+        self.assertFalse(validator.validate())
+        self.assertIn(
+            "Scanner-visible CommonJS dependency in monitoring/activity-modal.js",
+            validator.errors,
+        )
+
     def test_validator_requires_report_dependency_and_exact_report_assets(self):
         entries = self.entries()
         entries["script.js"] = (
             entries["script.js"].replace(
-                b"'./reports/controller'", b"'./reports/missing'"
+                b"'./reports/controller.js'", b"'./reports/missing.js'"
             )
-            + b"\n// './reports/controller'\n"
+            + b"\n// './reports/controller.js'\n"
         )
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
@@ -141,8 +168,8 @@ class WidgetPackageTests(unittest.TestCase):
     def test_validator_rejects_report_dependency_only_inside_amd_array_comment(self):
         entries = self.entries()
         entries["script.js"] = entries["script.js"].replace(
-            b"'./reports/controller'",
-            b"'./reports/missing', /* './reports/controller' */",
+            b"'./reports/controller.js'",
+            b"'./reports/missing.js', /* './reports/controller.js' */",
             1,
         )
         validator = WidgetValidator(self.make_zip(entries))

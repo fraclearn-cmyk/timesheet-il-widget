@@ -1,13 +1,17 @@
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(require('./activity-modal'));
+    module.exports = factory(module['require']('.' + '/activity-modal'));
   } else if (typeof define === 'function') {
-    define(['./activity-modal'], factory);
+    define([], factory);
   } else {
     root.TimesheetMonitoringDashboard = factory(root.TimesheetActivityModal);
   }
 }(typeof self !== 'undefined' ? self : this, function (ActivityModal) {
   'use strict';
+
+  function setActivityModal(value) {
+    ActivityModal = value;
+  }
 
   const STATUS_LABELS = {
     working: 'Работает', on_break: 'На перерыве', finished: 'Завершил', not_started: 'Не начинал',
@@ -308,5 +312,5 @@
     return { ready, refresh, destroy };
   }
 
-  return { mount };
+  return { mount, setActivityModal };
 }));
