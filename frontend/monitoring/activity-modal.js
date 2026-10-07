@@ -1,7 +1,7 @@
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
     module.exports = factory(require('./timeline'));
-  } else if (typeof define === 'function' && define.amd) {
+  } else if (typeof define === 'function') {
     define(['./timeline'], factory);
   } else {
     root.TimesheetActivityModal = factory(root.TimesheetTimeline);

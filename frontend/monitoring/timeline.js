@@ -1,7 +1,7 @@
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
     module.exports = factory();
-  } else if (typeof define === 'function' && define.amd) {
+  } else if (typeof define === 'function') {
     define([], factory);
   } else {
     root.TimesheetTimeline = factory();

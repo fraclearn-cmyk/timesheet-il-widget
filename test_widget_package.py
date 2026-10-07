@@ -82,7 +82,7 @@ class WidgetPackageTests(unittest.TestCase):
 
     def test_manifest_connects_widget_to_amocrm_cards(self):
         manifest = json.loads((ROOT / "widget" / "manifest.json").read_text("utf-8"))
-        self.assertEqual(manifest["widget"]["version"], "3.0.3")
+        self.assertEqual(manifest["widget"]["version"], "3.0.5")
         self.assertEqual(
             manifest["locations"],
             [
@@ -93,6 +93,31 @@ class WidgetPackageTests(unittest.TestCase):
                 "advanced_settings",
                 "everywhere",
             ],
+        )
+
+    def test_validator_requires_widget_constructor_to_return_instance(self):
+        entries = self.entries()
+        entries["script.js"] = entries["script.js"].replace(
+            b"        return this;\n    };\n    return CustomWidget;",
+            b"    };\n    return CustomWidget;",
+        )
+        validator = WidgetValidator(self.make_zip(entries))
+        self.assertFalse(validator.validate())
+        self.assertIn(
+            "script.js widget constructor must return this", validator.errors
+        )
+
+    def test_validator_rejects_modules_that_require_define_amd_marker(self):
+        entries = self.entries()
+        entries["overlay.js"] = entries["overlay.js"].replace(
+            b"typeof define === 'function') define(factory)",
+            b"typeof define === 'function' && define.amd) define(factory)",
+        )
+        validator = WidgetValidator(self.make_zip(entries))
+        self.assertFalse(validator.validate())
+        self.assertIn(
+            "overlay.js must register with the amoCRM define loader",
+            validator.errors,
         )
 
     def test_validator_requires_report_dependency_and_exact_report_assets(self):

@@ -402,6 +402,7 @@ define(['jquery', './settings/settings', './timesheet/controller', './overlay', 
                 return true;
             }
         };
+        return this;
     };
     return CustomWidget;
 });

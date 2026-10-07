@@ -392,6 +392,6 @@
   SettingsController.prototype.destroy = function () { this.destroyed = true; this.root.replaceChildren(); };
 
   global.SettingsController = SettingsController;
-  if (typeof define === 'function' && define.amd) define(function () { return SettingsController; });
+  if (typeof define === 'function') define(function () { return SettingsController; });
   if (typeof module !== 'undefined' && module.exports) module.exports = SettingsController;
 })(typeof window !== 'undefined' ? window : globalThis);

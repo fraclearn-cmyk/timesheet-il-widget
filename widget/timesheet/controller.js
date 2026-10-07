@@ -1,5 +1,5 @@
 (function(root, factory) {
-    if (typeof define === 'function' && define.amd) define(factory);
+    if (typeof define === 'function') define(factory);
     else if (typeof module === 'object' && module.exports) module.exports = factory();
 })(this, function() {
     var paths = { 'start-work': true, 'start-break': true, 'end-break': true, 'finish-work': true };

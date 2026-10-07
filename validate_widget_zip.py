@@ -161,6 +161,13 @@ class WidgetValidator:
                         pattern.search(content) for pattern in SECRET_PATTERNS
                     ) or has_named_secret_literal(content):
                         self.errors.append(f"Credential-like value in {name}")
+                    if name.endswith(".js") and re.search(
+                        r"typeof\s+define\s*===\s*['\"]function['\"]\s*&&\s*define\.amd",
+                        content,
+                    ):
+                        self.errors.append(
+                            f"{name} must register with the amoCRM define loader"
+                        )
 
                 if "manifest.json" in text:
                     try:
@@ -189,6 +196,13 @@ class WidgetValidator:
                         "script.js must define advancedSettings callback"
                     )
                 if "script.js" in text:
+                    if not re.search(
+                        r"return\s+this\s*;\s*};\s*return\s+CustomWidget\s*;",
+                        text["script.js"],
+                    ):
+                        self.errors.append(
+                            "script.js widget constructor must return this"
+                        )
                     dependencies = amd_dependencies(text["script.js"])
                     if "./reports/controller" not in dependencies:
                         self.errors.append(

@@ -1,7 +1,7 @@
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
     module.exports = factory(require('./activity-modal'));
-  } else if (typeof define === 'function' && define.amd) {
+  } else if (typeof define === 'function') {
     define(['./activity-modal'], factory);
   } else {
     root.TimesheetMonitoringDashboard = factory(root.TimesheetActivityModal);
