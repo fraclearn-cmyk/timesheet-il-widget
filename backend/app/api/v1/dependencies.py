@@ -23,6 +23,7 @@ from app.core.rate_limit import (
 from app.core.widget_auth import WidgetTokenInvalid, decode_widget_token
 from app.integrations.amocrm_client import AmoCRMClient, AmoCRMClientError
 from app.integrations.oauth import OAuthTokenCipher
+from app.integrations.http_transport import build_amocrm_async_transport
 from app.models.oauth_connection import OAuthConnection
 from app.models.user import User, UserRole
 from app.models.work_session import WorkSession
@@ -454,7 +455,9 @@ async def _get_widget_request_context(widget_token: str, db: Session) -> Request
 
 
 async def _load_live_amocrm_state(connection: OAuthConnection, access_token: str):
-    async with httpx.AsyncClient() as http:
+    async with httpx.AsyncClient(
+        transport=build_amocrm_async_transport(settings.AMOCRM_LOCAL_ADDRESS)
+    ) as http:
         client = AmoCRMClient(http)
         account = await client.get_account(connection.account_url, access_token)
         current_users = await client.list_users(connection.account_url, access_token)

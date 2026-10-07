@@ -31,6 +31,10 @@ from app.core.rate_limit import (
     trusted_remote_key,
     unknown_request_limiter,
 )
+from app.integrations.http_transport import (
+    build_amocrm_async_transport,
+    build_amocrm_sync_transport,
+)
 
 try:
     from app.core.config import settings
@@ -67,12 +71,18 @@ async def lifespan(application: FastAPI):
             IngestionWorker,
         )
 
-        sync_http = httpx.Client()
+        limits = httpx.Limits(
+            max_connections=settings.INGESTION_MAX_CONCURRENT_ACCOUNTS,
+            max_keepalive_connections=settings.INGESTION_MAX_CONCURRENT_ACCOUNTS,
+        )
+        sync_http = httpx.Client(
+            transport=build_amocrm_sync_transport(settings.AMOCRM_LOCAL_ADDRESS)
+        )
         async_http = httpx.AsyncClient(
-            limits=httpx.Limits(
-                max_connections=settings.INGESTION_MAX_CONCURRENT_ACCOUNTS,
-                max_keepalive_connections=settings.INGESTION_MAX_CONCURRENT_ACCOUNTS,
-            )
+            transport=build_amocrm_async_transport(
+                settings.AMOCRM_LOCAL_ADDRESS, limits=limits
+            ),
+            limits=limits,
         )
         cipher = OAuthTokenCipher.from_secret(settings.SECRET_KEY)
         auth = AmoCRMAuthClient(

@@ -80,15 +80,12 @@ class WidgetPackageTests(unittest.TestCase):
             any("settings/settings.js" in error for error in validator.errors)
         )
 
-    def test_manifest_connects_widget_to_amocrm_cards(self):
+    def test_manifest_uses_floating_ui_locations_without_card_sidebar(self):
         manifest = json.loads((ROOT / "widget" / "manifest.json").read_text("utf-8"))
-        self.assertEqual(manifest["widget"]["version"], "3.0.5")
+        self.assertEqual(manifest["widget"]["version"], "3.0.6")
         self.assertEqual(
             manifest["locations"],
             [
-                "lcard-1",
-                "ccard-1",
-                "comcard-1",
                 "settings",
                 "advanced_settings",
                 "everywhere",

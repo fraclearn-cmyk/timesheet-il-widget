@@ -28,6 +28,7 @@ from app.services.webhook_subscription_service import (
     WebhookURLMissing,
 )
 from app.integrations.amocrm_client import AmoCRMClient
+from app.integrations.http_transport import build_amocrm_async_transport
 from app.integrations.oauth import OAuthTokenCipher
 import httpx
 
@@ -35,7 +36,9 @@ router = APIRouter()
 
 
 async def get_webhook_subscription_service(db: Session = Depends(get_db)):
-    async with httpx.AsyncClient() as http_client:
+    async with httpx.AsyncClient(
+        transport=build_amocrm_async_transport(settings.AMOCRM_LOCAL_ADDRESS)
+    ) as http_client:
         yield WebhookSubscriptionService(
             db,
             AmoCRMClient(http_client),

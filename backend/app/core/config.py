@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator, model_validator
 from typing import List
+from ipaddress import ip_address
 import secrets
 from urllib.parse import urlsplit
 
@@ -56,6 +57,7 @@ class Settings(BaseSettings):
     AMOCRM_CLIENT_ID: str
     AMOCRM_CLIENT_SECRET: str
     AMOCRM_REDIRECT_URI: str
+    AMOCRM_LOCAL_ADDRESS: str | None = None
 
     @field_validator("AMOCRM_CLIENT_ID", "AMOCRM_CLIENT_SECRET")
     @classmethod
@@ -63,6 +65,13 @@ class Settings(BaseSettings):
         if not v or len(v) < 10:
             raise ValueError("AMOCRM credentials must be at least 10 characters")
         return v
+
+    @field_validator("AMOCRM_LOCAL_ADDRESS")
+    @classmethod
+    def validate_amocrm_local_address(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        return str(ip_address(v.strip()))
 
     @field_validator("AMOCRM_REDIRECT_URI")
     @classmethod
