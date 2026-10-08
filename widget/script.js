@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings.js?v=3.0.13', './timesheet/controller.js?v=3.0.13', './overlay.js?v=3.0.13', './activity-tracker.js?v=3.0.13', './monitoring/timeline.js?v=3.0.13', './monitoring/activity-modal.js?v=3.0.13', './monitoring/dashboard.js?v=3.0.13', './reports/controller.js?v=3.0.13'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
+define(['jquery', './settings/settings.js?v=3.0.16', './timesheet/controller.js?v=3.0.16', './overlay.js?v=3.0.16', './activity-tracker.js?v=3.0.16', './monitoring/timeline.js?v=3.0.16', './monitoring/activity-modal.js?v=3.0.16', './monitoring/dashboard.js?v=3.0.16', './reports/controller.js?v=3.0.16'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
     if (ActivityModal && typeof ActivityModal.setTimeline === 'function') ActivityModal.setTimeline(Timeline);
     if (MonitoringDashboard && typeof MonitoringDashboard.setActivityModal === 'function') MonitoringDashboard.setActivityModal(ActivityModal);
 
@@ -63,6 +63,27 @@ define(['jquery', './settings/settings.js?v=3.0.13', './timesheet/controller.js?
             widget.settingsController = null;
             widget.settingsMount = null;
             widget.settingsStyle = null;
+        }
+        function mountSettings(holder) {
+            removeSettings();
+            if (!holder) return false;
+            var mount = document.createElement('div');
+            mount.className = 'timesheet-settings__host';
+            holder.appendChild(mount);
+            widget.settingsMount = mount;
+            var url = apiUrl(widget);
+            if (!url) { mount.textContent = 'Укажите URL API в настройках установки виджета.'; return true; }
+            var settings = widget.get_settings();
+            if (settings.path) {
+                var style = document.createElement('link');
+                style.rel = 'stylesheet';
+                style.href = String(settings.path).replace(/\/?$/, '/') + 'settings/settings.css?v=' + encodeURIComponent(settings.version || '');
+                document.head.appendChild(style);
+                widget.settingsStyle = style;
+            }
+            widget.settingsController = SettingsController.mount(mount, createSettingsTransport(widget));
+            widget.settingsController.ready.catch(function() {});
+            return true;
         }
         function clearWorkingUi() { if (typeof widget.clearTimesheetStatus === 'function') widget.clearTimesheetStatus(); }
         function stopMonitoring() {
@@ -130,6 +151,17 @@ define(['jquery', './settings/settings.js?v=3.0.13', './timesheet/controller.js?
                 ? request.getResponseHeader('Content-Disposition') : null;
             var match = typeof header === 'string' && /^attachment\s*;\s*filename="(timesheet_\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.xlsx)"\s*$/i.exec(header);
             return match ? match[1] : 'timesheet_' + safeReportDate(body.date_from) + '_' + safeReportDate(body.date_to) + '.xlsx';
+        }
+        function reportJsonFilename(value, body) {
+            return /^timesheet_\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.xlsx$/i.test(String(value || ''))
+                ? value : 'timesheet_' + safeReportDate(body.date_from) + '_' + safeReportDate(body.date_to) + '.xlsx';
+        }
+        function reportJsonBlob(payload) {
+            if (!payload || typeof payload.content_base64 !== 'string') throw { publicMessage: undefined };
+            var binary = window.atob(payload.content_base64);
+            var bytes = new Uint8Array(binary.length);
+            for (var index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+            return new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         }
         function stopReports() {
             ++widget.reportGeneration;
@@ -213,10 +245,10 @@ define(['jquery', './settings/settings.js?v=3.0.13', './timesheet/controller.js?
                         },
                         export: function(body, signal) {
                             var request;
-                            var options = { url: baseUrl + '/reports/export-excel', method: 'POST', contentType: 'application/json',
-                                data: JSON.stringify(body), xhrFields: { responseType: 'blob' }, timeout: 10000 };
-                            return reportRequest(options, signal, function(value) { request = value; }).then(function(blob) {
-                                return { blob: blob, filename: reportFilename(request, body) };
+                            var options = { url: baseUrl + '/reports/export-excel-json', method: 'POST', contentType: 'application/json',
+                                dataType: 'json', data: JSON.stringify(body), timeout: 10000 };
+                            return reportRequest(options, signal, function(value) { request = value; }).then(function(payload) {
+                                return { blob: reportJsonBlob(payload), filename: reportJsonFilename(payload && payload.filename, body) };
                             });
                         }
                     },
@@ -369,35 +401,25 @@ define(['jquery', './settings/settings.js?v=3.0.13', './timesheet/controller.js?
                 return true;
             },
             bind_actions: function() { return true; },
-            settings: function() { stopTimesheet(); return true; },
+            settings: function() {
+                stopTimesheet();
+                var fields = document.getElementById('widget_settings__fields_wrapper');
+                var holder = fields && typeof fields.closest === 'function' ? fields.closest('.widget_settings_block') : null;
+                return mountSettings(holder);
+            },
             advancedSettings: function() {
                 stopTimesheet();
                 if (typeof widget.system !== 'function' || widget.system().area !== 'advanced_settings') return false;
-                removeSettings();
                 var holder = document.getElementById('list_page_holder');
-                if (!holder) return false;
-                var mount = document.createElement('div');
-                mount.className = 'timesheet-settings__host';
-                holder.appendChild(mount);
-                widget.settingsMount = mount;
-                var url = apiUrl(widget);
-                if (!url) { mount.textContent = 'Укажите URL API в настройках установки виджета.'; return true; }
-                var settings = widget.get_settings();
-                if (settings.path) {
-                    var style = document.createElement('link');
-                    style.rel = 'stylesheet';
-                    style.href = String(settings.path).replace(/\/?$/, '/') + 'settings/settings.css?v=' + encodeURIComponent(settings.version || '');
-                    document.head.appendChild(style);
-                    widget.settingsStyle = style;
-                }
-                widget.settingsController = SettingsController.mount(mount, createSettingsTransport(widget));
-                widget.settingsController.ready.catch(function() {});
-                return true;
+                return mountSettings(holder);
             },
             onSave: function() {
-                if (typeof widget.system !== 'function' || widget.system().area !== 'advanced_settings') return true;
+                if (typeof widget.system !== 'function' || ['settings', 'advanced_settings'].indexOf(widget.system().area) === -1) return true;
                 var controller = widget.settingsController;
-                return !controller ? true : (controller.snapshot ? controller.save() : controller.ready.then(function() { return controller.save(); }));
+                return !controller ? true : (controller.snapshot ? controller.save() : controller.ready.then(
+                    function() { return controller.save(); },
+                    function() { return true; }
+                ));
             },
             destroy: function() {
                 removeSettings();

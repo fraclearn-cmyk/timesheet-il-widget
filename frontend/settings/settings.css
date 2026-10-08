@@ -150,6 +150,15 @@
 
 .timesheet-settings .timesheet-settings__message { color: #c43d3d; margin: 12px 0; min-height: 1.4em; }
 
+.widget_settings_block .timesheet-settings {
+  margin: 16px 0 0;
+  max-width: none;
+}
+
+.widget_settings_block .timesheet-settings .timesheet-settings__user {
+  grid-template-columns: minmax(150px, 1.5fr) repeat(2, minmax(72px, .65fr)) minmax(130px, 1fr);
+}
+
 @media (max-width: 800px) {
   .timesheet-settings .timesheet-settings__user { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

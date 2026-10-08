@@ -1,6 +1,7 @@
 """Public XLSX contract for the scoped detailed timesheet."""
 
 from datetime import date, datetime, timedelta
+import base64
 from io import BytesIO
 from types import SimpleNamespace
 from zipfile import ZipFile
@@ -122,6 +123,20 @@ def test_periods_include_exact_employee_days(scoped_client, db, start, end, days
         response.headers["content-disposition"]
         == f'attachment; filename="timesheet_{start}_{end}.xlsx"'
     )
+
+
+def test_json_export_wraps_the_same_workbook_for_amocrm_transport(scoped_client, db):
+    add_session(db)
+    db.commit()
+
+    response = scoped_client("admin").post(f"{PATH}-json", json=PERIOD)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["filename"] == "timesheet_2026-09-22_2026-09-22.xlsx"
+    workbook = load_workbook(BytesIO(base64.b64decode(payload["content_base64"])))
+    assert workbook.sheetnames == ["Табель"]
+    assert workbook.active["A2"].value == "Employee"
 
 
 def test_selected_columns_local_times_durations_and_same_day_merge(

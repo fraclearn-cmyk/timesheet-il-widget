@@ -53,12 +53,14 @@ function response() {
 }
 
 function boot(options = {}) {
-  const dom = new JSDOM('<!doctype html><html><head></head><body><form id="install-form"></form>' +
+  const dom = new JSDOM('<!doctype html><html><head></head><body><form id="install-form">' +
+    '<div class="widget_settings_block"><div id="widget_settings__fields_wrapper"><input name="api_url"></div></div></form>' +
     '<div id="list_page_holder"><p id="amo-owned">amoCRM content</p></div><div id="timesheet-overlay"></div></body></html>', {
     url: 'https://account.amocrm.ru', runScripts: 'outside-only', resources: new WidgetResources(), pretendToBeVisual: true,
   });
   const { window } = dom;
   const { document } = window;
+  window.Blob = Blob;
   window.console = { log() {}, warn() {}, error() {} };
   window.AMOCRM = { constant: (key) => key === 'account' ? { id: 1 } : { id: 101, name: 'Анна' } };
   window.eval(settingsSource);
@@ -80,8 +82,8 @@ function boot(options = {}) {
   };
   window.eval(widgetSource);
   assert.deepEqual(moduleIds, [
-    'jquery', './settings/settings.js?v=3.0.13', './timesheet/controller.js?v=3.0.13', './overlay.js?v=3.0.13', './activity-tracker.js?v=3.0.13',
-    './monitoring/timeline.js?v=3.0.13', './monitoring/activity-modal.js?v=3.0.13', './monitoring/dashboard.js?v=3.0.13', './reports/controller.js?v=3.0.13',
+    'jquery', './settings/settings.js?v=3.0.16', './timesheet/controller.js?v=3.0.16', './overlay.js?v=3.0.16', './activity-tracker.js?v=3.0.16',
+    './monitoring/timeline.js?v=3.0.16', './monitoring/activity-modal.js?v=3.0.16', './monitoring/dashboard.js?v=3.0.16', './reports/controller.js?v=3.0.16',
   ]);
   const requests = [];
   const widget = new Widget();
@@ -128,8 +130,9 @@ test('init in settings area does not start working overlay', () => {
 
 test('manifest enables working locations', () => {
   assert.deepEqual(manifest.locations, [
-    'lcard-0', 'ccard-0', 'comcard-0', 'settings', 'advanced_settings', 'everywhere',
+    'lcard-0', 'ccard-0', 'comcard-0', 'settings', 'everywhere',
   ]);
+  assert.equal('advanced' in manifest, false);
 });
 
 test('settings script registers an AMD module for the widget dependency', () => {
@@ -141,17 +144,17 @@ test('settings script registers an AMD module for the widget dependency', () => 
   assert.equal(typeof exported.mount, 'function');
 });
 
-test('settings callback leaves native install form and advancedSettings owns only its child', async () => {
-  const { document, widget, requests } = boot();
+test('settings callback mounts the editor inside the installed widget card and preserves native fields', async () => {
+  const { document, widget, requests } = boot({ area: 'settings' });
   const form = document.querySelector('#install-form');
+  const nativeFields = document.querySelector('#widget_settings__fields_wrapper');
   widget.callbacks.settings();
-  assert.equal(document.querySelector('#install-form'), form);
-  assert.equal(requests.length, 0);
-  widget.callbacks.advancedSettings();
   await widget.settingsController.ready;
+  assert.equal(document.querySelector('#install-form'), form);
+  assert.equal(document.querySelector('#widget_settings__fields_wrapper'), nativeFields);
   assert.equal(document.querySelectorAll('[role=tab]').length, 2);
   assert.equal(document.querySelectorAll('.timesheet-settings__save').length, 1);
-  assert.ok(document.querySelector('#list_page_holder .timesheet-settings'));
+  assert.ok(document.querySelector('.widget_settings_block .timesheet-settings'));
   assert.ok(document.querySelector('link[href="/widgets/timesheet/settings/settings.css?v=3.0.2"]'));
   assert.ok(document.querySelector('#amo-owned'));
   assert.equal(requests[0].method, 'GET');
@@ -162,8 +165,8 @@ test('settings callback leaves native install form and advancedSettings owns onl
 test('amoCRM onSave remains compatible and adopts the canonical response', async () => {
   let finishSave;
   const pending = new Promise((resolve) => { finishSave = resolve; });
-  const { document, widget, requests } = boot({ save: pending });
-  widget.callbacks.advancedSettings();
+  const { document, widget, requests } = boot({ area: 'settings', save: pending });
+  widget.callbacks.settings();
   await widget.settingsController.ready;
   const phone = document.querySelector('[data-field="support_phone"]');
   phone.value = '+375 29 000-00-00';
@@ -194,8 +197,8 @@ test('amoCRM onSave remains compatible and adopts the canonical response', async
 });
 
 test('destroy removes settings without deleting amoCRM-owned DOM', async () => {
-  const { document, widget } = boot();
-  widget.callbacks.advancedSettings();
+  const { document, widget } = boot({ area: 'settings' });
+  widget.callbacks.settings();
   await widget.settingsController.ready;
   widget.callbacks.destroy();
   assert.equal(document.querySelector('.timesheet-settings'), null);
@@ -305,11 +308,12 @@ test('report preview and Excel use authorized transport, safe filename and publi
   dom.window.HTMLAnchorElement.prototype.click = function() { downloaded = this.download; };
   const original = widget.$authorizedAjax;
   widget.$authorizedAjax = (options) => {
-    if (options.url.endsWith('/reports/export-excel')) {
+    if (options.url.endsWith('/reports/export-excel-json')) {
       requests.push(options);
-      return Object.assign(Promise.resolve(new Blob(['xlsx'])), {
-        getResponseHeader: () => 'attachment; filename="../../evil.xlsx"', abort() {},
-      });
+      return Object.assign(Promise.resolve({
+        filename: '../../evil.xlsx',
+        content_base64: Buffer.from('xlsx').toString('base64'),
+      }), { abort() {} });
     }
     return original(options);
   };
@@ -322,10 +326,11 @@ test('report preview and Excel use authorized transport, safe filename and publi
   const to = document.querySelector('.ts-reports__date-to');
   from.value = '2026-09-01'; to.value = '2026-09-30';
   document.querySelector('.ts-reports__export').click(); await new Promise(setImmediate);
-  const request = requests.find((item) => item.url.endsWith('/reports/export-excel'));
+  const request = requests.find((item) => item.url.endsWith('/reports/export-excel-json'));
   assert.equal(request.method, 'POST');
   assert.equal(request.contentType, 'application/json');
-  assert.equal(request.xhrFields.responseType, 'blob');
+  assert.equal(request.dataType, 'json');
+  assert.equal('xhrFields' in request, false);
   assert.deepEqual(JSON.parse(request.data).columns, ['employee', 'date', 'start', 'end', 'break', 'work', 'lateness', 'status']);
   assert.equal('headers' in request, false);
   assert.equal(downloaded, 'timesheet_2026-09-01_2026-09-30.xlsx');
@@ -337,11 +342,12 @@ test('valid disposition filename is used and report errors expose only bounded b
   dom.window.HTMLAnchorElement.prototype.click = function() { downloaded = this.download; };
   const original = widget.$authorizedAjax;
   widget.$authorizedAjax = (request) => {
-    if (request.url.endsWith('/reports/export-excel')) {
+    if (request.url.endsWith('/reports/export-excel-json')) {
       requests.push(request);
-      return Object.assign(Promise.resolve(new Blob(['xlsx'])), {
-        getResponseHeader: () => 'attachment; filename="timesheet_2026-09-03_2026-09-29.xlsx"', abort() {},
-      });
+      return Object.assign(Promise.resolve({
+        filename: 'timesheet_2026-09-03_2026-09-29.xlsx',
+        content_base64: Buffer.from('xlsx').toString('base64'),
+      }), { abort() {} });
     }
     if (request.url.endsWith('/reports/detailed')) {
       requests.push(request);
@@ -382,7 +388,7 @@ test('destroy aborts report role and export jqXHR without late report DOM or dow
   let downloaded = false;
   exporting.dom.window.HTMLAnchorElement.prototype.click = function() { downloaded = true; };
   const original = exporting.widget.$authorizedAjax;
-  exporting.widget.$authorizedAjax = (request) => request.url.endsWith('/reports/export-excel')
+  exporting.widget.$authorizedAjax = (request) => request.url.endsWith('/reports/export-excel-json')
     ? Object.assign(new Promise((resolve) => { resolveExport = resolve; }), { abort() { exportAborted = true; } })
     : original(request);
   exporting.widget.callbacks.init(); await new Promise(setImmediate);
@@ -470,4 +476,12 @@ test('onSave waits for an in-progress settings load before saving', async () => 
   finishLoad(snapshot());
   await saving;
   assert.deepEqual(requests.map((request) => request.method), ['GET', 'PUT']);
+});
+
+test('native amoCRM settings remain saveable when the previous API address is unavailable', async () => {
+  const { widget, requests } = boot({ area: 'settings', load: Promise.reject(new Error('offline')) });
+  widget.callbacks.settings();
+  await assert.rejects(widget.settingsController.ready);
+  assert.equal(await widget.callbacks.onSave(), true);
+  assert.deepEqual(requests.map((request) => request.method), ['GET']);
 });

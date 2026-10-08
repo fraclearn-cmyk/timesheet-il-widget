@@ -2,7 +2,7 @@
   position: fixed;
   right: 20px;
   bottom: 20px;
-  z-index: 10010;
+  z-index: 2147483100;
   font: 14px/1.4 Arial, sans-serif;
   color: #1f2937;
 }
@@ -61,7 +61,7 @@
 .ts-activity-modal {
   position: fixed;
   inset: 0;
-  z-index: 10020;
+  z-index: 2147483200;
   display: grid;
   place-items: center;
   padding: 24px;

@@ -3,7 +3,7 @@
     "name": "widget.name",
     "description": "widget.description",
     "short_description": "widget.short_description",
-    "version": "3.0.13",
+    "version": "3.0.16",
     "interface_version": 2,
     "init_once": false,
     "locale": [
@@ -21,7 +21,6 @@
     "ccard-0",
     "comcard-0",
     "settings",
-    "advanced_settings",
     "everywhere"
   ],
   "settings": {
@@ -42,8 +41,5 @@
       ]
     },
     "tour_description": "widget.tour_description"
-  },
-  "advanced": {
-    "title": "advanced.title"
   }
 }

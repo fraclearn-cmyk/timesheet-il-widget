@@ -183,22 +183,15 @@ class WidgetValidator:
                         "ccard-0",
                         "comcard-0",
                         "settings",
-                        "advanced_settings",
                         "everywhere",
                     ]:
                         self.errors.append(
-                            "manifest.json locations must initialize cards without the sidebar and include settings, advanced_settings and everywhere"
+                            "manifest.json locations must initialize cards without the sidebar and include settings and everywhere"
                         )
-                    if not isinstance(manifest.get("advanced"), dict) or not manifest[
-                        "advanced"
-                    ].get("title"):
-                        self.errors.append("manifest.json advanced.title is required")
-                if "script.js" in text and not re.search(
-                    r"advancedSettings\s*:\s*function", text["script.js"]
-                ):
-                    self.errors.append(
-                        "script.js must define advancedSettings callback"
-                    )
+                    if "advanced" in manifest:
+                        self.errors.append("manifest.json must not expose a separate advanced settings page")
+                if "script.js" in text and not re.search(r"settings\s*:\s*function", text["script.js"]):
+                    self.errors.append("script.js must define settings callback")
                 if "script.js" in text:
                     if not re.search(
                         r"return\s+this\s*;\s*};\s*return\s+CustomWidget\s*;",

@@ -3,6 +3,7 @@ Reports API
 API endpoints для отчётов
 """
 
+import base64
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -41,12 +42,7 @@ from app.schemas.report import (
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-@router.post("/export-excel")
-def export_timesheet_excel(
-    request: ReportExcelRequest,
-    db: Session = Depends(get_db),
-    context: RequestContext = Depends(get_request_context),
-):
+def _render_timesheet_excel(request: ReportExcelRequest, db: Session, context: RequestContext):
     try:
         rows = TimesheetReportService(db).export_rows(
             context,
@@ -57,13 +53,37 @@ def export_timesheet_excel(
         )
     except ReportPeriodError as error:
         raise APIProblem(422, error.code, error.message) from error
+    return TimesheetExcelService().render(rows, request.columns)
+
+
+@router.post("/export-excel")
+def export_timesheet_excel(
+    request: ReportExcelRequest,
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
+):
+    content = _render_timesheet_excel(request, db, context)
     return Response(
-        content=TimesheetExcelService().render(rows, request.columns),
+        content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f'attachment; filename="{safe_report_filename(request.date_from, request.date_to)}"'
         },
     )
+
+
+@router.post("/export-excel-json")
+def export_timesheet_excel_json(
+    request: ReportExcelRequest,
+    db: Session = Depends(get_db),
+    context: RequestContext = Depends(get_request_context),
+):
+    """Return XLSX as JSON because amoCRM authorizedAjax cannot read Blob safely."""
+    content = _render_timesheet_excel(request, db, context)
+    return {
+        "filename": safe_report_filename(request.date_from, request.date_to),
+        "content_base64": base64.b64encode(content).decode("ascii"),
+    }
 
 
 @router.get("/detailed", response_model=DetailedReportResponse)

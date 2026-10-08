@@ -28,6 +28,14 @@
     background: white;
     z-index: 1;
 }
+.timesheet-overlay__message {
+    max-width: 360px;
+    margin: 0;
+    color: #2e3640;
+    font-size: 15px;
+    line-height: 1.45;
+    text-align: center;
+}
 .timesheet-actions { pointer-events: none; }
 .timesheet-actions .timesheet-overlay__panel { top: auto; bottom: 16px; }
 .timesheet-action {
@@ -334,7 +342,7 @@
     position: fixed;
     right: 20px;
     bottom: 20px;
-    z-index: 10010;
+    z-index: 2147483100;
 }
 
 .ts-monitoring-widget__panel[hidden] {
@@ -345,7 +353,7 @@
     position: fixed;
     right: 20px;
     bottom: 76px;
-    z-index: 10010;
+    z-index: 2147483100;
 }
 
 .ts-reports-widget__launcher {

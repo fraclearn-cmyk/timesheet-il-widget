@@ -8,7 +8,9 @@ const base = { session_id: 1, started_at: '2026-09-22T08:00:00Z', ended_at: null
   break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false };
 
 test.beforeEach(async ({ page }) => {
-  await page.setContent('<button id="crm-action" onclick="window.crmClicks=(window.crmClicks||0)+1">CRM action</button>');
+  await page.setContent('<button id="crm-action" onclick="window.crmClicks=(window.crmClicks||0)+1">CRM action</button>' +
+    '<aside class="ts-monitoring-widget"><button id="monitoring-action" onclick="window.monitoringClicks=(window.monitoringClicks||0)+1">Сотрудники</button></aside>' +
+    '<aside class="ts-reports-widget"><button id="reports-action" onclick="window.reportClicks=(window.reportClicks||0)+1">Табель</button></aside>');
   await page.addStyleTag({ path: style });
   await page.addScriptTag({ path: source });
   await page.evaluate(() => { window.overlay = window.TimesheetOverlay.createOverlay(document); });
@@ -42,10 +44,28 @@ test('confirmed break blocks mouse and keyboard until clear', async ({ page }) =
 test('finished without restart keeps keyboard focus in blocking overlay', async ({ page }) => {
   await page.evaluate((snapshot) => window.overlay.render(snapshot), { ...base, status: 'finished' });
   await expect(page.locator('.timesheet-action')).toHaveCount(0);
+  await expect(page.locator('.timesheet-overlay__message')).toHaveText(
+    'Рабочий день завершён. Для повторного начала требуется разрешение администратора.'
+  );
   await page.keyboard.press('Tab');
   expect(await page.evaluate(() => document.activeElement.closest('.timesheet-overlay') !== null)).toBe(true);
   await page.keyboard.press('Shift+Tab');
   expect(await page.evaluate(() => document.activeElement.closest('.timesheet-overlay') !== null)).toBe(true);
+});
+
+test('manager panels remain available above a blocked amoCRM screen', async ({ page }) => {
+  await page.evaluate((snapshot) => window.overlay.render(snapshot), { ...base, status: 'finished' });
+  await page.locator('#monitoring-action').click({ timeout: 1000 });
+  await page.locator('#reports-action').click({ timeout: 1000 });
+  expect(await page.evaluate(() => ({ monitoring: window.monitoringClicks || 0, reports: window.reportClicks || 0 })))
+    .toEqual({ monitoring: 1, reports: 1 });
+  await page.locator('#monitoring-action').focus();
+  await page.keyboard.press('Enter');
+  expect(await page.evaluate(() => window.monitoringClicks || 0)).toBe(2);
+  expect(await page.evaluate(() => document.activeElement.id)).toBe('monitoring-action');
+  const crmBounds = await page.locator('#crm-action').boundingBox();
+  await page.mouse.click(crmBounds.x + crmBounds.width / 2, crmBounds.y + crmBounds.height / 2);
+  expect(await page.evaluate(() => window.crmClicks || 0)).toBe(0);
 });
 
 test('blocked overlay isolates shortcuts and preserves Enter/Space button activation', async ({ page }) => {

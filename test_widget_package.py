@@ -82,7 +82,7 @@ class WidgetPackageTests(unittest.TestCase):
 
     def test_manifest_initializes_floating_ui_in_cards_without_sidebar(self):
         manifest = json.loads((ROOT / "widget" / "manifest.json").read_text("utf-8"))
-        self.assertEqual(manifest["widget"]["version"], "3.0.13")
+        self.assertEqual(manifest["widget"]["version"], "3.0.16")
         self.assertEqual(
             manifest["locations"],
             [
@@ -90,10 +90,10 @@ class WidgetPackageTests(unittest.TestCase):
                 "ccard-0",
                 "comcard-0",
                 "settings",
-                "advanced_settings",
                 "everywhere",
             ],
         )
+        self.assertNotIn("advanced", manifest)
 
     def test_validator_requires_widget_constructor_to_return_instance(self):
         entries = self.entries()
@@ -148,9 +148,9 @@ class WidgetPackageTests(unittest.TestCase):
         entries = self.entries()
         entries["script.js"] = (
             entries["script.js"].replace(
-                b"'./reports/controller.js?v=3.0.13'", b"'./reports/missing.js?v=3.0.13'"
+                b"'./reports/controller.js?v=3.0.16'", b"'./reports/missing.js?v=3.0.16'"
             )
-            + b"\n// './reports/controller.js?v=3.0.13'\n"
+            + b"\n// './reports/controller.js?v=3.0.16'\n"
         )
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
@@ -168,8 +168,8 @@ class WidgetPackageTests(unittest.TestCase):
     def test_validator_rejects_report_dependency_only_inside_amd_array_comment(self):
         entries = self.entries()
         entries["script.js"] = entries["script.js"].replace(
-            b"'./reports/controller.js?v=3.0.13'",
-            b"'./reports/missing.js?v=3.0.13', /* './reports/controller.js?v=3.0.13' */",
+            b"'./reports/controller.js?v=3.0.16'",
+            b"'./reports/missing.js?v=3.0.16', /* './reports/controller.js?v=3.0.16' */",
             1,
         )
         validator = WidgetValidator(self.make_zip(entries))

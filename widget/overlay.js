@@ -38,6 +38,12 @@
             panel.className = 'timesheet-overlay__panel';
             var permitted = snapshot.status === 'finished' && snapshot.restart_allowed ?
                 [['start-work', 'Начать рабочий день']] : actions[snapshot.status];
+            if (blocked && snapshot.status === 'finished' && !permitted.length) {
+                var message = doc.createElement('p');
+                message.className = 'timesheet-overlay__message';
+                message.textContent = 'Рабочий день завершён. Для повторного начала требуется разрешение администратора.';
+                panel.appendChild(message);
+            }
             permitted.forEach(function(item) {
                 var button = doc.createElement('button');
                 button.type = 'button';
@@ -53,6 +59,8 @@
             if (blocked) {
                 trap = function(event) {
                     if (!host) return;
+                    if (event.target && typeof event.target.closest === 'function' &&
+                        event.target.closest('.ts-monitoring-widget, .ts-reports-widget')) return;
                     event.stopImmediatePropagation();
                     var buttons = panel.querySelectorAll('button');
                     var first = buttons[0] || panel;
