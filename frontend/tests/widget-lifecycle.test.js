@@ -80,8 +80,8 @@ function boot(options = {}) {
   };
   window.eval(widgetSource);
   assert.deepEqual(moduleIds, [
-    'jquery', './settings/settings.js', './timesheet/controller.js', './overlay.js', './activity-tracker.js',
-    './monitoring/timeline.js', './monitoring/activity-modal.js', './monitoring/dashboard.js', './reports/controller.js',
+    'jquery', './settings/settings.js?v=3.0.13', './timesheet/controller.js?v=3.0.13', './overlay.js?v=3.0.13', './activity-tracker.js?v=3.0.13',
+    './monitoring/timeline.js?v=3.0.13', './monitoring/activity-modal.js?v=3.0.13', './monitoring/dashboard.js?v=3.0.13', './reports/controller.js?v=3.0.13',
   ]);
   const requests = [];
   const widget = new Widget();
@@ -150,7 +150,7 @@ test('settings callback leaves native install form and advancedSettings owns onl
   widget.callbacks.advancedSettings();
   await widget.settingsController.ready;
   assert.equal(document.querySelectorAll('[role=tab]').length, 2);
-  assert.equal(document.querySelectorAll('.timesheet-settings__save').length, 0);
+  assert.equal(document.querySelectorAll('.timesheet-settings__save').length, 1);
   assert.ok(document.querySelector('#list_page_holder .timesheet-settings'));
   assert.ok(document.querySelector('link[href="/widgets/timesheet/settings/settings.css?v=3.0.2"]'));
   assert.ok(document.querySelector('#amo-owned'));
@@ -159,7 +159,7 @@ test('settings callback leaves native install form and advancedSettings owns onl
   assert.equal('headers' in requests[0], false);
 });
 
-test('amoCRM onSave is the only editor save action and adopts the canonical response', async () => {
+test('amoCRM onSave remains compatible and adopts the canonical response', async () => {
   let finishSave;
   const pending = new Promise((resolve) => { finishSave = resolve; });
   const { document, widget, requests } = boot({ save: pending });
@@ -174,7 +174,7 @@ test('amoCRM onSave is the only editor save action and adopts the canonical resp
   const group = document.querySelector('[data-user-id="101"] [data-field="group_ref"]');
   group.value = 'id:10';
   group.dispatchEvent(new document.defaultView.Event('change', { bubbles: true }));
-  assert.equal(document.querySelector('.timesheet-settings__save'), null);
+  assert.ok(document.querySelector('.timesheet-settings__save'));
   const callbackSave = widget.callbacks.onSave();
   assert.equal(requests.length, 2);
   assert.equal(requests[1].method, 'PUT');

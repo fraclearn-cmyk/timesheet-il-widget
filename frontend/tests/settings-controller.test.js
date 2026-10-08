@@ -47,7 +47,7 @@ function setup(data = snapshot(), transport = {}) {
   return { dom, root, controller, saves };
 }
 
-test('mount renders exactly two tabs, no embedded save action, and treats server strings as text', async () => {
+test('mount renders two tabs, an explicit save action, and treats server strings as text', async () => {
   const data = snapshot();
   data.users[0].name = '<img src=x onerror=alert(1)>';
   data.groups[0].name = '<script>alert(1)</script>';
@@ -57,7 +57,7 @@ test('mount renders exactly two tabs, no embedded save action, and treats server
   assert.equal(root.querySelector('img, script'), null);
   assert.match(root.textContent, /<img src=x/);
   assert.match(root.textContent, /<script>alert/);
-  assert.equal(root.querySelectorAll('.timesheet-settings__save').length, 0);
+  assert.equal(root.querySelectorAll('.timesheet-settings__save').length, 1);
 });
 
 test('hide_widget does not change track_time and serializes all visible users', async () => {
@@ -215,13 +215,29 @@ test('destroy removes owned UI and ignores late loading response', async () => {
   assert.equal(root.querySelector('.timesheet-settings'), null);
 });
 
-test('HTML mounting template has two tabs and no embedded save action', () => {
+test('HTML mounting template has two tabs and an explicit save action', () => {
   const html = readFileSync(resolve(__dirname, '../settings/settings.html'), 'utf8');
   const dom = new JSDOM(html);
   const root = dom.window.document.querySelector('.timesheet-settings');
   assert.ok(root);
   assert.deepEqual([...root.querySelectorAll('[role=tab]')].map((tab) => tab.textContent.trim()), ['Пользователи', 'Настройки']);
-  assert.equal(root.querySelectorAll('.timesheet-settings__save').length, 0);
+  assert.equal(root.querySelectorAll('.timesheet-settings__save').length, 1);
+});
+
+test('explicit save action persists the current draft and shows success', async () => {
+  const canonical = snapshot();
+  canonical.revision = 4;
+  const { root, controller, saves } = setup(snapshot(), {
+    save: (payload) => { saves.push(payload); return Promise.resolve(canonical); },
+  });
+  await controller.ready;
+  controller.setUser(101, { track_time: true, group_ref: 'id:10' });
+  root.querySelector('.timesheet-settings__save').click();
+  await new Promise(setImmediate);
+  await new Promise(setImmediate);
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].users[0].track_time, true);
+  assert.match(root.querySelector('.timesheet-settings__message').textContent, /сохранены/i);
 });
 
 test('rate limit leaves draft in place and bounds retry message', async () => {
@@ -340,17 +356,17 @@ test('pending host-triggered save locks every editable control until the canonic
   await controller.ready;
   controller.setSupportPhone('before');
   const pending = controller.save();
-  const editableControls = [...root.querySelectorAll('input, select, .timesheet-settings__add-group')];
+  const editableControls = [...root.querySelectorAll('input, select, .timesheet-settings__add-group, .timesheet-settings__save')];
   assert.ok(editableControls.length > 0);
   assert.deepEqual(editableControls.map((control) => control.disabled), editableControls.map(() => true));
-  assert.equal(root.querySelector('.timesheet-settings__save'), null);
+  assert.equal(root.querySelector('.timesheet-settings__save').disabled, true);
   assert.throws(() => controller.setSupportPhone('after'), /saving/i);
   assert.throws(() => controller.setUser(101, { hide_widget: true }), /saving/i);
   assert.equal(sent.settings.support_phone, 'before');
   resolveSave(canonical);
   await pending;
   assert.equal(controller.serialize().settings.support_phone, 'before');
-  const unlockedControls = [...root.querySelectorAll('input, select, .timesheet-settings__add-group')];
+  const unlockedControls = [...root.querySelectorAll('input, select, .timesheet-settings__add-group, .timesheet-settings__save')];
   assert.deepEqual(unlockedControls.map((control) => control.disabled), unlockedControls.map(() => false));
 });
 

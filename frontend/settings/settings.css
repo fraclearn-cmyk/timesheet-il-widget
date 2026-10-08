@@ -126,6 +126,28 @@
   padding: 7px 12px;
 }
 
+.timesheet-settings .timesheet-settings__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.timesheet-settings .timesheet-settings__save {
+  background: #2f80ed;
+  border: 1px solid #2f80ed;
+  border-radius: 3px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 8px 16px;
+}
+
+.timesheet-settings .timesheet-settings__save:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .timesheet-settings .timesheet-settings__message { color: #c43d3d; margin: 12px 0; min-height: 1.4em; }
 
 @media (max-width: 800px) {

@@ -208,15 +208,16 @@ class WidgetValidator:
                             "script.js widget constructor must return this"
                         )
                     dependencies = amd_dependencies(text["script.js"])
+                    widget_version = manifest.get("widget", {}).get("version", "")
                     for dependency, member in (
-                        ("./settings/settings.js", "settings/settings.js"),
-                        ("./timesheet/controller.js", "timesheet/controller.js"),
-                        ("./activity-tracker.js", "activity-tracker.js"),
-                        ("./overlay.js", "overlay.js"),
-                        ("./monitoring/timeline.js", "monitoring/timeline.js"),
-                        ("./monitoring/activity-modal.js", "monitoring/activity-modal.js"),
-                        ("./monitoring/dashboard.js", "monitoring/dashboard.js"),
-                        ("./reports/controller.js", "reports/controller.js"),
+                        (f"./settings/settings.js?v={widget_version}", "settings/settings.js"),
+                        (f"./timesheet/controller.js?v={widget_version}", "timesheet/controller.js"),
+                        (f"./activity-tracker.js?v={widget_version}", "activity-tracker.js"),
+                        (f"./overlay.js?v={widget_version}", "overlay.js"),
+                        (f"./monitoring/timeline.js?v={widget_version}", "monitoring/timeline.js"),
+                        (f"./monitoring/activity-modal.js?v={widget_version}", "monitoring/activity-modal.js"),
+                        (f"./monitoring/dashboard.js?v={widget_version}", "monitoring/dashboard.js"),
+                        (f"./reports/controller.js?v={widget_version}", "reports/controller.js"),
                     ):
                         if dependency not in dependencies:
                             self.errors.append(f"Missing AMD dependency: {member}")

@@ -120,6 +120,19 @@
     settingsPanel.hidden = this.activeTab !== 'settings';
     this.renderSettings(settingsPanel);
     shell.append(settingsPanel);
+    var actions = node(doc, 'div', 'timesheet-settings__actions');
+    var save = node(doc, 'button', 'timesheet-settings__save', 'Сохранить настройки');
+    save.type = 'button';
+    save.addEventListener('click', function () {
+      self.save().then(function () {
+        if (self.destroyed) return;
+        self.message = 'Настройки сохранены.';
+        var currentMessage = self.root.querySelector('.timesheet-settings__message');
+        if (currentMessage) currentMessage.textContent = self.message;
+      }, function () { /* performSave already renders a safe error. */ });
+    });
+    actions.append(save);
+    shell.append(actions);
     var message = node(doc, 'div', 'timesheet-settings__message', this.message);
     message.setAttribute('role', 'alert');
     shell.append(message);
@@ -358,7 +371,7 @@
   };
   SettingsController.prototype.setEditingLocked = function (locked) {
     this.root.querySelectorAll('.timesheet-settings input, .timesheet-settings select, ' +
-      '.timesheet-settings__add-group').forEach(function (item) {
+      '.timesheet-settings__add-group, .timesheet-settings__save').forEach(function (item) {
       if (locked && !item.disabled) {
         item.disabled = true;
         item.dataset.saveLocked = 'true';
