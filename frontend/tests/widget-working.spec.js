@@ -84,6 +84,25 @@ test('employee receives no report launcher or panel', async ({ page }) => {
   await expect(page.locator('link[href*="reports/styles.css"]')).toHaveCount(0);
 });
 
+test('settings sidebar opens the full report page for an admin', async ({ page }) => {
+  await boot(page, (route) => route.fulfill({ contentType: 'text/css', body: css }), 'admin', 'working');
+  await page.evaluate(() => { window.area = 'advanced_settings'; window.widget.callbacks.advancedSettings(); });
+  await expect(page.locator('.ts-reports-page .ts-reports__title')).toHaveText('Табель');
+  await expect(page.locator('.ts-reports-page .ts-reports__controls')).toBeVisible();
+  await expect(page.locator('.ts-reports-page .ts-reports__export')).toBeEnabled();
+  await expect(page.locator('.ts-reports-widget__launcher')).toHaveCount(0);
+  expect(await page.evaluate(() => window.calls.filter((call) => call.url.includes('/team/status')).length)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.calls.filter((call) => call.url.includes('/reports/detailed')).length)).toBeGreaterThan(0);
+});
+
+test('settings sidebar keeps the report page but denies an employee', async ({ page }) => {
+  await boot(page, (route) => route.fulfill({ contentType: 'text/css', body: css }), 'employee', 'working');
+  await page.evaluate(() => { window.area = 'advanced_settings'; window.widget.callbacks.advancedSettings(); });
+  await expect(page.locator('.ts-reports-page')).toContainText('У вас нет доступа к этому разделу.');
+  await expect(page.locator('.ts-reports__export')).toHaveCount(0);
+  expect(await page.evaluate(() => window.calls.filter((call) => call.url.includes('/reports/detailed')).length)).toBe(0);
+});
+
 test('widget init loads versioned CSS before real blocking UI and removes it on destroy', async ({ page }) => {
   let release;
   const ready = new Promise((resolve) => { release = resolve; });
@@ -118,7 +137,12 @@ for (const entry of ['settings-init', 'advanced_settings-init', 'settings', 'adv
       window.widget.callbacks[entry.endsWith('-init') ? 'init' : entry]();
       window.dispatchEvent(new Event('focus'));
     }, entry);
-    await expect(page.locator('.timesheet-overlay, .timesheet-action, link[href*="/styles.css"]')).toHaveCount(0);
+    await expect(page.locator('.timesheet-overlay, .timesheet-action')).toHaveCount(0);
+    if (entry === 'advancedSettings') {
+      await expect(page.locator('.ts-reports-page, link[href*="reports/styles.css"]')).toHaveCount(2);
+    } else {
+      await expect(page.locator('link[href*="/styles.css"]')).toHaveCount(0);
+    }
     expect(await page.evaluate(() => window.widget.timesheetController === null && window.widget.removeFocusRefresh === null)).toBe(true);
     expect(await page.evaluate(() => window.calls.filter((call) => call.url.includes('/timesheet/')).length)).toBe(1);
   });

@@ -1,4 +1,6 @@
 .ts-reports { color: #243247; font: 14px/1.45 Arial, sans-serif; max-width: 100%; }
+.ts-reports-page { box-sizing: border-box; min-height: 100%; padding: 28px 32px; background: #fff; }
+.ts-reports-page .ts-reports { max-width: 1280px; margin: 0 auto; }
 .ts-reports__title { margin: 0 0 16px; font-size: 22px; }
 .ts-reports__controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin-bottom: 16px; }
 .ts-reports__field { display: flex; flex-direction: column; gap: 4px; }

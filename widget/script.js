@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings.js?v=3.0.16', './timesheet/controller.js?v=3.0.16', './overlay.js?v=3.0.16', './activity-tracker.js?v=3.0.16', './monitoring/timeline.js?v=3.0.16', './monitoring/activity-modal.js?v=3.0.16', './monitoring/dashboard.js?v=3.0.16', './reports/controller.js?v=3.0.16'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
+define(['jquery', './settings/settings.js?v=3.0.18', './timesheet/controller.js?v=3.0.18', './overlay.js?v=3.0.18', './activity-tracker.js?v=3.0.18', './monitoring/timeline.js?v=3.0.18', './monitoring/activity-modal.js?v=3.0.18', './monitoring/dashboard.js?v=3.0.18', './reports/controller.js?v=3.0.18'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
     if (ActivityModal && typeof ActivityModal.setTimeline === 'function') ActivityModal.setTimeline(Timeline);
     if (MonitoringDashboard && typeof MonitoringDashboard.setActivityModal === 'function') MonitoringDashboard.setActivityModal(ActivityModal);
 
@@ -163,6 +163,29 @@ define(['jquery', './settings/settings.js?v=3.0.16', './timesheet/controller.js?
             for (var index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
             return new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         }
+        function createReportTransport(baseUrl, initialDirectory) {
+            var firstDirectory = initialDirectory || null;
+            return {
+                directory: function(signal) {
+                    if (firstDirectory) {
+                        var result = firstDirectory;
+                        firstDirectory = null;
+                        return signal && signal.aborted ? Promise.reject({ publicMessage: undefined }) : Promise.resolve(result);
+                    }
+                    return reportRequest({ url: baseUrl + '/team/status', method: 'GET', dataType: 'json', timeout: 10000 }, signal);
+                },
+                report: function(params, signal) {
+                    return reportRequest({ url: baseUrl + '/reports/detailed', method: 'GET', dataType: 'json', timeout: 10000, data: params }, signal);
+                },
+                export: function(body, signal) {
+                    var options = { url: baseUrl + '/reports/export-excel-json', method: 'POST', contentType: 'application/json',
+                        dataType: 'json', data: JSON.stringify(body), timeout: 10000 };
+                    return reportRequest(options, signal).then(function(payload) {
+                        return { blob: reportJsonBlob(payload), filename: reportJsonFilename(payload && payload.filename, body) };
+                    });
+                }
+            };
+        }
         function stopReports() {
             ++widget.reportGeneration;
             if (widget.reportRoleAbort) widget.reportRoleAbort.abort();
@@ -228,36 +251,42 @@ define(['jquery', './settings/settings.js?v=3.0.16', './timesheet/controller.js?
                 host.appendChild(panel);
                 document.body.appendChild(host);
                 widget.reportHost = host;
-                var firstDirectory = status;
                 widget.reportController = ReportsController.mount(panel, {
                     document: document,
-                    transport: {
-                        directory: function(signal) {
-                            if (firstDirectory) {
-                                var result = firstDirectory;
-                                firstDirectory = null;
-                                return signal && signal.aborted ? Promise.reject({ publicMessage: undefined }) : Promise.resolve(result);
-                            }
-                            return reportRequest({ url: baseUrl + '/team/status', method: 'GET', dataType: 'json', timeout: 10000 }, signal);
-                        },
-                        report: function(params, signal) {
-                            return reportRequest({ url: baseUrl + '/reports/detailed', method: 'GET', dataType: 'json', timeout: 10000, data: params }, signal);
-                        },
-                        export: function(body, signal) {
-                            var request;
-                            var options = { url: baseUrl + '/reports/export-excel-json', method: 'POST', contentType: 'application/json',
-                                dataType: 'json', data: JSON.stringify(body), timeout: 10000 };
-                            return reportRequest(options, signal, function(value) { request = value; }).then(function(payload) {
-                                return { blob: reportJsonBlob(payload), filename: reportJsonFilename(payload && payload.filename, body) };
-                            });
-                        }
-                    },
+                    transport: createReportTransport(baseUrl, status),
                     now: function() { return new Date(); }
                 });
                 if (widget.reportController.ready) widget.reportController.ready.catch(function() {});
             }).catch(function() {
                 if (generation === widget.reportGeneration) stopReports();
             });
+        }
+        function mountReportPage(holder) {
+            stopReports();
+            if (!holder) return false;
+            var host = document.createElement('main');
+            host.className = 'ts-reports-page';
+            holder.appendChild(host);
+            widget.reportHost = host;
+            var baseUrl = apiUrl(widget);
+            if (!baseUrl) { host.textContent = 'Укажите URL API в карточке установленного виджета.'; return true; }
+            var settings = widget.get_settings();
+            if (!ReportsController || typeof ReportsController.mount !== 'function' || !settings.path) {
+                host.textContent = 'Не удалось открыть табель. Обновите страницу.';
+                return true;
+            }
+            var style = document.createElement('link');
+            style.rel = 'stylesheet';
+            style.href = String(settings.path).replace(/\/?$/, '/') + 'reports/styles.css?v=' + encodeURIComponent(settings.version || '');
+            document.head.appendChild(style);
+            widget.reportStyle = style;
+            widget.reportController = ReportsController.mount(host, {
+                document: document,
+                transport: createReportTransport(baseUrl, null),
+                now: function() { return new Date(); }
+            });
+            if (widget.reportController.ready) widget.reportController.ready.catch(function() {});
+            return true;
         }
         function startMonitoring(baseUrl, settings) {
             stopMonitoring();
@@ -411,15 +440,10 @@ define(['jquery', './settings/settings.js?v=3.0.16', './timesheet/controller.js?
                 stopTimesheet();
                 if (typeof widget.system !== 'function' || widget.system().area !== 'advanced_settings') return false;
                 var holder = document.getElementById('list_page_holder');
-                return mountSettings(holder);
+                return mountReportPage(holder);
             },
             onSave: function() {
-                if (typeof widget.system !== 'function' || ['settings', 'advanced_settings'].indexOf(widget.system().area) === -1) return true;
-                var controller = widget.settingsController;
-                return !controller ? true : (controller.snapshot ? controller.save() : controller.ready.then(
-                    function() { return controller.save(); },
-                    function() { return true; }
-                ));
+                return true;
             },
             destroy: function() {
                 removeSettings();

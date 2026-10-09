@@ -183,13 +183,14 @@ class WidgetValidator:
                         "ccard-0",
                         "comcard-0",
                         "settings",
+                        "advanced_settings",
                         "everywhere",
                     ]:
                         self.errors.append(
-                            "manifest.json locations must initialize cards without the sidebar and include settings and everywhere"
+                            "manifest.json locations must initialize cards, amoMarket settings, the report page and everywhere"
                         )
-                    if "advanced" in manifest:
-                        self.errors.append("manifest.json must not expose a separate advanced settings page")
+                    if manifest.get("advanced") != {"title": "advanced.title"}:
+                        self.errors.append("manifest.json must expose the role-scoped report page")
                 if "script.js" in text and not re.search(r"settings\s*:\s*function", text["script.js"]):
                     self.errors.append("script.js must define settings callback")
                 if "script.js" in text:

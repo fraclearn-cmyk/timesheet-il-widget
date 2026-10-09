@@ -18,8 +18,8 @@ function snapshot(revision = 3) {
   };
 }
 
-test('advanced settings smoke saves through the explicit page action', async () => {
-  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="list_page_holder"></div></body></html>', {
+test('amoMarket settings smoke saves through the explicit page action', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><form><div class="widget_settings_block"><div id="widget_settings__fields_wrapper"></div></div></form></body></html>', {
     url: 'https://account.amocrm.ru', runScripts: 'outside-only',
   });
   const { window } = dom;
@@ -33,7 +33,7 @@ test('advanced settings smoke saves through the explicit page action', async () 
   window.eval(widgetSource);
   const requests = [];
   const widget = new Widget();
-  widget.system = () => ({ area: 'advanced_settings' });
+  widget.system = () => ({ area: 'settings' });
   widget.get_settings = () => ({ api_url: 'https://api.example.test/api/v1', path: '/widgets/timesheet/', version: '3.0.2' });
   widget.removeOverlay = () => {};
   widget.$authorizedAjax = (request) => {
@@ -52,7 +52,7 @@ test('advanced settings smoke saves through the explicit page action', async () 
     canonical.users[0] = { ...canonical.users[0], track_time: true, group_id: 20 };
     return Promise.resolve(canonical);
   };
-  widget.callbacks.advancedSettings();
+  widget.callbacks.settings();
   await widget.settingsController.ready;
   assert.deepEqual([...document.querySelectorAll('[role=tab]')].map((tab) => tab.textContent), ['Пользователи', 'Настройки']);
   assert.equal(document.querySelectorAll('.timesheet-settings__save').length, 1);

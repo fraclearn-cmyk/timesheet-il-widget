@@ -82,8 +82,8 @@ function boot(options = {}) {
   };
   window.eval(widgetSource);
   assert.deepEqual(moduleIds, [
-    'jquery', './settings/settings.js?v=3.0.16', './timesheet/controller.js?v=3.0.16', './overlay.js?v=3.0.16', './activity-tracker.js?v=3.0.16',
-    './monitoring/timeline.js?v=3.0.16', './monitoring/activity-modal.js?v=3.0.16', './monitoring/dashboard.js?v=3.0.16', './reports/controller.js?v=3.0.16',
+    'jquery', './settings/settings.js?v=3.0.18', './timesheet/controller.js?v=3.0.18', './overlay.js?v=3.0.18', './activity-tracker.js?v=3.0.18',
+    './monitoring/timeline.js?v=3.0.18', './monitoring/activity-modal.js?v=3.0.18', './monitoring/dashboard.js?v=3.0.18', './reports/controller.js?v=3.0.18',
   ]);
   const requests = [];
   const widget = new Widget();
@@ -130,9 +130,9 @@ test('init in settings area does not start working overlay', () => {
 
 test('manifest enables working locations', () => {
   assert.deepEqual(manifest.locations, [
-    'lcard-0', 'ccard-0', 'comcard-0', 'settings', 'everywhere',
+    'lcard-0', 'ccard-0', 'comcard-0', 'settings', 'advanced_settings', 'everywhere',
   ]);
-  assert.equal('advanced' in manifest, false);
+  assert.deepEqual(manifest.advanced, { title: 'advanced.title' });
 });
 
 test('settings script registers an AMD module for the widget dependency', () => {
@@ -162,10 +162,8 @@ test('settings callback mounts the editor inside the installed widget card and p
   assert.equal('headers' in requests[0], false);
 });
 
-test('amoCRM onSave remains compatible and adopts the canonical response', async () => {
-  let finishSave;
-  const pending = new Promise((resolve) => { finishSave = resolve; });
-  const { document, widget, requests } = boot({ area: 'settings', save: pending });
+test('amoCRM onSave leaves custom settings to the explicit save action', async () => {
+  const { document, widget, requests } = boot({ area: 'settings' });
   widget.callbacks.settings();
   await widget.settingsController.ready;
   const phone = document.querySelector('[data-field="support_phone"]');
@@ -178,22 +176,9 @@ test('amoCRM onSave remains compatible and adopts the canonical response', async
   group.value = 'id:10';
   group.dispatchEvent(new document.defaultView.Event('change', { bubbles: true }));
   assert.ok(document.querySelector('.timesheet-settings__save'));
-  const callbackSave = widget.callbacks.onSave();
-  assert.equal(requests.length, 2);
-  assert.equal(requests[1].method, 'PUT');
-  assert.equal(requests[1].contentType, 'application/json');
-  assert.equal(requests[1].dataType, 'json');
-  assert.equal('headers' in requests[1], false);
-  const payload = JSON.parse(requests[1].data);
-  assert.equal(payload.settings.support_phone, '+375 29 000-00-00');
-  assert.deepEqual(payload.users[0], { amocrm_user_id: 101, track_time: true, hide_widget: false, group_ref: 'id:10' });
-  assert.deepEqual(Object.keys(payload), ['revision', 'settings', 'groups', 'users']);
-  const canonical = snapshot();
-  canonical.revision = 4;
-  canonical.settings.support_phone = '+375 29 000-00-00';
-  finishSave(canonical);
-  await callbackSave;
-  assert.equal(widget.settingsController.serialize().revision, 4);
+  assert.equal(await widget.callbacks.onSave(), true);
+  assert.deepEqual(requests.map((request) => request.method), ['GET']);
+  assert.equal(widget.settingsController.serialize().settings.support_phone, '+375 29 000-00-00');
 });
 
 test('destroy removes settings without deleting amoCRM-owned DOM', async () => {
@@ -438,44 +423,58 @@ test('missing API URL shows a safe state without issuing a request', () => {
 });
 
 test('authorizedAjax jqXHR Retry-After reaches the editor without losing its draft', async () => {
-  const { document, widget, requests } = boot({ save: {
+  const { document, widget, requests } = boot({ area: 'settings', save: {
     then(_resolve, reject) {
       reject({ status: 429, getResponseHeader: (name) => name === 'Retry-After' ? '30' : null });
     },
   } });
-  widget.callbacks.advancedSettings();
+  widget.callbacks.settings();
   await widget.settingsController.ready;
   widget.settingsController.setSupportPhone('draft');
-  await assert.rejects(widget.callbacks.onSave());
+  await assert.rejects(widget.settingsController.save());
   assert.equal(requests.length, 2);
   assert.equal(widget.settingsController.serialize().settings.support_phone, 'draft');
   assert.match(document.querySelector('.timesheet-settings').textContent, /30 секунд/);
 });
 
-test('reopening advanced settings replaces only the prior owned editor', async () => {
+test('advanced settings mounts one full report page and replaces it cleanly', async () => {
   const { document, widget, requests } = boot();
   widget.callbacks.advancedSettings();
-  await widget.settingsController.ready;
-  const original = widget.settingsController;
+  await widget.reportController.ready;
   widget.callbacks.advancedSettings();
-  await widget.settingsController.ready;
-  assert.equal(original.destroyed, true);
-  assert.equal(document.querySelectorAll('.timesheet-settings').length, 1);
-  assert.equal(document.querySelectorAll('link[href*="settings/settings.css"]').length, 1);
-  assert.equal(requests.filter((request) => request.method === 'GET').length, 2);
+  await widget.reportController.ready;
+  assert.equal(document.querySelectorAll('.ts-reports-page').length, 1);
+  assert.equal(document.querySelectorAll('.ts-reports').length, 1);
+  assert.equal(document.querySelectorAll('link[href*="reports/styles.css"]').length, 1);
+  assert.equal(document.querySelectorAll('.timesheet-settings').length, 0);
+  assert.equal(requests.filter((request) => request.url.endsWith('/team/status')).length, 2);
+  assert.equal(requests.filter((request) => request.url.endsWith('/reports/detailed')).length, 2);
   assert.ok(document.querySelector('#amo-owned'));
 });
 
-test('onSave waits for an in-progress settings load before saving', async () => {
+test('advanced report page applies role response and denies an employee', async () => {
+  const denied = response(); denied.viewer.role = 'employee';
+  const { document, widget, requests } = boot({ monitoringStatus: denied });
+  widget.callbacks.advancedSettings();
+  await widget.reportController.ready;
+  assert.match(document.querySelector('.ts-reports-page').textContent, /нет доступа/i);
+  assert.equal(document.querySelector('.ts-reports__export'), null);
+  assert.equal(requests.filter((request) => request.url.endsWith('/reports/detailed')).length, 0);
+  assert.equal(await widget.callbacks.onSave(), true);
+  assert.deepEqual(requests.map((request) => request.method), ['GET']);
+});
+
+test('onSave does not block a native URL change while custom settings load', async () => {
   let finishLoad;
   const load = new Promise((resolve) => { finishLoad = resolve; });
-  const { widget, requests } = boot({ load });
-  widget.callbacks.advancedSettings();
+  const { widget, requests } = boot({ area: 'settings', load });
+  widget.callbacks.settings();
   const saving = widget.callbacks.onSave();
   assert.equal(requests.length, 1);
+  assert.equal(await saving, true);
+  assert.deepEqual(requests.map((request) => request.method), ['GET']);
   finishLoad(snapshot());
-  await saving;
-  assert.deepEqual(requests.map((request) => request.method), ['GET', 'PUT']);
+  await widget.settingsController.ready;
 });
 
 test('native amoCRM settings remain saveable when the previous API address is unavailable', async () => {
