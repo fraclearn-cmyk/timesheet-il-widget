@@ -42,7 +42,9 @@ from app.schemas.report import (
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-def _render_timesheet_excel(request: ReportExcelRequest, db: Session, context: RequestContext):
+def _render_timesheet_excel(
+    request: ReportExcelRequest, db: Session, context: RequestContext
+):
     try:
         rows = TimesheetReportService(db).export_rows(
             context,

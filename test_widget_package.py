@@ -104,9 +104,7 @@ class WidgetPackageTests(unittest.TestCase):
         )
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
-        self.assertIn(
-            "script.js widget constructor must return this", validator.errors
-        )
+        self.assertIn("script.js widget constructor must return this", validator.errors)
 
     def test_validator_rejects_modules_that_require_define_amd_marker(self):
         entries = self.entries()
@@ -149,7 +147,8 @@ class WidgetPackageTests(unittest.TestCase):
         entries = self.entries()
         entries["script.js"] = (
             entries["script.js"].replace(
-                b"'./reports/controller.js?v=3.0.18'", b"'./reports/missing.js?v=3.0.18'"
+                b"'./reports/controller.js?v=3.0.18'",
+                b"'./reports/missing.js?v=3.0.18'",
             )
             + b"\n// './reports/controller.js?v=3.0.18'\n"
         )

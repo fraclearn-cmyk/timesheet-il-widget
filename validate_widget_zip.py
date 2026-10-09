@@ -190,8 +190,12 @@ class WidgetValidator:
                             "manifest.json locations must initialize cards, amoMarket settings, the report page and everywhere"
                         )
                     if manifest.get("advanced") != {"title": "advanced.title"}:
-                        self.errors.append("manifest.json must expose the role-scoped report page")
-                if "script.js" in text and not re.search(r"settings\s*:\s*function", text["script.js"]):
+                        self.errors.append(
+                            "manifest.json must expose the role-scoped report page"
+                        )
+                if "script.js" in text and not re.search(
+                    r"settings\s*:\s*function", text["script.js"]
+                ):
                     self.errors.append("script.js must define settings callback")
                 if "script.js" in text:
                     if not re.search(
@@ -204,14 +208,35 @@ class WidgetValidator:
                     dependencies = amd_dependencies(text["script.js"])
                     widget_version = manifest.get("widget", {}).get("version", "")
                     for dependency, member in (
-                        (f"./settings/settings.js?v={widget_version}", "settings/settings.js"),
-                        (f"./timesheet/controller.js?v={widget_version}", "timesheet/controller.js"),
-                        (f"./activity-tracker.js?v={widget_version}", "activity-tracker.js"),
+                        (
+                            f"./settings/settings.js?v={widget_version}",
+                            "settings/settings.js",
+                        ),
+                        (
+                            f"./timesheet/controller.js?v={widget_version}",
+                            "timesheet/controller.js",
+                        ),
+                        (
+                            f"./activity-tracker.js?v={widget_version}",
+                            "activity-tracker.js",
+                        ),
                         (f"./overlay.js?v={widget_version}", "overlay.js"),
-                        (f"./monitoring/timeline.js?v={widget_version}", "monitoring/timeline.js"),
-                        (f"./monitoring/activity-modal.js?v={widget_version}", "monitoring/activity-modal.js"),
-                        (f"./monitoring/dashboard.js?v={widget_version}", "monitoring/dashboard.js"),
-                        (f"./reports/controller.js?v={widget_version}", "reports/controller.js"),
+                        (
+                            f"./monitoring/timeline.js?v={widget_version}",
+                            "monitoring/timeline.js",
+                        ),
+                        (
+                            f"./monitoring/activity-modal.js?v={widget_version}",
+                            "monitoring/activity-modal.js",
+                        ),
+                        (
+                            f"./monitoring/dashboard.js?v={widget_version}",
+                            "monitoring/dashboard.js",
+                        ),
+                        (
+                            f"./reports/controller.js?v={widget_version}",
+                            "reports/controller.js",
+                        ),
                     ):
                         if dependency not in dependencies:
                             self.errors.append(f"Missing AMD dependency: {member}")
@@ -240,7 +265,9 @@ class WidgetValidator:
                                 f"Scanner-visible CommonJS dependency in {module_name}"
                             )
                     if "ActivityModal.setTimeline(Timeline)" not in text["script.js"]:
-                        self.errors.append("script.js must inject Timeline into ActivityModal")
+                        self.errors.append(
+                            "script.js must inject Timeline into ActivityModal"
+                        )
                     if (
                         "MonitoringDashboard.setActivityModal(ActivityModal)"
                         not in text["script.js"]
