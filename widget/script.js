@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings.js?v=3.0.18', './timesheet/controller.js?v=3.0.18', './overlay.js?v=3.0.18', './activity-tracker.js?v=3.0.18', './monitoring/timeline.js?v=3.0.18', './monitoring/activity-modal.js?v=3.0.18', './monitoring/dashboard.js?v=3.0.18', './reports/controller.js?v=3.0.18'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
+define(['jquery', './settings/settings.js?v=3.0.19', './timesheet/controller.js?v=3.0.19', './overlay.js?v=3.0.19', './activity-tracker.js?v=3.0.19', './monitoring/timeline.js?v=3.0.19', './monitoring/activity-modal.js?v=3.0.19', './monitoring/dashboard.js?v=3.0.19', './reports/controller.js?v=3.0.19'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
     if (ActivityModal && typeof ActivityModal.setTimeline === 'function') ActivityModal.setTimeline(Timeline);
     if (MonitoringDashboard && typeof MonitoringDashboard.setActivityModal === 'function') MonitoringDashboard.setActivityModal(ActivityModal);
 
@@ -422,7 +422,12 @@ define(['jquery', './settings/settings.js?v=3.0.18', './timesheet/controller.js?
         }
 
         this.callbacks = {
-            render: function() { return true; },
+            render: function() {
+                var area = typeof widget.system === 'function' && widget.system().area;
+                if (area === 'settings' || area === 'advanced_settings') { stopTimesheet(); return true; }
+                startTimesheet();
+                return true;
+            },
             init: function() {
                 var area = typeof widget.system === 'function' && widget.system().area;
                 if (area === 'settings' || area === 'advanced_settings') { stopTimesheet(); return true; }

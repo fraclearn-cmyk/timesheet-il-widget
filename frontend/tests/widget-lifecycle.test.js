@@ -82,8 +82,8 @@ function boot(options = {}) {
   };
   window.eval(widgetSource);
   assert.deepEqual(moduleIds, [
-    'jquery', './settings/settings.js?v=3.0.18', './timesheet/controller.js?v=3.0.18', './overlay.js?v=3.0.18', './activity-tracker.js?v=3.0.18',
-    './monitoring/timeline.js?v=3.0.18', './monitoring/activity-modal.js?v=3.0.18', './monitoring/dashboard.js?v=3.0.18', './reports/controller.js?v=3.0.18',
+    'jquery', './settings/settings.js?v=3.0.19', './timesheet/controller.js?v=3.0.19', './overlay.js?v=3.0.19', './activity-tracker.js?v=3.0.19',
+    './monitoring/timeline.js?v=3.0.19', './monitoring/activity-modal.js?v=3.0.19', './monitoring/dashboard.js?v=3.0.19', './reports/controller.js?v=3.0.19',
   ]);
   const requests = [];
   const widget = new Widget();
@@ -396,6 +396,24 @@ test('repeated working init replaces its controller and focus refresh listener',
   dom.window.dispatchEvent(new dom.window.Event('focus'));
   await new Promise(setImmediate);
   assert.equal(requests.filter((request) => request.url.endsWith('/timesheet/my-status')).length, 3);
+});
+
+test('amoCRM render restores working controls removed during an internal route change', async () => {
+  const { document, widget } = boot({ area: 'lcard', load: Promise.resolve({
+    session_id: null, status: 'not_started', started_at: null, ended_at: null,
+    break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false,
+  }) });
+  widget.callbacks.init();
+  await new Promise(setImmediate);
+  assert.equal(document.querySelectorAll('[data-action="start-work"]').length, 1);
+  document.querySelector('.timesheet-overlay').remove();
+  document.querySelector('.ts-monitoring-widget').remove();
+
+  widget.callbacks.render();
+  await new Promise(setImmediate);
+
+  assert.equal(document.querySelectorAll('[data-action="start-work"]').length, 1);
+  assert.equal(document.querySelectorAll('.ts-monitoring-widget').length, 1);
 });
 
 test('API outage after a visible break removes its overlay and work buttons', async () => {
