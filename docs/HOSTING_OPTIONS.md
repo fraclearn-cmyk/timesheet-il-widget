@@ -8,10 +8,13 @@
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveAmoCrm
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop-local.ps1
 ```
 
 Запуск создаёт отдельную PostgreSQL 15 на `127.0.0.1:55432`, применяет миграции до `014` и поднимает API на `http://127.0.0.1:8000`. Сбор amoCRM отключён, чтобы локальный smoke не изменял реальные данные.
+
+Обычный запуск подставляет безопасный фиктивный OAuth redirect и подходит для локальных тестов. Ключ `-LiveAmoCrm` нужен для проверки установленного виджета в настоящем аккаунте amoCRM: он оставляет OAuth redirect из `backend/.env`, чтобы JWT виджета проходил проверку. Перед таким запуском нужно проверить `AMOCRM_LOCAL_ADDRESS`: это текущий локальный IPv4 компьютера, через который backend обращается к amoCRM без VPN. Секреты и временные адреса туннеля остаются только в `backend/.env` и не добавляются в Git.
 
 Для проверки из amoCRM нужен публичный HTTPS-адрес. Бесплатный Cloudflare Quick Tunnel выдаёт временный `trycloudflare.com` URL без аккаунта и домена. Он предназначен только для разработки, меняет hostname после перезапуска, не имеет SLA и ограничен 200 одновременными запросами. Для стабильного адреса нужен именованный Cloudflare Tunnel и собственный домен.
 

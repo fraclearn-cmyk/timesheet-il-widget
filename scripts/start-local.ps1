@@ -1,6 +1,7 @@
 param(
     [int]$BackendPort = 8000,
-    [int]$PostgresPort = 55432
+    [int]$PostgresPort = 55432,
+    [switch]$LiveAmoCrm
 )
 
 $ErrorActionPreference = "Stop"
@@ -99,7 +100,11 @@ $env:DATABASE_URL = $databaseUrl
 $env:ENVIRONMENT = "development"
 $env:DEBUG = "true"
 $env:INGESTION_WORKER_ENABLED = "false"
-$env:AMOCRM_REDIRECT_URI = "https://localhost.invalid/api/v1/auth/callback"
+if ($LiveAmoCrm) {
+    Remove-Item Env:AMOCRM_REDIRECT_URI -ErrorAction SilentlyContinue
+} else {
+    $env:AMOCRM_REDIRECT_URI = "https://localhost.invalid/api/v1/auth/callback"
+}
 $env:ALLOWED_ORIGINS = "[`"http://127.0.0.1:$BackendPort`",`"http://localhost:$BackendPort`"]"
 
 Push-Location $backendRoot
@@ -137,6 +142,9 @@ for ($attempt = 1; $attempt -le 30; $attempt++) {
             Write-Output "API: http://127.0.0.1:$BackendPort"
             Write-Output "Swagger: http://127.0.0.1:$BackendPort/api/docs"
             Write-Output "PostgreSQL: 127.0.0.1:$PostgresPort / timesheet_local"
+            if ($LiveAmoCrm) {
+                Write-Output "amoCRM widget authentication uses the redirect URI from backend/.env."
+            }
             Write-Output "amoCRM ingestion is disabled for this safe local run."
             exit 0
         }
