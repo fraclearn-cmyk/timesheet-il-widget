@@ -5,7 +5,8 @@ test.use({ channel: 'chrome' });
 const source = resolve(__dirname, '../../widget/overlay.js');
 const style = resolve(__dirname, '../../widget/styles.css');
 const base = { session_id: 1, started_at: '2026-09-22T08:00:00Z', ended_at: null,
-  break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false };
+  break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false,
+  late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null };
 
 test.beforeEach(async ({ page }) => {
   await page.setContent('<button id="crm-action" onclick="window.crmClicks=(window.crmClicks||0)+1">CRM action</button>' +

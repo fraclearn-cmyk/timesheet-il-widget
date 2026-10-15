@@ -118,6 +118,52 @@ test('working init without API URL remains fail-open and keeps settings editor o
   assert.equal(requests.length, 0);
 });
 
+test('explanation draft and detached handlers are removed on settings context switch and destroy', async () => {
+  for (const context of ['settings', 'destroy']) {
+    const late = { session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z', ended_at: null,
+      break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false,
+      late_reason_required: true, late_reason_kind: 'break_return', late_minutes: 5, break_sequence: 1 };
+    const { document, widget, requests } = boot({ area: 'lcard', load: Promise.resolve(late) });
+    widget.callbacks.init(); await new Promise(setImmediate);
+    const input = document.querySelector('textarea');
+    assert.ok(input, 'required explanation field');
+    const button = document.querySelector('[data-action=end-break]');
+    input.value = 'private draft';
+    input.dispatchEvent(new document.defaultView.Event('input', { bubbles: true }));
+    widget.callbacks[context]();
+    assert.equal(input.value, '');
+    assert.equal(document.querySelector('.timesheet-overlay'), null);
+    const count = requests.length;
+    button.click();
+    input.dispatchEvent(new document.defaultView.Event('input', { bubbles: true }));
+    await new Promise(setImmediate);
+    assert.equal(requests.length, count);
+    if (context === 'settings') {
+      widget.callbacks.init(); await new Promise(setImmediate);
+      assert.equal(document.querySelector('textarea').value, '');
+    }
+  }
+});
+
+test('widget forwards reason to authorized POST while finish-day stays independent of the draft', async () => {
+  const late = { session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z', ended_at: null,
+    break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false,
+    late_reason_required: true, late_reason_kind: 'break_return', late_minutes: 5, break_sequence: 1 };
+  const { document, widget, requests } = boot({ area: 'lcard', load: Promise.resolve(late), save: Promise.resolve(late) });
+  widget.callbacks.init(); await new Promise(setImmediate);
+  const input = document.querySelector('textarea');
+  assert.ok(input, 'required explanation field');
+  assert.equal(document.querySelector('[data-action=finish-work]').disabled, false);
+  input.value = '  задержался  ';
+  input.dispatchEvent(new document.defaultView.Event('input', { bubbles: true }));
+  document.querySelector('[data-action=end-break]').click(); await new Promise(setImmediate);
+  const posted = requests.find((request) => request.url.endsWith('/timesheet/end-break'));
+  assert.equal(JSON.parse(posted.data).reason, 'задержался');
+  document.querySelector('[data-action=finish-work]').click(); await new Promise(setImmediate);
+  const finished = requests.find((request) => request.url.endsWith('/timesheet/finish-work'));
+  assert.equal('reason' in JSON.parse(finished.data), false);
+});
+
 test('init in settings area does not start working overlay', () => {
   for (const area of ['settings', 'advanced_settings']) {
     const { document, widget, requests } = boot({ area });
@@ -195,7 +241,7 @@ test('destroy removes settings without deleting amoCRM-owned DOM', async () => {
 test('working init uses authorized timesheet API without browser identity and refreshes on focus', async () => {
   const { dom, document, widget, requests } = boot({ area: 'lcard', load: Promise.resolve({
     session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z', ended_at: null,
-    break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false,
+    break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false, late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null,
   }) });
   widget.callbacks.init();
   await new Promise(setImmediate);
@@ -278,7 +324,7 @@ test('employee and stale preflight responses never create report DOM', async () 
 test('report mount failure removes its shell without interrupting timesheet UI', async () => {
   const { document, widget } = boot({ area: 'lcard',
     load: Promise.resolve({ session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z', ended_at: null,
-      break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false }),
+      break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false, late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null }),
     reportsController: { mount() { throw new Error('broken report'); } } });
   widget.callbacks.init(); await new Promise(setImmediate);
   assert.equal(document.querySelector('.ts-reports-widget'), null);
@@ -387,7 +433,7 @@ test('destroy aborts report role and export jqXHR without late report DOM or dow
 test('repeated working init replaces its controller and focus refresh listener', async () => {
   const { dom, widget, requests } = boot({ area: 'lcard', load: Promise.resolve({
     session_id: 7, status: 'working', started_at: '2026-09-22T08:00:00Z', ended_at: null,
-    break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false,
+    break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false, late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null,
   }) });
   widget.callbacks.init();
   await new Promise(setImmediate);
@@ -401,7 +447,7 @@ test('repeated working init replaces its controller and focus refresh listener',
 test('amoCRM render restores working controls removed during an internal route change', async () => {
   const { document, widget } = boot({ area: 'lcard', load: Promise.resolve({
     session_id: null, status: 'not_started', started_at: null, ended_at: null,
-    break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false,
+    break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false, late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null,
   }) });
   widget.callbacks.init();
   await new Promise(setImmediate);
@@ -421,7 +467,7 @@ test('API outage after a visible break removes its overlay and work buttons', as
   const { dom, document, widget } = boot({ area: 'lcard' });
   widget.$authorizedAjax = () => outage ? Promise.reject(new Error('offline')) : Promise.resolve({
     session_id: 7, status: 'on_break', started_at: '2026-09-22T08:00:00Z', ended_at: null,
-    break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false,
+    break_seconds: 60, track_time: true, hide_widget: false, restart_allowed: false, late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null,
   });
   widget.callbacks.init();
   await new Promise(setImmediate);

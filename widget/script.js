@@ -341,7 +341,7 @@ define(['jquery', './settings/settings.js?v=3.0.19', './timesheet/controller.js?
         }
         function renderWorkingUi(snapshot) {
             if (typeof widget.renderTimesheetStatus === 'function') {
-                widget.renderTimesheetStatus(snapshot, function(action) { return widget.timesheetController.command(action); });
+                widget.renderTimesheetStatus(snapshot, function(action, reason) { return widget.timesheetController.command(action, reason); });
             }
         }
         function stopTimesheet() {

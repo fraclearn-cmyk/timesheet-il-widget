@@ -90,7 +90,7 @@ async function boot(page, options = {}) {
       break_seconds: 0,
       track_time: setup.trackTime !== false,
       hide_widget: setup.hideWidget === true,
-      restart_allowed: setup.restartAllowed === true,
+      restart_allowed: setup.restartAllowed === true, late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null,
     };
 
     const employee = (id, name, allowed, reportAllowed = allowed) => ({
@@ -148,7 +148,7 @@ async function boot(page, options = {}) {
               status: 'working',
               started_at: '2026-10-01T09:00:00Z',
               ended_at: null,
-              restart_allowed: false,
+              restart_allowed: false, late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null,
             };
           } else if (action === 'start-break') {
             window.timesheet = { ...window.timesheet, status: 'on_break' };
@@ -159,7 +159,7 @@ async function boot(page, options = {}) {
               ...window.timesheet,
               status: 'finished',
               ended_at: '2026-10-01T18:00:00Z',
-              restart_allowed: true,
+              restart_allowed: true, late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null,
             };
           }
         }
@@ -218,7 +218,7 @@ test('employee hidden state becomes a full permitted workday flow and survives a
   await expect(page.locator('[data-action="start-break"]')).toHaveText('Перерыв');
 
   await clickAction(page, 'start-break', 'on_break');
-  await expect(page.locator('[data-action="end-break"]')).toHaveText('Продолжить');
+  await expect(page.locator('[data-action="end-break"]')).toHaveText('Продолжить работу');
   await clickAction(page, 'end-break', 'working');
   await expect(page.locator('.timesheet-actions')).toHaveCount(1);
   await clickAction(page, 'finish-work', 'finished');
