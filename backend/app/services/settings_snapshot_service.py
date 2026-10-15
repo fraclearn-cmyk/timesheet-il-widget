@@ -231,6 +231,7 @@ class SettingsSnapshotService:
                     or entry.group_ref != previous_ref
                     or entry.track_time != previous.track_time
                     or entry.hide_widget != user.hide_widget
+                    or entry.require_late_reason != previous.require_late_reason
                 ):
                     raise SettingsProblem(
                         "USER_INACTIVE",
@@ -245,6 +246,12 @@ class SettingsSnapshotService:
                         "groups",
                     )
                 continue
+            if entry.require_late_reason and entry.group_ref is None:
+                raise SettingsProblem(
+                    "LATE_REASON_GROUP_REQUIRED",
+                    "Для обязательной объяснительной сотруднику нужно назначить группу.",
+                    f"{field}.group_ref",
+                )
             if entry.track_time and entry.group_ref is None:
                 raise SettingsProblem(
                     "TRACKED_USER_GROUP_REQUIRED",
@@ -255,7 +262,11 @@ class SettingsSnapshotService:
                 group = references.get(entry.group_ref)
                 # An unchanged historical reference remains displayable after
                 # disabling tracking or deactivating/omitting its group.
-                historical = not entry.track_time and entry.group_ref == previous_ref
+                historical = (
+                    not entry.track_time
+                    and not entry.require_late_reason
+                    and entry.group_ref == previous_ref
+                )
                 if group is None and not historical:
                     raise SettingsProblem(
                         "GROUP_NOT_FOUND",
@@ -308,6 +319,7 @@ class SettingsSnapshotService:
                 "work_end_time",
                 "is_active",
                 "allow_restart_session",
+                "break_limit_minutes",
             ):
                 setattr(group, key, getattr(entry, key))
             if entry.manager_amocrm_user_id is None:
@@ -351,6 +363,7 @@ class SettingsSnapshotService:
             if group_id is None:
                 if previous is not None and not entry.track_time:
                     previous.track_time = False
+                    previous.require_late_reason = entry.require_late_reason
                 continue
             active = entry.track_time
             if (
@@ -359,6 +372,7 @@ class SettingsSnapshotService:
                 and previous.is_active == active
             ):
                 previous.track_time = entry.track_time
+                previous.require_late_reason = entry.require_late_reason
                 # Historical rows retain their last visibility snapshot.
                 if active:
                     previous.hide_widget = entry.hide_widget
@@ -371,6 +385,7 @@ class SettingsSnapshotService:
                         is_active=active,
                         track_time=entry.track_time,
                         hide_widget=entry.hide_widget,
+                        require_late_reason=entry.require_late_reason,
                     )
                 )
 
@@ -430,6 +445,7 @@ class SettingsSnapshotService:
                 manager_amocrm_user_id=manager_amocrm_user_id,
                 is_active=group.is_active,
                 allow_restart_session=group.allow_restart_session,
+                break_limit_minutes=group.break_limit_minutes,
             )
             for group, manager_amocrm_user_id in rows
         ]
@@ -491,6 +507,11 @@ class SettingsSnapshotService:
                         membership.track_time if membership is not None else False
                     ),
                     hide_widget=user.hide_widget,
+                    require_late_reason=(
+                        membership.require_late_reason
+                        if membership is not None
+                        else False
+                    ),
                     group_id=membership.group_id if membership is not None else None,
                 )
             )

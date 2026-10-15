@@ -61,11 +61,13 @@
     this.groups = snapshot.groups.map(function (group) {
       var item = clone(group);
       delete item.account_id;
+      if (item.break_limit_minutes === undefined) item.break_limit_minutes = 60;
       return item;
     });
     this.users = snapshot.users.map(function (user) {
       return { amocrm_user_id: user.amocrm_user_id, track_time: Boolean(user.track_time),
-        hide_widget: Boolean(user.hide_widget), group_ref: user.group_id == null ? null : 'id:' + user.group_id };
+        hide_widget: Boolean(user.hide_widget), require_late_reason: Boolean(user.require_late_reason),
+        group_ref: user.group_id == null ? null : 'id:' + user.group_id };
     });
     this.errors = [];
     this.message = '';
@@ -189,7 +191,8 @@
         identity.append(node(doc, 'strong', '', user.name), node(doc, 'small', '', user.email));
         if (!user.is_active) identity.append(node(doc, 'small', '', 'Неактивен — только просмотр'));
         row.append(identity);
-        [['track_time', 'Учитывать рабочее время'], ['hide_widget', 'Скрыть виджет']].forEach(function (item) {
+        [['track_time', 'Учитывать рабочее время'], ['hide_widget', 'Скрыть виджет'],
+          ['require_late_reason', 'Объяснительная при опоздании']].forEach(function (item) {
           var input = checkbox(doc, item[0], state[item[0]]);
           input.disabled = !user.is_active;
           input.addEventListener('change', function () { self.setUser(user.amocrm_user_id, { [item[0]]: input.checked }); });
@@ -251,6 +254,15 @@
         input.addEventListener('input', function () { group[entry[0]] = entry[2] === 'time' ? input.value + ':00' : input.value; });
         card.append(labeled(doc, entry[1], input));
       });
+      var breakLimit = control(doc, 'input', 'break_limit_minutes', group.break_limit_minutes);
+      breakLimit.type = 'number';
+      breakLimit.min = '1';
+      breakLimit.max = '720';
+      breakLimit.step = '1';
+      breakLimit.addEventListener('input', function () {
+        group.break_limit_minutes = breakLimit.value === '' ? null : Number(breakLimit.value);
+      });
+      card.append(labeled(doc, 'Допустимый перерыв, минут', breakLimit));
       var manager = control(doc, 'select', 'manager_amocrm_user_id');
       var empty = node(doc, 'option', '', 'Без руководителя');
       empty.value = '';
@@ -281,7 +293,7 @@
     this.groupCounter += 1;
     this.groups.push({ client_key: 'group_' + this.groupCounter, name: '', timezone: 'Europe/Minsk',
       work_start_time: '09:00:00', work_end_time: '18:00:00', manager_amocrm_user_id: null,
-      is_active: true, allow_restart_session: false });
+      is_active: true, allow_restart_session: false, break_limit_minutes: 60 });
     this.render();
   };
   SettingsController.prototype.setUser = function (id, changes) {
@@ -290,7 +302,7 @@
     var user = this.users.find(function (item) { return item.amocrm_user_id === id; });
     if (!user) throw new Error('Unknown user');
     if (!original.is_active) throw new Error('Cannot modify inactive user');
-    ['track_time', 'hide_widget', 'group_ref'].forEach(function (key) {
+    ['track_time', 'hide_widget', 'require_late_reason', 'group_ref'].forEach(function (key) {
       if (Object.prototype.hasOwnProperty.call(changes, key)) user[key] = changes[key];
     });
   };
@@ -313,12 +325,16 @@
     }
     this.groups.forEach(function (group, index) {
       if (!group.name.trim()) errors.push({ code: 'GROUP_NAME_REQUIRED', field: 'groups.' + index + '.name' });
+      if (!Number.isInteger(group.break_limit_minutes) || group.break_limit_minutes < 1 || group.break_limit_minutes > 720) {
+        errors.push({ code: 'BREAK_LIMIT_INVALID', field: 'groups.' + index + '.break_limit_minutes' });
+      }
     });
     var active = new Set(this.groups.filter(function (group) { return group.is_active; }).map(function (group) { return self.groupRef(group); }));
     this.users.forEach(function (user, index) {
       if (!self.snapshot.users[index].is_active) return;
-      if (user.track_time && !user.group_ref) errors.push({ code: 'TRACKED_USER_GROUP_REQUIRED', field: 'users.' + index + '.group_ref' });
-      else if (user.track_time && !active.has(user.group_ref)) errors.push({ code: 'GROUP_INACTIVE', field: 'users.' + index + '.group_ref' });
+      if (user.require_late_reason && !user.group_ref) errors.push({ code: 'LATE_REASON_GROUP_REQUIRED', field: 'users.' + index + '.group_ref' });
+      else if (user.track_time && !user.group_ref) errors.push({ code: 'TRACKED_USER_GROUP_REQUIRED', field: 'users.' + index + '.group_ref' });
+      else if ((user.track_time || user.require_late_reason) && !active.has(user.group_ref)) errors.push({ code: 'GROUP_INACTIVE', field: 'users.' + index + '.group_ref' });
     });
     return errors;
   };
@@ -385,7 +401,11 @@
     if (!this.snapshot || this.destroyed) throw new Error('Settings are unavailable');
     var errors = this.validate();
     if (errors.length) {
-      var failure = new Error('Проверьте обязательные поля.');
+      var message = errors.some(function (error) { return error.code === 'BREAK_LIMIT_INVALID'; }) ?
+        'Допустимый перерыв: укажите целое число от 1 до 720 минут.' :
+        errors.some(function (error) { return error.code === 'LATE_REASON_GROUP_REQUIRED'; }) ?
+          'Для обязательной объяснительной выберите группу учёта.' : 'Проверьте обязательные поля.';
+      var failure = new Error(message);
       failure.errors = errors;
       this.errors = errors;
       this.message = failure.message;

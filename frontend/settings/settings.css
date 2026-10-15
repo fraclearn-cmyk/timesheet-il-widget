@@ -73,7 +73,7 @@
   align-items: center;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(180px, 1.5fr) repeat(2, minmax(140px, 1fr)) minmax(160px, 1fr);
+  grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(140px, 1fr)) minmax(160px, 1fr);
   padding: 9px 0;
 }
 
@@ -156,7 +156,7 @@
 }
 
 .widget_settings_block .timesheet-settings .timesheet-settings__user {
-  grid-template-columns: minmax(150px, 1.5fr) repeat(2, minmax(72px, .65fr)) minmax(130px, 1fr);
+  grid-template-columns: minmax(150px, 1.5fr) repeat(3, minmax(72px, .65fr)) minmax(130px, 1fr);
 }
 
 @media (max-width: 800px) {
