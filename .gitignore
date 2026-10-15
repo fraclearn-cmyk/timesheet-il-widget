@@ -95,6 +95,7 @@ backend/migrations/versions/__pycache__/
 
 # Local development
 *.local
+.worktrees/
 
 # Archives
 *.tar
