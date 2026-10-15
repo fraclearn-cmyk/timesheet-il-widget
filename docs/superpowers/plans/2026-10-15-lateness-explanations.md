@@ -21,7 +21,7 @@
 - Несколько поздних перерывов показываются нумерованным списком, а их превышения суммируются.
 - Старое значение экспортной колонки `lateness` принимается как совместимый псевдоним `shift_lateness`.
 - Все операции ограничены подтверждённым `account_id`; сотрудник пишет только в свою текущую смену, руководитель читает только назначенные группы.
-- Производительность сохраняет расчёт на 40 аккаунтов без запроса к БД на каждую строку отчёта.
+- Производительность сохраняет расчёт на 50 аккаунтов без запроса к БД на каждую строку отчёта.
 - Версия итогового пакета — `3.0.20`; секреты, токены и тестовые учётные данные в Git и ZIP не добавляются.
 - После каждой задачи обновляется `Plan.md`: выполненные пункты, созданные/изменённые файлы, результаты тестов и доступный пользователю сценарий проверки; затем пользователю отправляется краткий отчёт на русском.
 
@@ -136,7 +136,7 @@
 - Produces: `LatenessDecision(kind, sequence, late_minutes, reason_required)`; `LatenessService.for_shift_start(...)`, `for_break_return(...)`, `record(...)`.
 - Produces: `TimesheetService.apply(context, action, key, reason=None, now_utc=None)` and `409 LATE_REASON_REQUIRED` with safe `details` containing kind, minutes and sequence.
 
-- [ ] **Step 1: Write failing calculation and command tests.** Cover on-time/equal-boundary/one-second-over, disabled requirement with an incident whose reason is empty, blank/whitespace/1000/1001-character required reason, start and return flows, current group limit after mid-break change, multiple break sequences, restart session, finish while on break, rollback, foreign account/user attempts and 40-account identity isolation.
+- [ ] **Step 1: Write failing calculation and command tests.** Cover on-time/equal-boundary/one-second-over, disabled requirement with an incident whose reason is empty, blank/whitespace/1000/1001-character required reason, start and return flows, current group limit after mid-break change, multiple break sequences, restart session, finish while on break, rollback, foreign account/user attempts and 50-account identity isolation.
 
 - [ ] **Step 2: Write failing idempotency tests.** Assert same key/action/normalized reason replays one response and one incident; same key with changed reason or action returns `IDEMPOTENCY_KEY_REUSED`; concurrent distinct keys create only the valid transition.
 
@@ -208,7 +208,7 @@
 - Consumes: Task 1 `LatenessIncident`, `BreakLateness` and new export enum values.
 - Produces: canonical employee-day rows with shift explanation, total break lateness and ordered break explanation list; screen and workbook three-level grouped headers.
 
-- [ ] **Step 1: Write failing report API tests.** Assert one shift event, no event, legacy-session fallback, two late breaks ordered by sequence, summed excess minutes, blank historical reasons, admin/manager scope, employee denial, cross-account isolation and a bounded query count for a 40-account-sized fixture.
+- [ ] **Step 1: Write failing report API tests.** Assert one shift event, no event, legacy-session fallback, two late breaks ordered by sequence, summed excess minutes, blank historical reasons, admin/manager scope, employee denial, cross-account isolation and a bounded query count for a 50-account-sized fixture.
 
 - [ ] **Step 2: Write failing Excel tests.** Assert independent selection of four fields, legacy `lateness` normalization, three header rows with merged «Опоздания»/«Начало дня»/«Перерыв», integer minute values and `0` number format, freeze/filter below row 3, wrapped numbered break lines and formula-safe explanation cells.
 
