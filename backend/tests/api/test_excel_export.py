@@ -231,6 +231,170 @@ def test_structured_explanations_are_formula_safe(scoped_client, db, prefix):
     assert b"<f>" not in xml
 
 
+def add_late_breaks(db, session, *, count=40, prefix="", character="x"):
+    from app.models.lateness_incident import LatenessIncident, LatenessKind
+
+    reason = prefix + character * (999 - len(prefix)) + "\x01"
+    for sequence in range(1, count + 1):
+        db.add(
+            LatenessIncident(
+                account_id=session.amocrm_account_id,
+                amocrm_user_id=session.amocrm_user_id,
+                work_session_id=session.id,
+                kind=LatenessKind.BREAK_RETURN,
+                sequence=sequence,
+                occurred_at=session.start_time,
+                late_minutes=sequence,
+                reason=reason,
+            )
+        )
+    return reason.replace("\x01", "\ufffd")
+
+
+@pytest.mark.parametrize(
+    "field,kind,sequence",
+    [
+        ("shift_late_reason", "shift_start", 0),
+        ("break_late_reason", "break_return", 1),
+    ],
+)
+def test_xml_illegal_controls_are_replaced_and_supported_whitespace_survives(
+    scoped_client,
+    db,
+    field,
+    kind,
+    sequence,
+):
+    from app.models.lateness_incident import LatenessIncident
+
+    db.get(User, 2).name = "=Employee\x01"
+    session = add_session(db)
+    reason = "=reason\x01with\x00controls\x0b\x1f\ufffe\uffff\tand\nnew\rline"
+    expected = "=reason\ufffdwith\ufffdcontrols\ufffd\ufffd\ufffd\ufffd\tand\nnew\rline"
+    from app.services.timesheet_excel_service import _safe_text
+
+    assert _safe_text(reason) == "'" + expected
+    db.add(
+        LatenessIncident(
+            account_id=10,
+            amocrm_user_id=102,
+            work_session_id=session.id,
+            kind=kind,
+            sequence=sequence,
+            occurred_at=session.start_time,
+            late_minutes=1,
+            reason=reason,
+        )
+    )
+    db.commit()
+    ws = sheet(export(scoped_client("admin"), columns=["employee", field]))
+    assert ws["A4"].value == "'=Employee\ufffd"
+    # XML parsers normalize literal carriage returns to line feeds on reload.
+    expected = expected.replace("\r", "\n")
+    assert ws["B4"].value == (
+        "'" + expected
+        if field == "shift_late_reason"
+        else f"Перерыв №1 — 1 мин: {expected}"
+    )
+    assert ws["A4"].data_type == ws["B4"].data_type == "s"
+
+
+@pytest.mark.parametrize(
+    "prefix,character", [("=", "x"), ("+", "x"), ("-", "x"), ("@", "x"), ("=", "😀")]
+)
+def test_overflow_break_reasons_keep_complete_entries_and_all_incidents_on_auxiliary_sheet(
+    scoped_client,
+    db,
+    prefix,
+    character,
+):
+    db.get(User, 2).name = prefix + "Employee\x01"
+    session = add_session(db)
+    reason = add_late_breaks(db, session, prefix=prefix, character=character)
+    # The auxiliary sheet includes only affected days, although the main report has two.
+    other = add_session(
+        db,
+        day=date(2026, 9, 23),
+        start=datetime(2026, 9, 23, 6),
+        end=datetime(2026, 9, 23, 7),
+    )
+    add_late_breaks(db, other, count=1)
+    db.commit()
+    response = export(
+        scoped_client("admin"), date_to="2026-09-23", columns=["break_late_reason"]
+    )
+    assert response.status_code == 200, response.text
+    book = load_workbook(BytesIO(response.content))
+    assert book.sheetnames == ["Табель", "Объяснительные"]
+    main, details = book.worksheets
+    text = main["A5"].value
+    lines = text.split("\n")
+    assert lines[-1] == "Полный список — на листе «Объяснительные»."
+    expected = [
+        f"Перерыв №{sequence} — {sequence} мин: {reason}" for sequence in range(1, 41)
+    ]
+    assert lines[:-1] == expected[: len(lines) - 1]
+    assert 1 < len(lines) < 41
+    assert len(text.encode("utf-16-le")) // 2 <= 32767
+    assert (
+        len((text + "\n" + expected[len(lines) - 1]).encode("utf-16-le")) // 2 > 32767
+    )
+    assert [cell.value for cell in details[1]] == [
+        "Сотрудник",
+        "Дата",
+        "Перерыв №",
+        "Минуты",
+        "Объяснительная",
+    ]
+    values = list(details.iter_rows(min_row=2, values_only=True))
+    assert values == [
+        (
+            "'" + prefix + "Employee\ufffd",
+            datetime(2026, 9, 22),
+            sequence,
+            sequence,
+            "'" + reason,
+        )
+        for sequence in range(1, 41)
+    ]
+    assert values[-1][2] == 40 and values[-1][4] == "'" + reason
+    assert details["D41"].number_format == "0"
+    assert details["E41"].alignment.wrap_text
+    assert details["E41"].data_type == "s"
+    assert details.freeze_panes == "A2"
+    assert details.auto_filter.ref == "A1:E41"
+    assert main["A5"].alignment.wrap_text
+    with ZipFile(BytesIO(response.content)) as archive:
+        for name in archive.namelist():
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                xml = archive.read(name)
+                ET.fromstring(xml)
+                assert b"<f>" not in xml
+
+
+@pytest.mark.parametrize(
+    "columns,count",
+    [
+        (["employee"], 40),
+        (["break_lateness"], 40),
+        (["shift_late_reason"], 40),
+        (["break_late_reason"], 1),
+    ],
+)
+def test_auxiliary_sheet_is_absent_when_overflow_is_unselected_or_unnecessary(
+    scoped_client,
+    db,
+    columns,
+    count,
+):
+    add_late_breaks(db, add_session(db), count=count)
+    db.commit()
+    ws = sheet(export(scoped_client("admin"), columns=columns))
+    assert "Объяснительные" not in "".join(
+        str(cell.value or "") for cells in ws for cell in cells
+    )
+
+
 @pytest.mark.parametrize(
     "start,end,days",
     [

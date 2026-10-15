@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from io import BytesIO
+import re
 from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
@@ -42,6 +43,12 @@ LATENESS_GROUPS = {
 }
 REASON_COLUMNS = {TimesheetColumn.SHIFT_LATE_REASON, TimesheetColumn.BREAK_LATE_REASON}
 MINUTE_COLUMNS = {TimesheetColumn.SHIFT_LATENESS, TimesheetColumn.BREAK_LATENESS}
+# XML 1.0 excludes these controls, surrogate code points and terminal noncharacters.
+# Keep supported tabs, newlines and carriage returns; visibly mark every replacement.
+INVALID_XML_TEXT = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+EXCEL_CELL_TEXT_LIMIT = 32767
+OVERFLOW_SHEET = "Объяснительные"
+OVERFLOW_MARKER = "Полный список — на листе «Объяснительные»."
 
 
 def _header(sheet, columns: list[TimesheetColumn]) -> int:
@@ -81,14 +88,60 @@ def _header(sheet, columns: list[TimesheetColumn]) -> int:
     return 3
 
 
-def _break_reasons(row: DetailedReportRow) -> str:
+def _excel_text_length(value: str) -> int:
+    # Excel counts UTF-16 units, including two for each supplementary character.
+    return len(value.encode("utf-16-le")) // 2
+
+
+def _break_reasons(row: DetailedReportRow) -> tuple[str, bool]:
     lines = []
     for incident in row.break_late_reason:
         label = (
             f"Перерыв №{incident.sequence} — {(incident.late_seconds + 59) // 60} мин"
         )
-        lines.append(f"{label}: {incident.reason}" if incident.reason else label)
-    return _safe_text("\n".join(lines))
+        lines.append(
+            _safe_text(f"{label}: {incident.reason}" if incident.reason else label)
+        )
+    text = "\n".join(lines)
+    if _excel_text_length(text) <= EXCEL_CELL_TEXT_LIMIT:
+        return text, False
+    length = _excel_text_length(OVERFLOW_MARKER)
+    complete = []
+    for line in lines:
+        size = _excel_text_length(line) + 1  # separator before the marker/next line
+        if length + size > EXCEL_CELL_TEXT_LIMIT:
+            break
+        complete.append(line)
+        length += size
+    return "\n".join([*complete, OVERFLOW_MARKER]), True
+
+
+def _write_overflow_sheet(book: Workbook, rows: list[DetailedReportRow]) -> None:
+    sheet = book.create_sheet(OVERFLOW_SHEET)
+    sheet.append(["Сотрудник", "Дата", "Перерыв №", "Минуты", "Объяснительная"])
+    for row in rows:
+        for incident in row.break_late_reason:
+            sheet.append(
+                [
+                    _safe_text(row.employee_name),
+                    row.date,
+                    incident.sequence,
+                    (incident.late_seconds + 59) // 60,
+                    _safe_text(incident.reason or ""),
+                ]
+            )
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for cells in sheet.iter_rows(min_row=2):
+        cells[1].number_format = DATE_FORMAT
+        cells[2].number_format = cells[3].number_format = "0"
+        cells[4].alignment = Alignment(wrap_text=True, vertical="top")
+    for index in range(1, 6):
+        sheet.column_dimensions[get_column_letter(index)].width = (
+            45 if index == 5 else 20
+        )
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:E{sheet.max_row}"
 
 
 def safe_report_filename(date_from: date, date_to: date) -> str:
@@ -96,6 +149,7 @@ def safe_report_filename(date_from: date, date_to: date) -> str:
 
 
 def _safe_text(value: str) -> str:
+    value = INVALID_XML_TEXT.sub("\ufffd", value)
     return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
 
 
@@ -118,7 +172,13 @@ class TimesheetExcelService:
         sheet = book.active
         sheet.title = "Табель"
         header_rows = _header(sheet, columns)
+        overflow_rows = []
         for row in rows:
+            break_reasons = ""
+            if TimesheetColumn.BREAK_LATE_REASON in columns:
+                break_reasons, overflow = _break_reasons(row)
+                if overflow:
+                    overflow_rows.append(row)
             values = {
                 TimesheetColumn.EMPLOYEE: _safe_text(row.employee_name),
                 TimesheetColumn.DATE: row.date,
@@ -133,7 +193,7 @@ class TimesheetExcelService:
                     row.shift_late_reason or ""
                 ),
                 TimesheetColumn.BREAK_LATENESS: (row.break_late_seconds + 59) // 60,
-                TimesheetColumn.BREAK_LATE_REASON: _break_reasons(row),
+                TimesheetColumn.BREAK_LATE_REASON: break_reasons,
                 TimesheetColumn.STATUS: STATUS_LABELS[row.status],
             }
             sheet.append([values[column] for column in columns])
@@ -175,6 +235,8 @@ class TimesheetExcelService:
         sheet.auto_filter.ref = (
             f"A{header_rows}:{get_column_letter(len(columns))}{sheet.max_row}"
         )
+        if overflow_rows:
+            _write_overflow_sheet(book, overflow_rows)
         output = BytesIO()
         book.save(output)
         return output.getvalue()
