@@ -7,10 +7,22 @@
 
   const COLUMNS = [
     ['employee', 'Сотрудник'], ['date', 'Дата'], ['start', 'Начало'], ['end', 'Окончание'],
-    ['break', 'Перерыв'], ['work', 'Работа'], ['lateness', 'Опоздание'], ['status', 'Статус'],
+    ['break', 'Перерыв'], ['work', 'Работа'], ['status', 'Статус'],
+    ['shift_lateness', 'Начало дня — минуты'], ['shift_late_reason', 'Начало дня — объяснительная'],
+    ['break_lateness', 'Перерыв — минуты'], ['break_late_reason', 'Перерыв — объяснительная'],
   ];
   const STATUS = { working: 'Работает', on_break: 'На перерыве', finished: 'Завершил' };
   const mounts = new WeakMap();
+
+  function normalizeColumns(values) {
+    const allowed = COLUMNS.map(([key]) => key);
+    const selected = Array.isArray(values)
+      ? values.map((key) => key === 'lateness' ? 'shift_lateness' : key).filter((key) => allowed.includes(key))
+      : allowed;
+    return selected.length ? Array.from(new Set(selected)) : allowed;
+  }
+
+  function minutes(seconds) { return String(Math.ceil(Math.max(0, Number(seconds) || 0) / 60)); }
 
   function element(document, tag, className, label) {
     const node = document.createElement(tag);
@@ -115,9 +127,10 @@
     const columnBox = element(document, 'fieldset', 'ts-reports__columns');
     columnBox.appendChild(element(document, 'legend', '', 'Колонки Excel'));
     const columnInputs = new Map();
+    const selectedColumns = normalizeColumns(settings.columns);
     for (const [key, label] of COLUMNS) {
       const wrap = element(document, 'label', 'ts-reports__column');
-      const input = element(document, 'input'); input.type = 'checkbox'; input.checked = true; input.dataset.column = key;
+      const input = element(document, 'input'); input.type = 'checkbox'; input.checked = selectedColumns.includes(key); input.dataset.column = key;
       columnInputs.set(key, input);
       wrap.append(input, element(document, 'span', '', label));
       columnBox.appendChild(wrap);
@@ -133,8 +146,21 @@
     const retry = button('Повторить', 'retry'); retry.hidden = true; host.appendChild(retry);
     const table = element(document, 'table', 'ts-reports__table');
     const head = element(document, 'thead'); const header = element(document, 'tr');
-    for (const [, label] of COLUMNS) header.appendChild(element(document, 'th', '', label));
-    head.appendChild(header); table.appendChild(head);
+    for (const [, label] of COLUMNS.slice(0, 7)) {
+      const th = element(document, 'th', '', label); th.rowSpan = 3; th.scope = 'col'; header.appendChild(th);
+    }
+    const lateness = element(document, 'th', '', 'Опоздания'); lateness.colSpan = 4; lateness.scope = 'colgroup'; header.appendChild(lateness);
+    head.appendChild(header);
+    const headerGroups = element(document, 'tr');
+    for (const label of ['Начало дня', 'Перерыв']) {
+      const th = element(document, 'th', '', label); th.colSpan = 2; th.scope = 'colgroup'; headerGroups.appendChild(th);
+    }
+    head.appendChild(headerGroups);
+    const children = element(document, 'tr');
+    for (const label of ['Минуты', 'Объяснительная', 'Минуты', 'Объяснительная']) {
+      const th = element(document, 'th', '', label); th.scope = 'col'; children.appendChild(th);
+    }
+    head.appendChild(children); table.appendChild(head);
     const body = element(document, 'tbody'); table.appendChild(body); host.appendChild(table);
     const pagination = element(document, 'nav', 'ts-reports__pagination');
     pagination.setAttribute('aria-label', 'Страницы табеля');
@@ -172,8 +198,17 @@
         const tr = element(document, 'tr');
         const cells = [String(item.employee_name || ''), date(item.date), clock(item.started_at, item.group_timezone),
           clock(item.ended_at, item.group_timezone), duration(item.break_seconds), duration(item.work_seconds),
-          duration(item.late_seconds), STATUS[item.status] || '—'];
+          STATUS[item.status] || '—', minutes(item.shift_late_seconds ?? item.late_seconds), String(item.shift_late_reason || ''),
+          minutes(item.break_late_seconds)];
         for (const value of cells) tr.appendChild(element(document, 'td', '', value));
+        tr.children[8].className = 'ts-reports__reason';
+        const explanations = element(document, 'td', 'ts-reports__reason');
+        for (const incident of Array.isArray(item.break_late_reason) ? item.break_late_reason : []) {
+          const label = `Перерыв №${incident.sequence} — ${minutes(incident.late_seconds)} мин`;
+          explanations.appendChild(element(document, 'div', 'ts-reports__break-reason',
+            incident.reason ? `${label}: ${incident.reason}` : label));
+        }
+        tr.appendChild(explanations);
         body.appendChild(tr);
       }
     }
@@ -288,5 +323,5 @@
     api.ready = loadDirectory();
     return api;
   }
-  return { mount };
+  return { mount, normalizeColumns };
 }));

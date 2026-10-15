@@ -29,6 +29,9 @@ async function boot(page, role = 'admin') {
       group_id: 10, group_name: 'Продажи', group_timezone: 'Europe/Moscow', date: '2026-09-29',
       started_at: '2026-09-29T06:00:00Z', ended_at: '2026-09-29T15:00:00Z',
       break_seconds: 60, work_seconds: 3600, late_seconds: 0, status: 'finished',
+      shift_late_seconds: 4500, shift_late_reason: '<img src=x onerror=alert(1)>', break_late_seconds: 780,
+      break_late_reason: [{ sequence: 1, late_seconds: 480, reason: 'встреча' },
+        { sequence: 2, late_seconds: 300, reason: '<b>связь</b>' }],
       activity: 'secret activity', crm_url: 'https://secret.invalid' });
     const transport = {
       directory: () => Promise.resolve(directory),
@@ -110,7 +113,7 @@ test('selected Excel columns download once and release the temporary URL; failur
   await expect.poll(() => page.evaluate(() => window.downloads.length)).toBe(1);
   expect(await page.evaluate(() => window.exportCalls[0].body)).toEqual({
     date_from: '2026-09-29', date_to: '2026-09-29', group_id: 10,
-    columns: ['employee', 'date', 'end', 'break', 'work', 'lateness', 'status'],
+    columns: ['employee', 'date', 'end', 'break', 'work', 'status', 'shift_lateness', 'shift_late_reason', 'break_lateness', 'break_late_reason'],
   });
   expect(await page.evaluate(() => window.downloads)).toEqual([
     { filename: 'точный-файл.xlsx', href: 'blob:report-test', attached: true },
@@ -134,4 +137,24 @@ test('employee role never gets preview or download controls', async ({ page }) =
   await expect(page.locator('.ts-reports__message')).toHaveText('У вас нет доступа к этому разделу.');
   await expect(page.locator('[data-action="export"]')).toHaveCount(0);
   expect(await page.evaluate(() => window.reportCalls.length)).toBe(0);
+});
+
+test('grouped headers, whole minutes and independent safe explanation columns', async ({ page }) => {
+  await boot(page);
+  await expect(page.locator('thead tr')).toHaveCount(3);
+  await expect(page.locator('thead tr').first().locator('th[rowspan="3"]')).toHaveCount(7);
+  await expect(page.locator('thead tr').first().locator('th[colspan="4"]')).toHaveText('Опоздания');
+  await expect(page.locator('thead tr').nth(1).locator('th[colspan="2"]')).toHaveText(['Начало дня', 'Перерыв']);
+  await expect(page.locator('tbody tr').first().locator('td')).toHaveCount(11);
+  await expect(page.locator('tbody tr').first().locator('td').nth(7)).toHaveText('75');
+  await expect(page.locator('tbody tr').first().locator('td').nth(9)).toHaveText('13');
+  await expect(page.locator('tbody tr').first().locator('.ts-reports__break-reason')).toHaveText([
+    'Перерыв №1 — 8 мин: встреча', 'Перерыв №2 — 5 мин: <b>связь</b>',
+  ]);
+  await expect(page.locator('tbody img, tbody b')).toHaveCount(0);
+  for (const key of ['shift_lateness', 'shift_late_reason', 'break_lateness']) {
+    await page.locator(`[data-column="${key}"]`).uncheck();
+  }
+  await page.locator('[data-action="export"]').click();
+  expect((await page.evaluate(() => window.exportCalls.at(-1).body.columns)).slice(-1)).toEqual(['break_late_reason']);
 });

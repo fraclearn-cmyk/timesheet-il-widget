@@ -84,6 +84,154 @@ def add_session(
 
 
 @pytest.mark.parametrize(
+    "field,group,label,value",
+    [
+        ("shift_lateness", "Начало дня", "Минуты", 7),
+        ("shift_late_reason", "Начало дня", "Объяснительная", "'=поезд"),
+        ("break_lateness", "Перерыв", "Минуты", 13),
+        (
+            "break_late_reason",
+            "Перерыв",
+            "Объяснительная",
+            "Перерыв №1 — 8 мин: встреча\nПерерыв №2 — 5 мин: +связь",
+        ),
+        ("lateness", "Начало дня", "Минуты", 7),
+    ],
+)
+def test_each_lateness_field_is_independent_with_three_header_rows(
+    scoped_client, db, field, group, label, value
+):
+    from app.models.lateness_incident import LatenessIncident, LatenessKind
+
+    session = add_session(db, late=99)
+    for kind, sequence, minutes, reason in [
+        (LatenessKind.SHIFT_START, 0, 7, "=поезд"),
+        (LatenessKind.BREAK_RETURN, 2, 5, "+связь"),
+        (LatenessKind.BREAK_RETURN, 1, 8, "встреча"),
+    ]:
+        db.add(
+            LatenessIncident(
+                account_id=10,
+                amocrm_user_id=102,
+                work_session_id=session.id,
+                kind=kind,
+                sequence=sequence,
+                occurred_at=session.start_time,
+                late_minutes=minutes,
+                reason=reason,
+            )
+        )
+    db.commit()
+    ws = sheet(export(scoped_client("admin"), columns=[field]))
+    assert [ws.cell(row, 1).value for row in range(1, 5)] == [
+        "Опоздания",
+        group,
+        label,
+        value,
+    ]
+    assert ws.freeze_panes == "A4"
+    assert ws.auto_filter.ref == "A3:A4"
+    assert ws["A4"].number_format == ("0" if label == "Минуты" else "General")
+    if label == "Объяснительная":
+        assert ws["A4"].alignment.wrap_text
+        assert ws["A4"].data_type == "s"
+
+
+def test_default_workbook_groups_headers_and_preserves_minute_units(scoped_client, db):
+    add_session(db, late=75)
+    db.commit()
+    ws = sheet(export(scoped_client("admin")))
+    assert {str(merge) for merge in ws.merged_cells.ranges} == {
+        "A1:A3",
+        "B1:B3",
+        "C1:C3",
+        "D1:D3",
+        "E1:E3",
+        "F1:F3",
+        "G1:G3",
+        "H1:K1",
+        "H2:I2",
+        "J2:K2",
+    }
+    assert [ws.cell(3, col).value for col in range(8, 12)] == [
+        "Минуты",
+        "Объяснительная",
+        "Минуты",
+        "Объяснительная",
+    ]
+    assert ws["H4"].value == 75
+    assert ws["J4"].value == 0
+    assert ws["I4"].value is None
+    assert ws.freeze_panes == "A4"
+    assert ws.auto_filter.ref == "A3:K4"
+
+
+def test_partial_groups_only_merge_contiguous_selected_columns(scoped_client, db):
+    add_session(db)
+    db.commit()
+    ws = sheet(
+        export(
+            scoped_client("admin"),
+            columns=[
+                "shift_late_reason",
+                "break_lateness",
+                "employee",
+                "shift_lateness",
+                "break_late_reason",
+            ],
+        )
+    )
+    assert {str(merge) for merge in ws.merged_cells.ranges} == {
+        "A1:B1",
+        "C1:C3",
+        "D1:E1",
+    }
+    assert [cell.value for cell in ws[2]] == [
+        "Начало дня",
+        "Перерыв",
+        None,
+        "Начало дня",
+        "Перерыв",
+    ]
+    assert [cell.value for cell in ws[3]] == [
+        "Объяснительная",
+        "Минуты",
+        None,
+        "Минуты",
+        "Объяснительная",
+    ]
+    assert ws["C4"].value == "Employee"
+
+
+@pytest.mark.parametrize("prefix", ["=", "+", "-", "@"])
+def test_structured_explanations_are_formula_safe(scoped_client, db, prefix):
+    from app.models.lateness_incident import LatenessIncident, LatenessKind
+
+    session = add_session(db)
+    db.add(
+        LatenessIncident(
+            account_id=10,
+            amocrm_user_id=102,
+            work_session_id=session.id,
+            kind=LatenessKind.SHIFT_START,
+            sequence=0,
+            occurred_at=session.start_time,
+            late_minutes=1,
+            reason=f'  {prefix}HYPERLINK("https://evil.invalid")',
+        )
+    )
+    db.commit()
+    response = export(scoped_client("admin"), columns=["shift_late_reason"])
+    ws = sheet(response)
+    # API normalizes surrounding whitespace, then XLSX protects formula prefixes.
+    assert ws["A4"].value == f'\'{prefix}HYPERLINK("https://evil.invalid")'
+    assert ws["A4"].data_type == "s"
+    with ZipFile(BytesIO(response.content)) as archive:
+        xml = archive.read("xl/worksheets/sheet1.xml")
+    assert b"<f>" not in xml
+
+
+@pytest.mark.parametrize(
     "start,end,days",
     [
         ("2026-09-22", "2026-09-22", [date(2026, 9, 22)]),
@@ -118,7 +266,7 @@ def test_periods_include_exact_employee_days(scoped_client, db, start, end, days
     db.commit()
     response = export(scoped_client("admin"), date_from=start, date_to=end)
     ws = sheet(response)
-    assert [cell.value.date() for cell in ws["B"][1:]] == list(reversed(days))
+    assert [cell.value.date() for cell in ws["B"][3:]] == list(reversed(days))
     assert (
         response.headers["content-disposition"]
         == f'attachment; filename="timesheet_{start}_{end}.xlsx"'
@@ -136,7 +284,7 @@ def test_json_export_wraps_the_same_workbook_for_amocrm_transport(scoped_client,
     assert payload["filename"] == "timesheet_2026-09-22_2026-09-22.xlsx"
     workbook = load_workbook(BytesIO(base64.b64decode(payload["content_base64"])))
     assert workbook.sheetnames == ["Табель"]
-    assert workbook.active["A2"].value == "Employee"
+    assert workbook.active["A4"].value == "Employee"
 
 
 def test_selected_columns_local_times_durations_and_same_day_merge(
@@ -194,29 +342,31 @@ def test_selected_columns_local_times_durations_and_same_day_merge(
         "Начало",
         "Работа",
         "Перерыв",
-        "Опоздание",
+        "Опоздания",
         "Сотрудник",
         "Дата",
     ]
-    assert [cell.value for cell in ws[2]] == [
+    assert ws["F2"].value == "Начало дня"
+    assert ws["F3"].value == "Минуты"
+    assert [cell.value for cell in ws[4]] == [
         "Перерыв",
         None,
         datetime(2026, 9, 22, 9, 15),
         timedelta(seconds=5400),
         timedelta(seconds=1800),
-        timedelta(seconds=900),
+        15,
         "Employee",
         datetime(2026, 9, 22),
     ]
-    assert [ws.cell(2, col).number_format for col in (3, 4, 5, 6, 8)] == [
+    assert [ws.cell(4, col).number_format for col in (3, 4, 5, 6, 8)] == [
         "dd.mm.yyyy hh:mm",
         "[h]:mm",
         "[h]:mm",
-        "[h]:mm",
+        "0",
         "dd.mm.yyyy",
     ]
-    assert ws.freeze_panes == "A2"
-    assert ws.auto_filter.ref == "A1:H2"
+    assert ws.freeze_panes == "A4"
+    assert ws.auto_filter.ref == "A3:H4"
 
 
 def test_zero_duration_is_numeric_excel_zero(scoped_client, db):
@@ -224,11 +374,11 @@ def test_zero_duration_is_numeric_excel_zero(scoped_client, db):
     db.commit()
     response = export(scoped_client("admin"), columns=["work", "break", "lateness"])
     ws = sheet(response)
-    assert [cell.value for cell in ws[2]] == [timedelta(0)] * 3
+    assert [cell.value for cell in ws[4]] == [timedelta(0), timedelta(0), 0]
     with ZipFile(BytesIO(response.content)) as archive:
         root = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
     ns = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-    for coordinate in ("A2", "B2", "C2"):
+    for coordinate in ("A4", "B4", "C4"):
         cell = root.find(f".//x:c[@r='{coordinate}']", ns)
         assert cell is not None
         assert cell.get("t", "n") == "n"
@@ -348,9 +498,9 @@ def test_forty_foreign_accounts_cannot_enter_export(scoped_client, db):
         add_session(db, account=account, work=999)
     db.commit()
     ws = sheet(export(scoped_client("admin")))
-    assert ws.max_row == 2
-    assert ws["A2"].value == "Employee"
-    assert ws["F2"].value == timedelta(seconds=77)
+    assert ws.max_row == 4
+    assert ws["A4"].value == "Employee"
+    assert ws["F4"].value == timedelta(seconds=77)
 
 
 @pytest.mark.parametrize("prefix", ["=", "+", "-", "@"])
@@ -362,8 +512,8 @@ def test_formula_text_and_private_fields_never_become_workbook_content(
     db.commit()
     response = export(scoped_client("admin"))
     ws = sheet(response)
-    assert ws["A2"].value == f'\'  {prefix}HYPERLINK("https://evil.invalid")'
-    assert ws["A2"].data_type == "s"
+    assert ws["A4"].value == f'\'  {prefix}HYPERLINK("https://evil.invalid")'
+    assert ws["A4"].data_type == "s"
     assert all(cell.hyperlink is None for row in ws for cell in row)
     with ZipFile(BytesIO(response.content)) as archive:
         xml = b"\n".join(
@@ -496,7 +646,7 @@ def test_export_query_count_is_bounded_without_n_plus_one(db):
     finally:
         event.remove(db.get_bind(), "before_cursor_execute", record)
     assert len(rows) == 40
-    assert len(statements) <= 5, repr(statements)
+    assert len(statements) <= 6, repr(statements)
 
 
 def test_export_fetches_employee_days_in_bounded_batches(db, monkeypatch):
