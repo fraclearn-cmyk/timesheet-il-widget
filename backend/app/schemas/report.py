@@ -54,7 +54,9 @@ class DetailedReportRow(_StrictReportModel):
     ended_at: datetime | None
     break_seconds: int = Field(ge=0)
     work_seconds: int = Field(ge=0)
-    late_seconds: int = Field(ge=0, description="Legacy alias for shift-start lateness in seconds.")
+    late_seconds: int = Field(
+        ge=0, description="Legacy alias for shift-start lateness in seconds."
+    )
     shift_late_seconds: int = Field(default=0, strict=True, ge=0)
     shift_late_reason: LatenessReason | None = None
     break_late_seconds: int = Field(default=0, strict=True, ge=0)
@@ -64,7 +66,11 @@ class DetailedReportRow(_StrictReportModel):
     @model_validator(mode="before")
     @classmethod
     def legacy_shift_lateness(cls, data):
-        if isinstance(data, dict) and "shift_late_seconds" not in data and "late_seconds" in data:
+        if (
+            isinstance(data, dict)
+            and "shift_late_seconds" not in data
+            and "late_seconds" in data
+        ):
             return {**data, "shift_late_seconds": data["late_seconds"]}
         return data
 

@@ -49,7 +49,9 @@ class GroupMember(Base):
     is_active = Column(Boolean, nullable=False, default=True, server_default="true")
     track_time = Column(Boolean, nullable=False, default=False)
     hide_widget = Column(Boolean, nullable=False, default=False)
-    require_late_reason = Column(Boolean, nullable=False, default=False, server_default=false())
+    require_late_reason = Column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     created_at = Column(DateTime, nullable=False, default=utc_now)
     updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
 

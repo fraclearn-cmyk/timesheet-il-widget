@@ -82,8 +82,8 @@ function boot(options = {}) {
   };
   window.eval(widgetSource);
   assert.deepEqual(moduleIds, [
-    'jquery', './settings/settings.js?v=3.0.19', './timesheet/controller.js?v=3.0.19', './overlay.js?v=3.0.19', './activity-tracker.js?v=3.0.19',
-    './monitoring/timeline.js?v=3.0.19', './monitoring/activity-modal.js?v=3.0.19', './monitoring/dashboard.js?v=3.0.19', './reports/controller.js?v=3.0.19',
+    'jquery', './settings/settings.js?v=3.0.20', './timesheet/controller.js?v=3.0.20', './overlay.js?v=3.0.20', './activity-tracker.js?v=3.0.20',
+    './monitoring/timeline.js?v=3.0.20', './monitoring/activity-modal.js?v=3.0.20', './monitoring/dashboard.js?v=3.0.20', './reports/controller.js?v=3.0.20',
   ]);
   const requests = [];
   const widget = new Widget();
@@ -362,7 +362,10 @@ test('report preview and Excel use authorized transport, safe filename and publi
   assert.equal(request.contentType, 'application/json');
   assert.equal(request.dataType, 'json');
   assert.equal('xhrFields' in request, false);
-  assert.deepEqual(JSON.parse(request.data).columns, ['employee', 'date', 'start', 'end', 'break', 'work', 'lateness', 'status']);
+  assert.deepEqual(JSON.parse(request.data).columns, [
+    'employee', 'date', 'start', 'end', 'break', 'work', 'status',
+    'shift_lateness', 'shift_late_reason', 'break_lateness', 'break_late_reason',
+  ]);
   assert.equal('headers' in request, false);
   assert.equal(downloaded, 'timesheet_2026-09-01_2026-09-30.xlsx');
 });

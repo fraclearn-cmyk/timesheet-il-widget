@@ -210,9 +210,13 @@ def test_representative_phase5_to_phase7_queries_use_measured_access_paths(
         indexed["status"]["Plan"]
     )
     assert "ix_activity_intervals_user_id" in _index_names(indexed["activity"]["Plan"])
-    assert "uq_group_members_active_account_user" in _index_names(
-        indexed["membership"]["Plan"]
-    )
+    # At 50 tenants the account index is also a selective plan (10 members).
+    # PostgreSQL may legitimately prefer it to the partial unique index.
+    assert _index_names(indexed["membership"]["Plan"]) & {
+        "uq_group_members_active_account_user",
+        "ix_group_members_account_id",
+    }
+    assert indexed["membership"]["Plan"]["Actual Rows"] == 10
     assert "ix_raw_ingestion_events_id" in _index_names(indexed["cleanup"]["Plan"])
     assert _relation_names(indexed["due"]["Plan"]) == {
         "ingestion_cursors",

@@ -206,7 +206,9 @@ def test_legacy_consumers_query_canonical_fields_and_correct_account(db, monkeyp
     assert load_workbook(department_output).active.cell(5, 9).value == "Checked"
 
 
-def test_kpi_includes_after_midnight_session_in_overnight_group_workday(db, monkeypatch):
+def test_kpi_includes_after_midnight_session_in_overnight_group_workday(
+    db, monkeypatch
+):
     """A local-midnight cutoff would omit this session from the night workday."""
     from datetime import time
 
@@ -239,7 +241,9 @@ def test_kpi_includes_after_midnight_session_in_overnight_group_workday(db, monk
     assert KPIService(db).calculate_user_kpi(7, 700).hours_today == 1
 
 
-def test_kpi_charts_use_group_business_date_instead_of_machine_calendar(db, monkeypatch):
+def test_kpi_charts_use_group_business_date_instead_of_machine_calendar(
+    db, monkeypatch
+):
     """UTC-start-date chart grouping would label this Minsk work as Sep 21."""
     from datetime import time
 
@@ -291,6 +295,7 @@ def test_kpi_charts_use_group_business_date_instead_of_machine_calendar(db, monk
         "2026-09-22"
     ]
     assert service.get_department_chart_data(2, days=1).datasets[0]["data"] == [1.0]
+
 
 def test_team_reads_normalized_activity_model(db):
     from app.services.team_service import TeamService
@@ -359,7 +364,9 @@ def test_lateness_settings_and_old_command_defaults_are_persisted(db):
     db.add(group)
     db.flush()
     member = GroupMember(account_id=100, group_id=group.id, user_id=7)
-    command = TimesheetCommand(account_id=100, amocrm_user_id=700, key="old", action="start-work", response={})
+    command = TimesheetCommand(
+        account_id=100, amocrm_user_id=700, key="old", action="start-work", response={}
+    )
     db.add_all([member, command])
     db.commit()
     assert group.break_limit_minutes == 60
@@ -379,12 +386,14 @@ def test_membership_database_default_keeps_late_reason_disabled(db):
     # Raw SQL deliberately bypasses Column.default=False and exercises the
     # database default used by non-ORM membership writers.
     db.execute(
-        text("""
+        text(
+            """
             INSERT INTO group_members
                 (account_id, group_id, user_id, is_active, track_time, hide_widget,
                  created_at, updated_at)
             VALUES (100, :group_id, 7, 1, 0, 0, :now, :now)
-        """),
+        """
+        ),
         {"group_id": group.id, "now": "2026-10-15 09:00:00"},
     )
     db.commit()
@@ -392,7 +401,9 @@ def test_membership_database_default_keeps_late_reason_disabled(db):
     member = db.query(GroupMember).filter_by(account_id=100, user_id=7).one()
     assert member.require_late_reason is False
     assert db.execute(
-        text("SELECT require_late_reason, typeof(require_late_reason) FROM group_members")
+        text(
+            "SELECT require_late_reason, typeof(require_late_reason) FROM group_members"
+        )
     ).one() == (0, "integer")
 
 
@@ -417,13 +428,19 @@ def lateness_db():
 
     Base.metadata.create_all(engine)
     with Session(engine) as session:
-        session.add_all([
-            User(id=7, amocrm_user_id=700, amocrm_account_id=100, name="One"),
-            User(id=8, amocrm_user_id=800, amocrm_account_id=100, name="Other"),
-            User(id=9, amocrm_user_id=700, amocrm_account_id=200, name="Foreign"),
-        ])
+        session.add_all(
+            [
+                User(id=7, amocrm_user_id=700, amocrm_account_id=100, name="One"),
+                User(id=8, amocrm_user_id=800, amocrm_account_id=100, name="Other"),
+                User(id=9, amocrm_user_id=700, amocrm_account_id=200, name="Foreign"),
+            ]
+        )
         session.flush()
-        session.add(WorkSession(id=10, amocrm_account_id=100, amocrm_user_id=700, user_name="One"))
+        session.add(
+            WorkSession(
+                id=10, amocrm_account_id=100, amocrm_user_id=700, user_name="One"
+            )
+        )
         session.commit()
         yield session
     engine.dispose()
@@ -432,19 +449,33 @@ def lateness_db():
 def _incident(**changes):
     from app.models import LatenessIncident, LatenessKind
 
-    return LatenessIncident(**{
-        "account_id": 100, "work_session_id": 10, "amocrm_user_id": 700,
-        "kind": LatenessKind.SHIFT_START, "sequence": 0,
-        "occurred_at": datetime(2026, 10, 15, 9, 1), "late_minutes": 1,
-        **changes,
-    })
+    return LatenessIncident(
+        **{
+            "account_id": 100,
+            "work_session_id": 10,
+            "amocrm_user_id": 700,
+            "kind": LatenessKind.SHIFT_START,
+            "sequence": 0,
+            "occurred_at": datetime(2026, 10, 15, 9, 1),
+            "late_minutes": 1,
+            **changes,
+        }
+    )
 
 
-def test_lateness_incidents_keep_separate_breaks_and_reject_duplicate_event(lateness_db):
+def test_lateness_incidents_keep_separate_breaks_and_reject_duplicate_event(
+    lateness_db,
+):
     from app.models import LatenessKind
 
     db = lateness_db
-    db.add_all([_incident(), _incident(kind=LatenessKind.BREAK_RETURN, sequence=1, reason="x" * 1000), _incident(kind=LatenessKind.BREAK_RETURN, sequence=2)])
+    db.add_all(
+        [
+            _incident(),
+            _incident(kind=LatenessKind.BREAK_RETURN, sequence=1, reason="x" * 1000),
+            _incident(kind=LatenessKind.BREAK_RETURN, sequence=2),
+        ]
+    )
     db.commit()
     db.add(_incident(kind=LatenessKind.BREAK_RETURN, sequence=1))
     with pytest.raises(IntegrityError):
@@ -453,12 +484,21 @@ def test_lateness_incidents_keep_separate_breaks_and_reject_duplicate_event(late
     assert db.query(type(_incident())).count() == 3
 
 
-@pytest.mark.parametrize("changes", [
-    {"account_id": 200}, {"amocrm_user_id": 800}, {"work_session_id": 999},
-    {"late_minutes": 0}, {"late_minutes": -1}, {"kind": "unknown"},
-    {"sequence": 1}, {"kind": "break_return", "sequence": 0},
-    {"kind": "break_return", "sequence": -1}, {"reason": "x" * 1001},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"account_id": 200},
+        {"amocrm_user_id": 800},
+        {"work_session_id": 999},
+        {"late_minutes": 0},
+        {"late_minutes": -1},
+        {"kind": "unknown"},
+        {"sequence": 1},
+        {"kind": "break_return", "sequence": 0},
+        {"kind": "break_return", "sequence": -1},
+        {"reason": "x" * 1001},
+    ],
+)
 def test_lateness_incident_rejects_invalid_identity_or_event(lateness_db, changes):
     lateness_db.add(_incident(**changes))
     with pytest.raises(IntegrityError):
@@ -469,6 +509,9 @@ def test_lateness_incident_rejects_invalid_identity_or_event(lateness_db, change
 def test_lateness_lookup_indexes_are_account_scoped():
     from app.models import LatenessIncident
 
-    indexes = {tuple(column.name for column in index.columns) for index in LatenessIncident.__table__.indexes}
+    indexes = {
+        tuple(column.name for column in index.columns)
+        for index in LatenessIncident.__table__.indexes
+    }
     assert ("account_id", "amocrm_user_id", "occurred_at") in indexes
     assert ("account_id", "work_session_id") in indexes

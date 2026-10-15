@@ -82,7 +82,7 @@ class WidgetPackageTests(unittest.TestCase):
 
     def test_manifest_initializes_cards_settings_and_role_scoped_report_page(self):
         manifest = json.loads((ROOT / "widget" / "manifest.json").read_text("utf-8"))
-        self.assertEqual(manifest["widget"]["version"], "3.0.19")
+        self.assertEqual(manifest["widget"]["version"], "3.0.20")
         self.assertEqual(
             manifest["locations"],
             [
@@ -96,12 +96,42 @@ class WidgetPackageTests(unittest.TestCase):
         )
         self.assertEqual(manifest["advanced"], {"title": "advanced.title"})
 
+    def test_release_has_exact_runtime_and_matching_amd_versions(self):
+        entries = self.entries()
+        self.assertEqual(len(RUNTIME), 25)
+        self.assertTrue(WidgetValidator(self.make_zip(entries)).validate())
+
+    def test_validator_rejects_consistently_stale_release(self):
+        entries = self.entries()
+        entries["manifest.json"] = entries["manifest.json"].replace(
+            b"3.0.20", b"3.0.19"
+        )
+        entries["script.js"] = entries["script.js"].replace(b"3.0.20", b"3.0.19")
+        validator = WidgetValidator(self.make_zip(entries))
+        self.assertFalse(validator.validate())
+        self.assertIn("manifest.json widget version must be 3.0.20", validator.errors)
+
+    def test_validator_rejects_extra_stale_amd_cache_url(self):
+        entries = self.entries()
+        entries["script.js"] = (
+            entries["script.js"]
+            .replace(b"\r\n", b"\n")
+            .replace(
+                b"define(['jquery',", b"define(['./overlay.js?v=3.0.19', 'jquery',", 1
+            )
+        )
+        validator = WidgetValidator(self.make_zip(entries))
+        self.assertFalse(validator.validate())
+        self.assertTrue(any("AMD cache version" in error for error in validator.errors))
+
     def test_validator_requires_widget_constructor_to_return_instance(self):
         entries = self.entries()
-        entries["script.js"] = entries["script.js"].replace(
+        original = entries["script.js"].replace(b"\r\n", b"\n")
+        entries["script.js"] = original.replace(
             b"        return this;\n    };\n    return CustomWidget;",
             b"    };\n    return CustomWidget;",
         )
+        self.assertNotEqual(entries["script.js"], original)
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
         self.assertIn("script.js widget constructor must return this", validator.errors)
@@ -147,10 +177,10 @@ class WidgetPackageTests(unittest.TestCase):
         entries = self.entries()
         entries["script.js"] = (
             entries["script.js"].replace(
-                b"'./reports/controller.js?v=3.0.19'",
-                b"'./reports/missing.js?v=3.0.19'",
+                b"'./reports/controller.js?v=3.0.20'",
+                b"'./reports/missing.js?v=3.0.20'",
             )
-            + b"\n// './reports/controller.js?v=3.0.19'\n"
+            + b"\n// './reports/controller.js?v=3.0.20'\n"
         )
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
@@ -168,8 +198,8 @@ class WidgetPackageTests(unittest.TestCase):
     def test_validator_rejects_report_dependency_only_inside_amd_array_comment(self):
         entries = self.entries()
         entries["script.js"] = entries["script.js"].replace(
-            b"'./reports/controller.js?v=3.0.19'",
-            b"'./reports/missing.js?v=3.0.19', /* './reports/controller.js?v=3.0.19' */",
+            b"'./reports/controller.js?v=3.0.20'",
+            b"'./reports/missing.js?v=3.0.20', /* './reports/controller.js?v=3.0.20' */",
             1,
         )
         validator = WidgetValidator(self.make_zip(entries))
@@ -182,6 +212,9 @@ class WidgetPackageTests(unittest.TestCase):
             "settings/.env.production",
             "script.js.map",
             "frontend/admin.html",
+            "tests/release.test.js",
+            "settings/demo.html",
+            "reports/fixture.json",
         ]:
             with self.subTest(name=name):
                 entries = self.entries()

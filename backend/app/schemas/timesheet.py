@@ -4,12 +4,21 @@ from datetime import datetime, timezone
 from uuid import UUID
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StringConstraints,
+    field_validator,
+)
 
 from app.models.lateness_incident import LatenessKind
 
 
-LatenessReason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+LatenessReason = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)
+]
 
 
 class CommandRequest(BaseModel):

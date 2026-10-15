@@ -84,10 +84,10 @@ jobs:
           heads="$(python -m alembic heads)"
           printf '%s\n' "$heads"
           test "$(printf '%s\n' "$heads" | grep -c '(head)')" -eq 1
-          test "$heads" = "014 (head)"
+          test "$heads" = "015 (head)"
           current="$(python -m alembic current)"
           printf '%s\n' "$current"
-          printf '%s\n' "$current" | grep -F '014 (head)'
+          printf '%s\n' "$current" | grep -F '015 (head)'
 
       - name: Run complete backend suite on PostgreSQL 15
         working-directory: backend

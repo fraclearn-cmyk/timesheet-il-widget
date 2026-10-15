@@ -32,7 +32,12 @@ class WorkSession(Base):
 
     __tablename__ = "work_sessions"
     __table_args__ = (
-        UniqueConstraint("amocrm_account_id", "amocrm_user_id", "id", name="uq_work_sessions_account_user_id"),
+        UniqueConstraint(
+            "amocrm_account_id",
+            "amocrm_user_id",
+            "id",
+            name="uq_work_sessions_account_user_id",
+        ),
         CheckConstraint(
             "current_status IN ('working','break','finished')",
             name="ck_work_sessions_status",

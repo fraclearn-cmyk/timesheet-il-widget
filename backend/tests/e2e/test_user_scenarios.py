@@ -501,8 +501,9 @@ def test_admin_configuration_monitoring_report_and_safe_excel(acceptance, monkey
     assert exported.status_code == 200, exported.text
     assert exported.content.startswith(b"PK")
     sheet = load_workbook(BytesIO(exported.content), data_only=False).active
-    assert sheet.max_row == 2
-    assert sheet["A2"].value == '\'=HYPERLINK("https://evil.invalid")'
+    assert sheet.max_row == 4
+    assert sheet["H1"].value == "Опоздания"
+    assert sheet["A4"].value == '\'=HYPERLINK("https://evil.invalid")'
     assert (
         db.query(User)
         .filter(User.amocrm_account_id != ACCOUNT, User.amocrm_user_id == 103)

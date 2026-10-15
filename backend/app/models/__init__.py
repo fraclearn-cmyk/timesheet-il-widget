@@ -1,4 +1,5 @@
 """Database models"""
+
 from app.models.user import User, UserRole
 from app.models.department import Department
 from app.models.rop_permission import RopPermission
