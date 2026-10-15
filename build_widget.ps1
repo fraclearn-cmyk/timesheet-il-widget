@@ -20,6 +20,7 @@ $archiveTemp = Join-Path $root ('.widget-package-' + [guid]::NewGuid().ToString(
 $archiveBackup = Join-Path $root ('.widget-backup-' + [guid]::NewGuid().ToString('N') + '.zip')
 $archiveFinal = Join-Path $root 'widget.zip'
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+$archiveTimestamp = [DateTime]::SpecifyKind([DateTime]'2000-01-01T00:00:00', [DateTimeKind]::Local)
 
 if ($PSBoundParameters.ContainsKey('ApiUrl')) {
     Write-Warning '-ApiUrl is deprecated and ignored; configure the native amoCRM api_url field instead.'
@@ -46,6 +47,7 @@ try {
         } else {
             Copy-Item -LiteralPath $source -Destination $target
         }
+        [System.IO.File]::SetLastWriteTime($target, $archiveTimestamp)
     }
 
     Add-Type -AssemblyName System.IO.Compression
@@ -99,10 +101,21 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'Staged widget ZIP failed validation.'
     }
-    if (Test-Path -LiteralPath $archiveFinal -PathType Leaf) {
-        [System.IO.File]::Replace($archiveTemp, $archiveFinal, $archiveBackup)
-    } else {
-        [System.IO.File]::Move($archiveTemp, $archiveFinal)
+    $installAttempts = 20
+    for ($attempt = 1; $attempt -le $installAttempts; $attempt++) {
+        try {
+            if (Test-Path -LiteralPath $archiveFinal -PathType Leaf) {
+                [System.IO.File]::Replace($archiveTemp, $archiveFinal, $archiveBackup)
+            } else {
+                [System.IO.File]::Move($archiveTemp, $archiveFinal)
+            }
+            break
+        } catch [System.IO.IOException] {
+            if ($attempt -eq $installAttempts) {
+                throw
+            }
+            Start-Sleep -Milliseconds 250
+        }
     }
     Write-Host "Built $archiveFinal ($($runtime.Count) runtime files)."
     Write-Host 'Enter the operational API URL in the native amoCRM field.'
