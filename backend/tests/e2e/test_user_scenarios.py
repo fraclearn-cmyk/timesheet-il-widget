@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -25,6 +25,80 @@ from app.models.user import UserRole
 
 ACCOUNT = 910
 DAY = "2026-09-30"
+
+
+@pytest.mark.parametrize("action", ["start-work", "end-break"])
+@pytest.mark.parametrize("shared_key", [False, True])
+def test_concurrent_late_commands_are_atomic(postgres_engine, action, shared_key):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from app.core.access_policy import RequestContext
+    from app.models import LatenessIncident, StatusTransition, TimesheetCommand
+    from app.services.timesheet_service import TimesheetConflict, TimesheetService
+
+    at = datetime(2026, 9, 30, 9)
+    with Session(postgres_engine) as db:
+        user = User(id=1, amocrm_account_id=10, amocrm_user_id=101, name="Concurrent")
+        group = WidgetGroup(
+            id=1,
+            account_id=10,
+            name="Concurrent",
+            timezone="UTC",
+            break_limit_minutes=1,
+        )
+        db.add_all([user, group])
+        db.flush()
+        db.add(
+            GroupMember(
+                account_id=10,
+                group_id=1,
+                user_id=1,
+                track_time=True,
+                require_late_reason=True,
+            )
+        )
+        db.commit()
+        if action == "end-break":
+            service = TimesheetService(db)
+            service.apply(RequestContext(10, user), "start-work", uuid4(), now_utc=at)
+            service.apply(RequestContext(10, user), "start-break", uuid4(), now_utc=at)
+    keys = [uuid4(), uuid4()]
+    if shared_key:
+        keys[1] = keys[0]
+    barrier = Barrier(2)
+
+    def execute(key):
+        with Session(postgres_engine) as db:
+            context = RequestContext(10, db.get(User, 1))
+            barrier.wait(timeout=10)
+            try:
+                return TimesheetService(db).apply(
+                    context,
+                    action,
+                    key,
+                    reason="bus",
+                    now_utc=at + timedelta(minutes=2, seconds=1),
+                )
+            except TimesheetConflict as error:
+                return str(error)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(execute, keys))
+    successes = [result for result in outcomes if not isinstance(result, str)]
+    assert len(successes) == (2 if shared_key else 1)
+    if shared_key:
+        assert successes[0] == successes[1]
+    else:
+        assert "STATUS_TRANSITION_INVALID" in outcomes
+    with Session(postgres_engine) as db:
+        assert db.query(LatenessIncident).count() == 1
+        assert db.query(WorkSession).count() == 1
+        expected = 3 if action == "end-break" else 1
+        assert (
+            db.query(TimesheetCommand).count()
+            == db.query(StatusTransition).count()
+            == expected
+        )
 
 
 def _user(

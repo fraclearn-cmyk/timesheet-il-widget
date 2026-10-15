@@ -20,6 +20,75 @@ from types import SimpleNamespace
 import pytest
 
 
+@pytest.mark.parametrize("code", ["LATE_REASON_REQUIRED", "STATUS_TRANSITION_INVALID"])
+def test_only_lateness_errors_expose_allowlisted_calculation_details(code):
+    from app.api.v1.dependencies import APIProblem
+    from app.main import api_error_handler
+    from starlette.exceptions import HTTPException
+
+    application = FastAPI()
+    application.add_exception_handler(HTTPException, api_error_handler)
+
+    @application.get("/")
+    def reject():
+        raise APIProblem(
+            409,
+            code,
+            "Safe message",
+            details={
+                "kind": "break_return",
+                "late_minutes": 3,
+                "sequence": 2,
+                "account_id": 987,
+                "work_session_id": 654,
+                "traceback": "private",
+            },
+        )
+
+    response = TestClient(application).get("/")
+    assert response.status_code == 409
+    error = response.json()["error"]
+    if code == "LATE_REASON_REQUIRED":
+        assert error["details"] == {
+            "kind": "break_return",
+            "late_minutes": 3,
+            "sequence": 2,
+        }
+    else:
+        assert "details" not in error
+    assert all(
+        value not in response.text
+        for value in ["account_id", "work_session_id", "private", "traceback"]
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value", [("account_id", 21), ("user_id", 11), ("work_session_id", 1)]
+)
+def test_lateness_reason_cannot_select_another_owner(monkeypatch, field, value):
+    from app.core.database import get_db
+    from app.models import LatenessIncident, TimesheetCommand
+    from uuid import uuid4
+
+    client, app = _client(monkeypatch)
+    db = app.dependency_overrides[get_db]()
+    try:
+        response = client.post(
+            "/api/v1/timesheet/start-work",
+            headers={"X-User-Id": "10", "X-Account-Id": "20"},
+            json={"idempotency_key": str(uuid4()), "reason": "bus", field: value},
+        )
+        assert response.status_code in {404, 422}
+        assert (
+            db.query(LatenessIncident).count()
+            == db.query(TimesheetCommand).count()
+            == db.query(WorkSession).count()
+            == 0
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
 def _client(monkeypatch):
     from app.core.database import get_db
     from app.main import app

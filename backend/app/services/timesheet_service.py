@@ -2,12 +2,14 @@
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
+import json
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.business_time import business_date, shift_start_utc, minutes_late
+from app.core.business_time import business_date
 from app.core.time_utils import utc_now
 from app.models import (
     GroupMember,
@@ -18,10 +20,13 @@ from app.models import (
     WorkStatus,
 )
 from app.services.activity_interval_service import ActivityIntervalService
+from app.services.lateness_service import LatenessService
 
 
 class TimesheetConflict(ValueError):
-    pass
+    def __init__(self, code, *, details=None):
+        super().__init__(code)
+        self.details = details
 
 
 @dataclass(frozen=True)
@@ -34,6 +39,10 @@ class TimesheetSnapshot:
     track_time: bool
     hide_widget: bool
     restart_allowed: bool
+    late_reason_required: bool = False
+    late_reason_kind: str | None = None
+    late_minutes: int = 0
+    break_sequence: int | None = None
 
 
 class TimesheetService:
@@ -56,6 +65,7 @@ class TimesheetService:
                 GroupMember.is_active.is_(True),
                 WidgetGroup.is_active.is_(True),
             )
+            .populate_existing()
             .one_or_none()
         )
 
@@ -68,6 +78,7 @@ class TimesheetService:
                 WorkSession.business_date == day,
             )
             .order_by(WorkSession.start_time.desc(), WorkSession.id.desc())
+            .populate_existing()
             .all()
         )
 
@@ -79,8 +90,31 @@ class TimesheetService:
                 WorkSession.amocrm_user_id == context.user.amocrm_user_id,
                 WorkSession.end_time.is_(None),
             )
+            .populate_existing()
             .one_or_none()
         )
+
+    def _lateness_fields(self, context, now, membership, work=None):
+        member, group = membership
+        decision = None
+        if member.track_time:
+            service = LatenessService(self.db)
+            if work is None or (
+                work.end_time is not None and group.allow_restart_session
+            ):
+                decision = service.for_shift_start(context, member, group, now)
+            elif work.current_status == WorkStatus.BREAK:
+                decision = service.for_break_return(context, work, member, group, now)
+        if decision is None or not decision.late_minutes:
+            return {}
+        return {
+            "late_reason_required": decision.reason_required,
+            "late_reason_kind": decision.kind.value,
+            "late_minutes": decision.late_minutes,
+            "break_sequence": (
+                decision.sequence if decision.kind.value == "break_return" else None
+            ),
+        }
 
     def _snapshot(self, context, now, membership, preferred_work=None):
         if membership is None:
@@ -113,6 +147,7 @@ class TimesheetService:
                 bool(member.track_time),
                 bool(member.hide_widget),
                 False,
+                **self._lateness_fields(context, now, membership),
             )
         status = (
             "on_break"
@@ -138,13 +173,16 @@ class TimesheetService:
             bool(member.track_time),
             bool(member.hide_widget),
             status == "finished" and bool(group.allow_restart_session),
+            **self._lateness_fields(context, now, membership, work),
         )
 
     def get_status(self, context, now_utc=None):
         now = now_utc or utc_now()
+        if now.tzinfo is not None:
+            now = now.astimezone(timezone.utc).replace(tzinfo=None)
         return self._snapshot(context, now, self._membership(context))
 
-    def apply(self, context, action: str, key: UUID, now_utc=None):
+    def apply(self, context, action: str, key: UUID, reason=None, now_utc=None):
         now = now_utc or utc_now()
         if now.tzinfo is not None:
             now = now.astimezone(timezone.utc).replace(tzinfo=None)
@@ -152,6 +190,33 @@ class TimesheetService:
             raise ValueError("idempotency key must be UUID")
         if action not in {"start-work", "start-break", "end-break", "finish-work"}:
             raise ValueError("unknown timesheet action")
+        if context.user.amocrm_account_id != context.account_id:
+            raise TimesheetConflict("ACCOUNT_SCOPE_INVALID")
+        if reason is not None and not isinstance(reason, str):
+            raise TimesheetConflict("INVALID_REASON")
+        reason = reason.strip() or None if reason is not None else None
+        if reason is not None and len(reason) > 1000:
+            raise TimesheetConflict("INVALID_REASON")
+        request_hash = sha256(
+            json.dumps(
+                {"action": action, "reason": reason},
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
+        def replay(command):
+            # Old commands have no hash and accepted no explanation. Preserve
+            # their original no-reason retries without accepting a new payload.
+            if command.action != action or (
+                command.request_hash != request_hash
+                if command.request_hash
+                else reason is not None
+            ):
+                raise TimesheetConflict("IDEMPOTENCY_KEY_REUSED")
+            return TimesheetSnapshot(**command.response)
+
         scope = (
             TimesheetCommand.account_id == context.account_id,
             TimesheetCommand.amocrm_user_id == context.user.amocrm_user_id,
@@ -159,9 +224,7 @@ class TimesheetService:
         )
         previous = self.db.query(TimesheetCommand).filter(*scope).one_or_none()
         if previous:
-            if previous.action != action:
-                raise TimesheetConflict("IDEMPOTENCY_KEY_REUSED")
-            return TimesheetSnapshot(**previous.response)
+            return replay(previous)
         try:
             # Lock the durable user row: distinct idempotency keys serialize too.
             from app.models import User
@@ -171,9 +234,7 @@ class TimesheetService:
             ).with_for_update().one()
             previous = self.db.query(TimesheetCommand).filter(*scope).one_or_none()
             if previous:
-                if previous.action != action:
-                    raise TimesheetConflict("IDEMPOTENCY_KEY_REUSED")
-                return TimesheetSnapshot(**previous.response)
+                return replay(previous)
             membership = self._membership(context)
             if membership is None or not membership[0].track_time:
                 raise TimesheetConflict("TRACK_TIME_DISABLED")
@@ -196,10 +257,23 @@ class TimesheetService:
             }
             if action not in allowed[state]:
                 raise TimesheetConflict("STATUS_TRANSITION_INVALID")
+            lateness = LatenessService(self.db)
+            decision = None
             if action == "start-work":
-                late = minutes_late(
-                    now, shift_start_utc(day, group.timezone, group.work_start_time)
+                decision = lateness.for_shift_start(context, member, group, now)
+            elif action == "end-break":
+                decision = lateness.for_break_return(context, work, member, group, now)
+            if decision and decision.reason_required and reason is None:
+                raise TimesheetConflict(
+                    "LATE_REASON_REQUIRED",
+                    details={
+                        "kind": decision.kind.value,
+                        "late_minutes": decision.late_minutes,
+                        "sequence": decision.sequence,
+                    },
                 )
+            if action == "start-work":
+                late = decision.late_minutes
                 work = WorkSession(
                     amocrm_account_id=context.account_id,
                     amocrm_user_id=context.user.amocrm_user_id,
@@ -209,6 +283,7 @@ class TimesheetService:
                     current_status=WorkStatus.WORKING,
                     is_late=late > 0,
                     late_minutes=late,
+                    late_reason=reason if late else None,
                 )
                 self.db.add(work)
                 self.db.flush()
@@ -246,6 +321,8 @@ class TimesheetService:
                     duration=elapsed,
                 )
             self.db.add(transition)
+            if decision:
+                lateness.record(context, work, decision, reason, now)
             self.db.flush()
             if action in {"start-break", "finish-work"}:
                 ActivityIntervalService(self.db).close_for_status_transition(
@@ -258,6 +335,7 @@ class TimesheetService:
                     amocrm_user_id=context.user.amocrm_user_id,
                     key=str(key),
                     action=action,
+                    request_hash=request_hash,
                     response=asdict(result),
                 )
             )
@@ -267,7 +345,8 @@ class TimesheetService:
             self.db.rollback()
             winner = self.db.query(TimesheetCommand).filter(*scope).one_or_none()
             if winner:
-                if winner.action != action:
-                    raise TimesheetConflict("IDEMPOTENCY_KEY_REUSED")
-                return TimesheetSnapshot(**winner.response)
+                return replay(winner)
             raise TimesheetConflict("STATUS_TRANSITION_INVALID") from None
+        except Exception:
+            self.db.rollback()
+            raise
