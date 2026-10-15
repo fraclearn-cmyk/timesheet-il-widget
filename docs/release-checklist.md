@@ -43,8 +43,8 @@ gates текущего выпуска. Не публикуйте credentials, to
 
 ## GitHub и целевая среда — внешние gates
 
-- [ ] Push точного release commit согласован и выполнен; GitHub Actions на этом SHA завершился success.
-  Workflow проверяет `015 (head)`. Старые CI runs относятся только к историческому выпуску.
+- [x] Push согласован и выполнен; GitHub Actions run [`38792644952`](https://github.com/fraclearn-cmyk/timesheet-il-widget/actions/runs/38792644952) на commit `53f853c7a44aec7bc82cf3086b88aca4408ff629` завершился `success`.
+  Workflow подтвердил `015 (head)`, полный PostgreSQL backend, Node, браузер, пакет, Compose и сборку production image.
 - [ ] Production Docker image/config/build/up проверены; записан image digest.
 - [ ] Предрелизный backup сохранён и восстановлен в отдельную PostgreSQL-базу.
 - [ ] Schema preflight выполнен, особенно для ранее stamped-010 баз; stamp не заменяет миграцию.
@@ -81,5 +81,5 @@ gates текущего выпуска. Не публикуйте credentials, to
 ## Решение
 
 - [ ] GO — все обязательные текущие gates подтверждены на release SHA и целевой среде.
-- [x] NO-GO для production: GitHub exact-SHA, target Docker/backup/readiness/load и live amoCRM
-  остаются внешними gates. Локальный пакет предназначен для review и контролируемой проверки.
+- [x] NO-GO для production: target Docker/backup/readiness/load и live amoCRM остаются внешними
+  gates. Локальный пакет предназначен для review и контролируемой проверки.
