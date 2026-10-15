@@ -369,6 +369,33 @@ def test_lateness_settings_and_old_command_defaults_are_persisted(db):
     assert WorkSession.__table__.c.late_reason.type.length == 1000
 
 
+def test_membership_database_default_keeps_late_reason_disabled(db):
+    from sqlalchemy import text
+    from app.models import GroupMember
+
+    group = WidgetGroup(account_id=100, name="Database defaults")
+    db.add(group)
+    db.flush()
+    # Raw SQL deliberately bypasses Column.default=False and exercises the
+    # database default used by non-ORM membership writers.
+    db.execute(
+        text("""
+            INSERT INTO group_members
+                (account_id, group_id, user_id, is_active, track_time, hide_widget,
+                 created_at, updated_at)
+            VALUES (100, :group_id, 7, 1, 0, 0, :now, :now)
+        """),
+        {"group_id": group.id, "now": "2026-10-15 09:00:00"},
+    )
+    db.commit()
+
+    member = db.query(GroupMember).filter_by(account_id=100, user_id=7).one()
+    assert member.require_late_reason is False
+    assert db.execute(
+        text("SELECT require_late_reason, typeof(require_late_reason) FROM group_members")
+    ).one() == (0, "integer")
+
+
 @pytest.mark.parametrize("limit", [0, 721])
 def test_group_break_limit_rejects_out_of_range_storage(db, limit):
     db.add(WidgetGroup(account_id=100, name="Invalid", break_limit_minutes=limit))
