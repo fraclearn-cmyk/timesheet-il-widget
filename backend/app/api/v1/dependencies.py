@@ -53,9 +53,21 @@ class APIProblem(HTTPException):
         message: str,
         *,
         headers: dict[str, str] | None = None,
+        details: dict | None = None,
     ) -> None:
         self.code = code
         self.message = message
+        self.details = None
+        if code == "LATE_REASON_REQUIRED" and isinstance(details, dict):
+            safe = {}
+            if details.get("kind") in {"shift_start", "break_return"}:
+                safe["kind"] = details["kind"]
+            for name in ("late_minutes", "sequence"):
+                value = details.get(name)
+                if type(value) is int and value >= (1 if name == "late_minutes" else 0):
+                    safe[name] = value
+            if safe:
+                self.details = safe
         super().__init__(status_code=status_code, detail=code, headers=headers)
 
 

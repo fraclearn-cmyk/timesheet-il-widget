@@ -229,6 +229,13 @@ async def api_error_handler(request: Request, exc: StarletteHTTPException):
                 "code": code,
                 "message": message,
                 "request_id": request_id,
+                **(
+                    {"details": exc.details}
+                    if isinstance(exc, APIProblem)
+                    and exc.code == "LATE_REASON_REQUIRED"
+                    and exc.details
+                    else {}
+                ),
             }
         },
     )

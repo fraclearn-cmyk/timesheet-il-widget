@@ -19,6 +19,7 @@ from app.models import (
     WorkSession,
     WorkStatus,
 )
+from app.models.lateness_incident import LatenessIncident, LatenessKind
 
 
 PATH = "/api/v1/reports/detailed"
@@ -100,6 +101,98 @@ def assert_problem(response, status, code):
     assert response.status_code == status, response.text
     assert response.json()["error"]["code"] == code
     assert response.json()["error"]["message"]
+
+
+def add_incident(db, session, kind, sequence, minutes, reason=None):
+    db.add(
+        LatenessIncident(
+            account_id=session.amocrm_account_id,
+            amocrm_user_id=session.amocrm_user_id,
+            work_session_id=session.id,
+            kind=kind,
+            sequence=sequence,
+            occurred_at=session.start_time,
+            late_minutes=minutes,
+            reason=reason,
+        )
+    )
+
+
+@pytest.mark.parametrize("actor", ["admin", "manager"])
+def test_structured_shift_and_ordered_break_incidents(scoped_client, db, actor):
+    session = add_session(db, late=99)
+    add_incident(db, session, LatenessKind.SHIFT_START, 0, 7, "<b>поезд</b>")
+    add_incident(db, session, LatenessKind.BREAK_RETURN, 2, 5, "связь")
+    add_incident(db, session, LatenessKind.BREAK_RETURN, 1, 8, "встреча")
+    db.commit()
+    payload = get(scoped_client(actor)).json()
+    row = payload["items"][0]
+    assert row["late_seconds"] == row["shift_late_seconds"] == 420
+    assert row["shift_late_reason"] == "<b>поезд</b>"
+    assert row["break_late_seconds"] == 780
+    assert row["break_late_reason"] == [
+        {"sequence": 1, "late_seconds": 480, "reason": "встреча"},
+        {"sequence": 2, "late_seconds": 300, "reason": "связь"},
+    ]
+    assert payload["totals"]["late_seconds"] == 420
+    assert_problem(get(scoped_client("employee")), 403, "ACCESS_DENIED")
+
+
+@pytest.mark.parametrize("minutes", [0, 17])
+def test_legacy_session_never_exposes_historical_reason(scoped_client, db, minutes):
+    session = add_session(db, late=minutes)
+    session.late_reason = "private historical reason"
+    db.commit()
+    row = get(scoped_client("admin")).json()["items"][0]
+    assert row["shift_late_seconds"] == minutes * 60
+    assert row["shift_late_reason"] is None
+    assert row["break_late_seconds"] == 0
+    assert row["break_late_reason"] == []
+
+
+def test_incidents_are_batched_and_isolated_for_fifty_accounts(db):
+    from app.services.timesheet_report_service import TimesheetReportService
+
+    for offset in range(50):
+        account = 10 if offset == 0 else 1000 + offset
+        if offset:
+            add_user(db, user_id=account, external_id=102, account=account)
+            db.add(
+                WidgetGroup(
+                    id=account, account_id=account, name="Foreign", timezone="UTC"
+                )
+            )
+            db.flush()
+            add_member(
+                db,
+                member_id=account,
+                user_id=account,
+                group_id=account,
+                account=account,
+            )
+        session = add_session(db, account=account)
+        add_incident(
+            db, session, LatenessKind.BREAK_RETURN, 1, offset + 1, str(account)
+        )
+    db.commit()
+    context = RequestContext(account_id=10, user=db.get(User, 1))
+    selects = []
+
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects.append(statement)
+
+    event.listen(db.get_bind(), "before_cursor_execute", record)
+    try:
+        result = TimesheetReportService(db).list_rows(
+            context, date(2026, 9, 22), date(2026, 9, 22)
+        )
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", record)
+    assert result.total == 1
+    assert result.items[0].break_late_seconds == 60
+    assert result.items[0].break_late_reason[0].reason == "10"
+    assert len(selects) == 6
 
 
 def test_admin_and_current_manager_are_scoped_to_active_tracked_members(
@@ -371,7 +464,7 @@ def test_duplicate_external_ids_in_forty_foreign_accounts_never_leak(scoped_clie
     assert response.json()["totals"]["work_seconds"] == 77
 
 
-@pytest.mark.parametrize("employee_count", [1, 42])
+@pytest.mark.parametrize("employee_count", [1, 50])
 def test_service_select_count_is_bounded_by_fixed_bulk_queries(db, employee_count):
     from app.services.timesheet_report_service import TimesheetReportService
 
@@ -382,8 +475,10 @@ def test_service_select_count_is_bounded_by_fixed_bulk_queries(db, employee_coun
             db, user_id=user_id, external_id=external_id, name=f"Person {offset:02d}"
         )
         add_member(db, member_id=user_id, user_id=user_id)
-        add_session(db, external_id=external_id, work=60)
-    add_session(db, work=60)
+        session = add_session(db, external_id=external_id, work=60)
+        add_incident(db, session, LatenessKind.BREAK_RETURN, 1, 8, "встреча")
+    session = add_session(db, work=60)
+    add_incident(db, session, LatenessKind.BREAK_RETURN, 1, 8, "встреча")
     db.commit()
     context = RequestContext(account_id=10, user=db.get(User, 1))
     selects = []
@@ -407,7 +502,50 @@ def test_service_select_count_is_bounded_by_fixed_bulk_queries(db, employee_coun
         event.remove(db.get_bind(), "before_cursor_execute", record)
     assert result.total == employee_count
     assert len(result.items) == min(10, employee_count)
-    assert len(selects) == 5, "unexpected N+1 queries: " + repr(selects)
+    assert all(row.break_late_seconds == 480 for row in result.items)
+    assert len(selects) == 6, "unexpected N+1 queries: " + repr(selects)
+
+
+def test_break_incidents_from_all_same_day_sessions_are_retained(scoped_client, db):
+    first = add_session(db, late=10)
+    add_incident(db, first, LatenessKind.BREAK_RETURN, 1, 8)
+    second = add_session(
+        db, start=datetime(2026, 9, 22, 8), end=datetime(2026, 9, 22, 9), late=99
+    )
+    add_incident(db, second, LatenessKind.SHIFT_START, 0, 99, "second start")
+    add_incident(db, second, LatenessKind.BREAK_RETURN, 1, 5, "связь")
+    db.commit()
+    row = get(scoped_client("admin")).json()["items"][0]
+    assert row["shift_late_seconds"] == 600
+    assert row["shift_late_reason"] is None
+    assert row["break_late_seconds"] == 780
+    assert [incident["reason"] for incident in row["break_late_reason"]] == [
+        None,
+        "связь",
+    ]
+
+
+def test_incident_source_has_a_bounded_memory_ceiling(db, monkeypatch):
+    from app.api.v1.dependencies import APIProblem
+    from app.services import timesheet_report_service
+    from types import SimpleNamespace
+
+    session = add_session(db)
+    add_incident(db, session, LatenessKind.BREAK_RETURN, 1, 8)
+    add_incident(db, session, LatenessKind.BREAK_RETURN, 2, 5)
+    db.commit()
+    visible = {2: (db.get(User, 2), db.get(WidgetGroup, 10))}
+    monkeypatch.setattr(timesheet_report_service, "REPORT_SOURCE_ROW_LIMIT", 1)
+    with pytest.raises(APIProblem) as error:
+        timesheet_report_service.TimesheetReportService(db)._rows_for_keys(
+            10,
+            visible,
+            date(2026, 9, 22),
+            date(2026, 9, 22),
+            [SimpleNamespace(id=2, business_date=date(2026, 9, 22))],
+            datetime(2026, 9, 23),
+        )
+    assert error.value.code == "REPORT_EXPORT_SOURCE_TOO_LARGE"
 
 
 def test_empty_page_streams_full_totals_without_loading_page_rows(db):
@@ -466,7 +604,7 @@ def test_empty_page_streams_full_totals_without_loading_page_rows(db):
     assert empty.items == []
     assert first.totals == empty.totals
     assert empty.totals.work_seconds == 4260
-    assert len(first_selects) == 5
+    assert len(first_selects) == 6
     assert (
         sum(
             "(users.id, work_sessions.business_date) in" in statement
@@ -544,4 +682,4 @@ def test_postgres_real_scoped_bulk_report(postgres_db):
     assert result.total == 1
     assert result.items[0].user_id == 2
     assert result.totals.work_seconds == 60
-    assert len(selects) == 5, "unexpected N+1 queries: " + repr(selects)
+    assert len(selects) == 6, "unexpected N+1 queries: " + repr(selects)

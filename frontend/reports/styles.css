@@ -13,5 +13,10 @@
 .ts-reports__message, .ts-reports__export-message { margin: 10px 0; }
 .ts-reports__table { width: 100%; border-collapse: collapse; text-align: left; }
 .ts-reports__table th, .ts-reports__table td { padding: 8px; border-bottom: 1px solid #e0e6ec; }
+.ts-reports__table th { background: #f2f5f8; border: 1px solid #d7dfe7; vertical-align: middle; }
+.ts-reports__table td { vertical-align: top; }
+.ts-reports__table th[colspan] { text-align: center; }
+.ts-reports__table .ts-reports__reason { min-width: 180px; max-width: 320px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ts-reports__break-reason + .ts-reports__break-reason { margin-top: 6px; }
 .ts-reports__pagination { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 @media (max-width: 700px) { .ts-reports__table { display: block; overflow-x: auto; white-space: nowrap; } }

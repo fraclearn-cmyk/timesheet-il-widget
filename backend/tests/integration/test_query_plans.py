@@ -87,7 +87,7 @@ def _plans(connection):
 
 def test_014_adds_only_the_proven_composite_indexes_and_roundtrips(migrated_db):
     config, engine = migrated_db
-    command.upgrade(config, "head")
+    command.upgrade(config, "014")
 
     with engine.connect() as connection:
         assert (
@@ -107,7 +107,7 @@ def test_014_adds_only_the_proven_composite_indexes_and_roundtrips(migrated_db):
         actual = _indexes(engine, table_name)
         assert expected.keys().isdisjoint(actual)
 
-    command.upgrade(config, "head")
+    command.upgrade(config, "014")
     with engine.connect() as connection:
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version")) == "014"
@@ -117,7 +117,7 @@ def test_014_adds_only_the_proven_composite_indexes_and_roundtrips(migrated_db):
 def test_representative_phase5_to_phase7_queries_use_measured_access_paths(
     migrated_db,
 ):
-    """Keep the EXPLAIN evidence tied to representative 40-account cardinality.
+    """Keep the EXPLAIN evidence tied to representative 50-account cardinality.
 
     A disposable PostgreSQL 15 probe measured the same query shapes before and
     after the candidate indexes. The accepted indexes reduced the report plan
@@ -135,24 +135,24 @@ def test_representative_phase5_to_phase7_queries_use_measured_access_paths(
                   (account_id,account_url,encrypted_access_token,
                    encrypted_refresh_token,is_active,created_at,updated_at)
                 SELECT a,'https://a'||a||'.example','access','refresh',true,now(),now()
-                FROM generate_series(1,40) a;
+                FROM generate_series(1,50) a;
                 INSERT INTO ingestion_cursors (account_id,next_poll_at,failure_count)
-                SELECT a,timestamp '2026-09-29',0 FROM generate_series(1,40) a;
+                SELECT a,timestamp '2026-09-29',0 FROM generate_series(1,50) a;
                 INSERT INTO users
                   (id,amocrm_user_id,amocrm_account_id,name,role,is_active,
                    hide_widget,created_at,updated_at)
                 SELECT (a-1)*10+u,u,a,'User '||u,'employee',true,false,now(),now()
-                FROM generate_series(1,40) a CROSS JOIN generate_series(1,10) u;
+                FROM generate_series(1,50) a CROSS JOIN generate_series(1,10) u;
                 INSERT INTO widget_groups
                   (id,account_id,name,name_key,timezone,work_start_time,
                    work_end_time,is_active,allow_restart_session,created_at,updated_at)
                 SELECT a,a,'Group','group','UTC','09:00','18:00',true,false,now(),now()
-                FROM generate_series(1,40) a;
+                FROM generate_series(1,50) a;
                 INSERT INTO group_members
                   (account_id,group_id,user_id,is_active,track_time,hide_widget,
                    created_at,updated_at)
                 SELECT a,a,(a-1)*10+u,true,true,false,now(),now()
-                FROM generate_series(1,40) a CROSS JOIN generate_series(1,10) u;
+                FROM generate_series(1,50) a CROSS JOIN generate_series(1,10) u;
                 INSERT INTO work_sessions
                   (amocrm_account_id,amocrm_user_id,user_name,start_time,end_time,
                    business_date,current_status,total_work_time,total_break_time,
@@ -160,7 +160,7 @@ def test_representative_phase5_to_phase7_queries_use_measured_access_paths(
                    idle_duration,created_at,updated_at)
                 SELECT a,u,'User '||u,d+time '09:00',d+time '18:00',d,'finished',
                        28800,3600,1,28800,0,3600,0,now(),now()
-                FROM generate_series(1,40) a CROSS JOIN generate_series(1,10) u
+                FROM generate_series(1,50) a CROSS JOIN generate_series(1,10) u
                 CROSS JOIN generate_series(
                     date '2026-08-17',date '2026-09-30',interval '1 day'
                 ) d;
@@ -210,9 +210,13 @@ def test_representative_phase5_to_phase7_queries_use_measured_access_paths(
         indexed["status"]["Plan"]
     )
     assert "ix_activity_intervals_user_id" in _index_names(indexed["activity"]["Plan"])
-    assert "uq_group_members_active_account_user" in _index_names(
-        indexed["membership"]["Plan"]
-    )
+    # At 50 tenants the account index is also a selective plan (10 members).
+    # PostgreSQL may legitimately prefer it to the partial unique index.
+    assert _index_names(indexed["membership"]["Plan"]) & {
+        "uq_group_members_active_account_user",
+        "ix_group_members_account_id",
+    }
+    assert indexed["membership"]["Plan"]["Actual Rows"] == 10
     assert "ix_raw_ingestion_events_id" in _index_names(indexed["cleanup"]["Plan"])
     assert _relation_names(indexed["due"]["Plan"]) == {
         "ingestion_cursors",
@@ -220,3 +224,40 @@ def test_representative_phase5_to_phase7_queries_use_measured_access_paths(
     }
     for name, plan in indexed.items():
         assert plan["Execution Time"] < 250, (name, plan)
+
+    command.upgrade(config, "015")
+    assert _indexes(engine, "lateness_incidents")[
+        "ix_lateness_incidents_account_session"
+    ] == (
+        "account_id",
+        "work_session_id",
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+            INSERT INTO lateness_incidents
+              (account_id,amocrm_user_id,work_session_id,kind,sequence,occurred_at,late_minutes,reason,created_at)
+            SELECT amocrm_account_id,amocrm_user_id,id,'break_return',1,start_time,8,'reason',now()
+            FROM work_sessions;
+            ANALYZE lateness_incidents;
+        """
+            )
+        )
+        keys = connection.execute(
+            text(
+                """SELECT id,amocrm_user_id FROM work_sessions
+            WHERE amocrm_account_id=20 ORDER BY id LIMIT 10"""
+            )
+        ).all()
+        key_literals = ",".join(
+            f"({int(key.id)},{int(key.amocrm_user_id)})" for key in keys
+        )
+        incidents = _plan(
+            connection,
+            f"""SELECT * FROM lateness_incidents
+            WHERE account_id=20 AND (work_session_id,amocrm_user_id) IN ({key_literals})""",
+        )
+    assert "ix_lateness_incidents_account_session" in _index_names(incidents["Plan"])
+    assert incidents["Plan"]["Actual Rows"] == 10
+    assert incidents["Execution Time"] < 250

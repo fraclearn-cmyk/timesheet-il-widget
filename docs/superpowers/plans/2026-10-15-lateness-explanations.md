@@ -266,4 +266,3 @@
 - [ ] **Step 7: Commit and push.** `git commit -m "release: prepare lateness explanations 3.0.20"`, push `main`, then verify the pushed commit and GitHub checks.
 
 - [ ] **Step 8: Live amoCRM smoke test when the local HTTPS endpoint is available.** Upload `widget.zip`, save the current API URL, test administrator settings and one employee flow, inspect manager/admin report and Excel, then restore test data. Record this separately from local completion if the external environment is unavailable.
-

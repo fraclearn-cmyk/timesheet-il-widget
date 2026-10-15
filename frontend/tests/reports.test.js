@@ -36,7 +36,7 @@ function boot(options = {}) {
   const controller = Reports.mount(document.querySelector('#root'), {
     document, transport, now: options.now || (() => new Date('2026-09-29T12:00:00Z')),
     createObjectURL(blob) { createCalls.push(blob); return 'blob:test'; },
-    revokeObjectURL(url) { revokeCalls.push(url); },
+    revokeObjectURL(url) { revokeCalls.push(url); }, columns: options.columns,
   });
   return { dom, document, controller, calls, createCalls, revokeCalls };
 }
@@ -98,16 +98,26 @@ test('employee choices require explicit report permission from the authorized di
   fixture.controller.destroy();
 });
 
-test('renders only eight safe columns with local clocks and readable durations', async () => {
+test('renders eleven safe columns with a three-level lateness header and whole minutes', async () => {
   const poisoned = { ...row('<img src=x onerror=alert(1)>'), group_timezone: 'Europe/Moscow',
-    activity: 'SECRET_ACTIVITY', crm_url: 'https://secret.invalid', calls: 'SECRET_CALL' };
+    activity: 'SECRET_ACTIVITY', crm_url: 'https://secret.invalid', calls: 'SECRET_CALL',
+    shift_late_seconds: 4500, shift_late_reason: '<script>bad()</script>', break_late_seconds: 780,
+    break_late_reason: [{ sequence: 1, late_seconds: 480, reason: '<img src=x>' },
+      { sequence: 2, late_seconds: 300, reason: null }] };
   const fixture = boot({ reportResult: () => Promise.resolve(report([poisoned])) });
   await fixture.controller.ready;
   assert.deepEqual(Array.from(fixture.document.querySelectorAll('thead th'), (node) => node.textContent),
-    ['Сотрудник', 'Дата', 'Начало', 'Окончание', 'Перерыв', 'Работа', 'Опоздание', 'Статус']);
+    ['Сотрудник', 'Дата', 'Начало', 'Окончание', 'Перерыв', 'Работа', 'Статус', 'Опоздания',
+      'Начало дня', 'Перерыв', 'Минуты', 'Объяснительная', 'Минуты', 'Объяснительная']);
+  assert.deepEqual(Array.from(fixture.document.querySelectorAll('thead tr'), (tr) =>
+    Array.from(tr.children, (th) => [th.rowSpan, th.colSpan])),
+  [[[3, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], [1, 4]], [[1, 2], [1, 2]], [[1, 1], [1, 1], [1, 1], [1, 1]]]);
   assert.deepEqual(Array.from(fixture.document.querySelectorAll('tbody td'), (node) => node.textContent),
-    ['<img src=x onerror=alert(1)>', '29.09.2026', '09:00', '18:00', '1 ч 1 мин', '7 ч 59 мин', '2 мин', 'Завершил']);
+    ['<img src=x onerror=alert(1)>', '29.09.2026', '09:00', '18:00', '1 ч 1 мин', '7 ч 59 мин', 'Завершил',
+      '75', '<script>bad()</script>', '13', 'Перерыв №1 — 8 мин: <img src=x>Перерыв №2 — 5 мин']);
   assert.equal(fixture.document.querySelector('tbody img'), null);
+  assert.equal(fixture.document.querySelector('tbody script'), null);
+  assert.equal(fixture.document.querySelectorAll('.ts-reports__break-reason').length, 2);
   assert.doesNotMatch(fixture.document.body.textContent, /Europe\/Moscow|SECRET|https:\/\/secret|Активность|CRM|Звонки/i);
   fixture.controller.destroy();
 });
@@ -178,7 +188,7 @@ test('export sends selected columns and filters, disables repeat, and cleans up 
   action(fixture, 'export').click();
   assert.equal(action(fixture, 'export').disabled, true);
   assert.deepEqual(fixture.calls.at(-1).body, { date_from: '2026-09-29', date_to: '2026-09-29', group_id: 10,
-    columns: ['employee', 'date', 'end', 'break', 'work', 'lateness', 'status'] });
+    columns: ['employee', 'date', 'end', 'break', 'work', 'status', 'shift_lateness', 'shift_late_reason', 'break_lateness', 'break_late_reason'] });
   waiting.resolve({ blob: new fixture.dom.window.Blob(['xlsx']), filename: 'точный.xlsx' }); await tick();
   assert.deepEqual(anchors, [['точный.xlsx', 'blob:test']]);
   assert.equal(fixture.document.querySelector('a[download]'), null);
@@ -253,4 +263,24 @@ test('the same controller registers through AMD without CommonJS', () => {
   define.amd = {};
   runInNewContext(readFileSync(require.resolve('../reports/controller'), 'utf8'), { define });
   assert.equal(typeof loaded.mount, 'function');
+});
+
+test('legacy saved columns normalize and four lateness choices remain independent', async () => {
+  const fixture = boot({ columns: ['employee', 'lateness', 'shift_lateness', 'obsolete'] });
+  await fixture.controller.ready;
+  assert.deepEqual(Array.from(fixture.document.querySelectorAll('[data-column]:checked'), (n) => n.dataset.column),
+    ['employee', 'shift_lateness']);
+  assert.equal(fixture.document.querySelector('[data-column="lateness"]'), null);
+  fixture.document.querySelector('[data-column="break_late_reason"]').click();
+  fixture.document.body.addEventListener('click', (event) => { if (event.target.tagName === 'A') event.preventDefault(); });
+  action(fixture, 'export').click(); await tick();
+  assert.deepEqual(fixture.calls.at(-1).body.columns, ['employee', 'shift_lateness', 'break_late_reason']);
+  fixture.controller.destroy();
+});
+
+test('legacy report rows retain shift minutes and blank structured reasons', async () => {
+  const fixture = boot(); await fixture.controller.ready;
+  assert.deepEqual(Array.from(fixture.document.querySelectorAll('tbody td'), (n) => n.textContent).slice(-4),
+    ['2', '', '0', '']);
+  fixture.controller.destroy();
 });

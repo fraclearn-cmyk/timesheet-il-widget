@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 
 
+RELEASE_VERSION = "3.0.20"
 RUNTIME_FILES = frozenset(
     {
         "manifest.json",
@@ -173,11 +174,16 @@ class WidgetValidator:
                             f"{name} must register with the amoCRM define loader"
                         )
 
+                manifest = {}
                 if "manifest.json" in text:
                     try:
                         manifest = json.loads(text["manifest.json"])
                     except json.JSONDecodeError:
                         manifest = {}
+                    if manifest.get("widget", {}).get("version") != RELEASE_VERSION:
+                        self.errors.append(
+                            f"manifest.json widget version must be {RELEASE_VERSION}"
+                        )
                     if manifest.get("locations") != [
                         "lcard-0",
                         "ccard-0",
@@ -206,6 +212,15 @@ class WidgetValidator:
                             "script.js widget constructor must return this"
                         )
                     dependencies = amd_dependencies(text["script.js"])
+                    for module_name, content in text.items():
+                        if module_name.endswith(".js"):
+                            for dependency in amd_dependencies(content):
+                                if dependency.startswith(
+                                    "."
+                                ) and not dependency.endswith(f"?v={RELEASE_VERSION}"):
+                                    self.errors.append(
+                                        f"AMD cache version must be {RELEASE_VERSION} in {module_name}"
+                                    )
                     widget_version = manifest.get("widget", {}).get("version", "")
                     for dependency, member in (
                         (

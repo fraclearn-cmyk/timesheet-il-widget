@@ -69,6 +69,7 @@ def _payload(phone):
                     "work_end_time": "18:00",
                     "is_active": True,
                     "allow_restart_session": False,
+                    "break_limit_minutes": 30,
                 }
             ],
             "users": [
@@ -89,6 +90,7 @@ def _payload(phone):
                     "group_ref": "client:sales",
                     "track_time": True,
                     "hide_widget": True,
+                    "require_late_reason": True,
                 },
             ],
         }
@@ -129,6 +131,8 @@ def test_concurrent_saves_have_one_winner(migrated_db, existing_settings):
         assert db.query(WidgetSettings).one().support_phone == winner
         assert db.query(WidgetGroup).count() == 1
         assert db.query(GroupMember).count() == 1
+        assert db.query(WidgetGroup).one().break_limit_minutes == 30
+        assert db.query(GroupMember).one().require_late_reason is True
         assert db.get(User, 3).hide_widget is True
 
 
@@ -149,11 +153,14 @@ def test_postgres_late_membership_failure_rolls_back_all_tables(migrated_db):
             )
         )
     with Session(engine) as db:
+        context = RequestContext(10, db.get(User, 1))
+        before = SettingsSnapshotService(db).load(context).model_dump()
         with pytest.raises(SettingsProblem) as failure:
             SettingsSnapshotService(db).save(
                 RequestContext(10, db.get(User, 1)), _payload("must roll back")
             )
         assert failure.value.error["code"] == "SETTINGS_SAVE_CONFLICT"
+        assert SettingsSnapshotService(db).load(context).model_dump() == before
         assert db.query(WidgetSettings).one().revision == 1
         assert db.query(WidgetSettings).one().support_phone is None
         assert db.query(WidgetGroup).count() == 0

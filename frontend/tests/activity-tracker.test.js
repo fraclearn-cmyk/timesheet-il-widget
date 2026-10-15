@@ -149,7 +149,8 @@ test('timesheet observer disables tracking when confirmed status becomes unavail
   const snapshots = [];
   const responses = [
     { session_id: 7, status: 'working', started_at: '2026-09-23T08:00:00Z', ended_at: null,
-      break_seconds: 0, track_time: true, hide_widget: true, restart_allowed: false },
+      break_seconds: 0, track_time: true, hide_widget: true, restart_allowed: false,
+      late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null },
     Promise.reject(new Error('offline')),
   ];
   const jobs = [];

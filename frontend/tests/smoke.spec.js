@@ -121,7 +121,7 @@ async function boot(page) {
       return Promise.resolve({
         session_id: 7, status: 'working', started_at: '2026-09-30T08:00:00Z',
         ended_at: null, break_seconds: 0, track_time: true,
-        hide_widget: false, restart_allowed: false,
+        hide_widget: false, restart_allowed: false, late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null,
       });
     };
     window.widget.callbacks.init();

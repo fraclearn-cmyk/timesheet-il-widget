@@ -47,6 +47,37 @@
     color: white;
     cursor: pointer;
 }
+.timesheet-action:disabled {
+    background: #8e97a1;
+    cursor: not-allowed;
+}
+.timesheet-overlay__panel--reason {
+    box-sizing: border-box;
+    flex-direction: column;
+    width: min(420px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+}
+.timesheet-overlay__reason {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #8e97a1;
+    border-radius: 5px;
+    font: inherit;
+    resize: vertical;
+}
+.timesheet-overlay__reason-count {
+    margin: 0;
+    color: #52606d;
+    font-size: 13px;
+    text-align: right;
+}
+.timesheet-overlay__reason:focus-visible,
+.timesheet-action:focus-visible {
+    outline: 3px solid #2469a8;
+    outline-offset: 3px;
+}
 
 /* Widget Container */
 .timesheet-widget {

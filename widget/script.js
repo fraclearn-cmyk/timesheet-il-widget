@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings.js?v=3.0.19', './timesheet/controller.js?v=3.0.19', './overlay.js?v=3.0.19', './activity-tracker.js?v=3.0.19', './monitoring/timeline.js?v=3.0.19', './monitoring/activity-modal.js?v=3.0.19', './monitoring/dashboard.js?v=3.0.19', './reports/controller.js?v=3.0.19'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
+define(['jquery', './settings/settings.js?v=3.0.20', './timesheet/controller.js?v=3.0.20', './overlay.js?v=3.0.20', './activity-tracker.js?v=3.0.20', './monitoring/timeline.js?v=3.0.20', './monitoring/activity-modal.js?v=3.0.20', './monitoring/dashboard.js?v=3.0.20', './reports/controller.js?v=3.0.20'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
     if (ActivityModal && typeof ActivityModal.setTimeline === 'function') ActivityModal.setTimeline(Timeline);
     if (MonitoringDashboard && typeof MonitoringDashboard.setActivityModal === 'function') MonitoringDashboard.setActivityModal(ActivityModal);
 
@@ -341,7 +341,7 @@ define(['jquery', './settings/settings.js?v=3.0.19', './timesheet/controller.js?
         }
         function renderWorkingUi(snapshot) {
             if (typeof widget.renderTimesheetStatus === 'function') {
-                widget.renderTimesheetStatus(snapshot, function(action) { return widget.timesheetController.command(action); });
+                widget.renderTimesheetStatus(snapshot, function(action, reason) { return widget.timesheetController.command(action, reason); });
             }
         }
         function stopTimesheet() {

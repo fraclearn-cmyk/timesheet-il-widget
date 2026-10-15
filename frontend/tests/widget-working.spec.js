@@ -15,7 +15,7 @@ const css = readFileSync(resolve(__dirname, '../../widget/styles.css'), 'utf8');
 const monitoringCss = readFileSync(resolve(__dirname, '../monitoring/styles.css'), 'utf8');
 const reportsCss = readFileSync(resolve(__dirname, '../reports/styles.css'), 'utf8');
 
-async function boot(page, cssHandler, role = 'employee', timesheetStatus = 'on_break') {
+async function boot(page, cssHandler, role = 'employee', timesheetStatus = 'on_break', lateness = {}) {
   await page.route('https://widget.test/**', async (route) => {
     if (route.request().url().includes('/monitoring/styles.css')) {
       return route.fulfill({ contentType: 'text/css', body: monitoringCss });
@@ -27,7 +27,7 @@ async function boot(page, cssHandler, role = 'employee', timesheetStatus = 'on_b
     return route.fulfill({ contentType: 'text/html', body: '<button id="crm">CRM</button><div id="list_page_holder"></div>' });
   });
   await page.goto('https://widget.test/');
-  await page.evaluate(({ code, role, timesheetStatus }) => {
+  await page.evaluate(({ code, role, timesheetStatus, lateness }) => {
     const modules = {};
     for (const name of ['settings', 'controller', 'overlay', 'tracker']) {
       window.define = (factory) => { modules[name] = factory(); };
@@ -53,10 +53,112 @@ async function boot(page, cssHandler, role = 'employee', timesheetStatus = 'on_b
         totals: { employees: 0, working: 0, on_break: 0, finished: 0, not_started: 0 } });
       if (request.url.includes('/reports/detailed')) return Promise.resolve({ items: [], page: 1, total: 0 });
       return Promise.resolve({ session_id: 7, status: timesheetStatus, started_at: '2026-09-22T08:00:00Z',
-        ended_at: null, break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false });
+        ended_at: null, break_seconds: 0, track_time: true, hide_widget: false, restart_allowed: false,
+        late_reason_required: false, late_reason_kind: null, late_minutes: 0, break_sequence: null, ...lateness });
     };
     window.widget.callbacks.init();
-  }, { code: sources, role, timesheetStatus });
+  }, { code: sources, role, timesheetStatus, lateness });
+}
+
+for (const [status, action, kind, sequence, label, message] of [
+  ['not_started', 'start-work', 'shift_start', null, 'Начать рабочий день', 'Опоздание к началу дня: 8 мин.'],
+  ['on_break', 'end-break', 'break_return', 2, 'Продолжить работу', 'Опоздание с перерыва №2: 8 мин.'],
+]) {
+  test(`${status}: accessible explanation enables command while CRM remains blocked`, async ({ page }) => {
+    await boot(page, (route) => route.fulfill({ contentType: 'text/css', body: css }), 'employee', status,
+      { late_reason_required: true, late_reason_kind: kind, late_minutes: 8, break_sequence: sequence });
+    const input = page.getByRole('textbox', { name: 'Причина опоздания' });
+    const button = page.getByRole('button', { name: label, exact: true });
+    await expect(page.getByRole('dialog')).toHaveAccessibleName('Учёт рабочего времени');
+    await expect(page.getByText(message, { exact: true })).toBeVisible();
+    await expect(input).toHaveCount(1);
+    await expect(input).toBeFocused();
+    await expect(input).toHaveAttribute('maxlength', '1000');
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveCSS('background-color', 'rgb(142, 151, 161)');
+    await input.pressSequentially('   ');
+    await expect(button).toBeDisabled();
+    await page.evaluate(() => {
+      window.crmClicks = 0; window.crmKeys = [];
+      document.querySelector('#crm').onclick = () => window.crmClicks++;
+      for (const type of ['keydown', 'keypress', 'keyup']) {
+        document.addEventListener(type, (event) => window.crmKeys.push(event.key));
+      }
+    });
+    await input.press('Control+A');
+    await input.pressSequentially('задержался');
+    await input.press('Enter');
+    await input.pressSequentially('на встрече');
+    await expect(input).toHaveValue('задержался\nна встрече');
+    await expect(button).toBeEnabled();
+    await expect(button).toHaveCSS('background-color', 'rgb(36, 105, 168)');
+    expect(await page.evaluate(() => window.crmKeys)).toEqual([]);
+    await page.keyboard.press('Tab');
+    await expect(button).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(input).toBeFocused();
+    const crmBounds = await page.locator('#crm').boundingBox();
+    await page.mouse.click(crmBounds.x + 3, crmBounds.y + 3);
+    expect(await page.evaluate(() => window.crmClicks)).toBe(0);
+    await input.fill('');
+    await input.pressSequentially('x'.repeat(1001));
+    await expect(input).toHaveValue('x'.repeat(1000));
+    await expect(page.locator('.timesheet-overlay__reason-count')).toHaveText('1000 / 1000');
+    const literal = '<img src=x onerror="window.injected=true"> & <script>alert(1)</script>';
+    await input.fill('  ' + literal + '  ');
+    await page.evaluate(async () => window.widget.timesheetController.load());
+    await expect(input).toHaveValue('  ' + literal + '  ');
+    await expect(page.locator('.timesheet-overlay img, .timesheet-overlay script')).toHaveCount(0);
+    expect(await page.evaluate(() => window.injected)).toBeUndefined();
+    await input.focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
+    await expect.poll(() => page.evaluate(() => window.calls.filter((call) => call.method === 'POST' &&
+      /\/timesheet\//.test(call.url)).length)).toBe(1);
+    const posted = await page.evaluate(() => window.calls.find((call) => call.method === 'POST' && /\/timesheet\//.test(call.url)));
+    expect(posted.url).toBe('https://api.test/api/v1/' + 'timesheet/' + action);
+    expect(JSON.parse(posted.data).reason).toBe(literal);
+  });
+
+  test(`${status}: same-event refresh preserves editing focus, selection, scroll and focused action`, async ({ page }) => {
+    await page.clock.install();
+    await boot(page, (route) => route.fulfill({ contentType: 'text/css', body: css }), 'employee', status,
+      { late_reason_required: true, late_reason_kind: kind, late_minutes: 8, break_sequence: sequence });
+    const input = page.getByRole('textbox', { name: 'Причина опоздания' });
+    const button = page.getByRole('button', { name: label, exact: true });
+    const draft = 'alpha beta\n' + 'another line\n'.repeat(30);
+    await input.fill(draft);
+    const editing = await input.evaluate((node) => {
+      node.setSelectionRange(2, 7, 'backward');
+      node.scrollTop = 50;
+      return { start: node.selectionStart, end: node.selectionEnd, direction: node.selectionDirection, top: node.scrollTop };
+    });
+    await page.evaluate(() => {
+      const original = window.widget.$authorizedAjax;
+      window.widget.$authorizedAjax = (request) => Promise.resolve(original(request)).then((snapshot) =>
+        request.url.includes('/timesheet/my-status') ? { ...snapshot, late_minutes: 9 } : snapshot);
+    });
+    await page.clock.runFor(30000);
+    await expect(page.locator('.timesheet-overlay__message')).toContainText('9 мин.');
+    await expect(input).toBeFocused();
+    expect(await input.evaluate((node) => ({ start: node.selectionStart, end: node.selectionEnd,
+      direction: node.selectionDirection, top: node.scrollTop }))).toEqual(editing);
+    await input.evaluate((node) => node.setSelectionRange(5, 5));
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect.poll(() => page.evaluate(() => window.calls.filter((call) => call.url.includes('/timesheet/my-status')).length)).toBe(3);
+    await expect(input).toBeFocused();
+    await input.pressSequentially(' INSERTED');
+    await expect(input).toHaveValue('alpha INSERTED beta\n' + 'another line\n'.repeat(30));
+    await button.focus();
+    await page.evaluate(async () => window.widget.timesheetController.load());
+    await expect(button).toBeFocused();
+    const monitoring = page.locator('.ts-monitoring-widget__launcher');
+    await monitoring.focus();
+    await page.evaluate(async () => window.widget.timesheetController.load());
+    await expect(monitoring).toBeFocused();
+    const oldInput = await input.elementHandle();
+    await page.evaluate(() => window.widget.callbacks.destroy());
+    expect(await oldInput.evaluate((node) => ({ value: node.value, focused: document.activeElement === node,
+      connected: node.isConnected }))).toEqual({ value: '', focused: false, connected: false });
+  });
 }
 
 test('admin report launcher opens its own panel and leaves native CRM content intact', async ({ page }) => {

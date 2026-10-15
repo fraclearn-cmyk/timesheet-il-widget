@@ -20,6 +20,7 @@ def snapshot_update(body):
                 "amocrm_user_id": user["amocrm_user_id"],
                 "track_time": user["track_time"],
                 "hide_widget": user["hide_widget"],
+                "require_late_reason": user["require_late_reason"],
                 "group_ref": f"id:{user['group_id']}" if user["group_id"] else None,
             }
             for user in body["users"]
@@ -75,6 +76,8 @@ def test_stale_revision_does_not_overwrite(scoped_client, db, valid_snapshot):
 
 @pytest.mark.parametrize("actor", ["employee", "manager"])
 def test_save_requires_admin(scoped_client, db, valid_snapshot, actor):
+    valid_snapshot["groups"][0]["break_limit_minutes"] = 25
+    valid_snapshot["users"][1]["require_late_reason"] = True
     before = dump_state(db)
     response = scoped_client(actor).put(
         "/api/v1/settings/snapshot", json=valid_snapshot
@@ -340,6 +343,7 @@ def test_unknown_or_foreign_user_is_rejected_atomically(
     scoped_client, db, valid_snapshot, reference
 ):
     valid_snapshot["users"][0]["amocrm_user_id"] = reference
+    valid_snapshot["users"][0]["require_late_reason"] = True
     before = dump_state(db)
     response = scoped_client("admin").put(
         "/api/v1/settings/snapshot", json=valid_snapshot
@@ -413,6 +417,8 @@ def test_database_failure_rolls_back_every_write(scoped_client, db, valid_snapsh
 
     valid_snapshot["settings"]["support_phone"] = "must roll back"
     valid_snapshot["users"][1]["hide_widget"] = True
+    valid_snapshot["users"][1]["require_late_reason"] = True
+    valid_snapshot["groups"][0]["break_limit_minutes"] = 35
     before = dump_state(db)
 
     def fail_after_flush(session, flush_context):
@@ -427,6 +433,41 @@ def test_database_failure_rolls_back_every_write(scoped_client, db, valid_snapsh
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "SETTINGS_SAVE_CONFLICT"
     assert dump_state(db) == before
+
+
+def test_response_failure_rolls_back_lateness_settings(
+    scoped_client, db, valid_snapshot, monkeypatch
+):
+    from sqlalchemy.exc import IntegrityError
+    from app.services.settings_snapshot_service import SettingsSnapshotService
+
+    admin = scoped_client("admin")
+    before_snapshot = admin.get("/api/v1/settings/snapshot").json()
+    before = dump_state(db)
+    next(g for g in valid_snapshot["groups"] if g["id"] == 10)[
+        "break_limit_minutes"
+    ] = 35
+    valid_snapshot["users"][1]["require_late_reason"] = True
+    load = SettingsSnapshotService.load
+
+    def fail_response(service, context):
+        saved = load(service, context)
+        assert next(g for g in saved.groups if g.id == 10).break_limit_minutes == 35
+        assert next(
+            u for u in saved.users if u.amocrm_user_id == 102
+        ).require_late_reason
+        raise IntegrityError(
+            "response failed after all SQL writes", {}, Exception("failure")
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(SettingsSnapshotService, "load", fail_response)
+        response = admin.put("/api/v1/settings/snapshot", json=valid_snapshot)
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "SETTINGS_SAVE_CONFLICT"
+    assert dump_state(db) == before
+    assert admin.get("/api/v1/settings/snapshot").json() == before_snapshot
 
 
 def test_admin_snapshot_is_account_scoped(scoped_client):
@@ -575,3 +616,168 @@ def test_stale_account_id_settings_routes_are_retired(scoped_client, method, pat
     response = getattr(scoped_client("admin"), method)(path, **kwargs)
 
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("limit", [1, 720])
+@pytest.mark.parametrize("track_time", [True, False])
+def test_lateness_settings_round_trip(
+    scoped_client, db, valid_snapshot, limit, track_time
+):
+    admin = scoped_client("admin")
+    next(g for g in valid_snapshot["groups"] if g["id"] == 10)[
+        "break_limit_minutes"
+    ] = limit
+    valid_snapshot["users"][1].update(require_late_reason=True, track_time=track_time)
+    response = admin.put("/api/v1/settings/snapshot", json=valid_snapshot)
+    assert response.status_code == 200, response.text
+    assert response.json()["revision"] == 2
+    loaded = admin.get("/api/v1/settings/snapshot").json()
+    assert loaded == response.json()
+    assert (
+        next(g for g in loaded["groups"] if g["id"] == 10)["break_limit_minutes"]
+        == limit
+    )
+    assert (
+        next(g for g in loaded["groups"] if g["id"] == 11)["break_limit_minutes"] == 60
+    )
+    employee = next(u for u in loaded["users"] if u["amocrm_user_id"] == 102)
+    assert employee["require_late_reason"] is True
+    assert db.query(GroupMember).filter_by(user_id=2).one().require_late_reason is True
+    assert "require_late_reason" not in User.__table__.columns
+    payload = snapshot_update(loaded)
+    payload["users"][1]["require_late_reason"] = False
+    changed = admin.put("/api/v1/settings/snapshot", json=payload)
+    assert changed.status_code == 200, changed.text
+    assert (
+        next(u for u in changed.json()["users"] if u["amocrm_user_id"] == 102)[
+            "require_late_reason"
+        ]
+        is False
+    )
+
+
+@pytest.mark.parametrize("limit", [0, 721, 1.5, True, "60"])
+def test_invalid_break_limit_is_atomic(scoped_client, db, valid_snapshot, limit):
+    valid_snapshot["groups"][0]["break_limit_minutes"] = limit
+    before = dump_state(db)
+    response = scoped_client("admin").put(
+        "/api/v1/settings/snapshot", json=valid_snapshot
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["field"] == "groups.0.break_limit_minutes"
+    assert dump_state(db) == before
+
+
+def test_new_group_defaults_to_sixty_and_new_membership_keeps_flag(
+    scoped_client, db, valid_snapshot
+):
+    valid_snapshot["groups"].append(
+        {
+            "client_key": "new",
+            "name": "New",
+            "timezone": "UTC",
+            "work_start_time": "09:00",
+            "work_end_time": "18:00",
+            "is_active": True,
+            "allow_restart_session": False,
+        }
+    )
+    valid_snapshot["users"][1].update(group_ref="client:new", require_late_reason=True)
+    response = scoped_client("admin").put(
+        "/api/v1/settings/snapshot", json=valid_snapshot
+    )
+    assert response.status_code == 200, response.text
+    group = next(g for g in response.json()["groups"] if g["name"] == "New")
+    assert group["break_limit_minutes"] == 60
+    member = db.query(GroupMember).filter_by(user_id=2, is_active=True).one()
+    assert member.group_id == group["id"]
+    assert member.require_late_reason is True
+    assert db.get(GroupMember, 1).require_late_reason is False
+
+
+@pytest.mark.parametrize("track_time", [True, False])
+def test_inactive_user_cannot_change_late_reason_requirement(
+    scoped_client, db, track_time
+):
+    db.get(User, 2).is_active = False
+    db.get(GroupMember, 1).track_time = track_time
+    db.get(GroupMember, 1).require_late_reason = True
+    db.commit()
+    admin = scoped_client("admin")
+    loaded = admin.get("/api/v1/settings/snapshot").json()
+    assert (
+        next(u for u in loaded["users"] if u["amocrm_user_id"] == 102)[
+            "require_late_reason"
+        ]
+        is True
+    )
+    payload = snapshot_update(loaded)
+    unchanged = admin.put("/api/v1/settings/snapshot", json=payload)
+    assert unchanged.status_code == 200, unchanged.text
+    payload = snapshot_update(unchanged.json())
+    payload["users"][1]["require_late_reason"] = False
+    before = dump_state(db)
+    response = admin.put("/api/v1/settings/snapshot", json=payload)
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "USER_INACTIVE"
+    assert dump_state(db) == before
+
+
+def test_late_reason_flag_requires_group_without_losing_other_settings(
+    scoped_client, db, valid_snapshot
+):
+    valid_snapshot["users"][0]["require_late_reason"] = True
+    before = dump_state(db)
+    response = scoped_client("admin").put(
+        "/api/v1/settings/snapshot", json=valid_snapshot
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "LATE_REASON_GROUP_REQUIRED"
+    assert response.json()["error"]["field"] == "users.0.group_ref"
+    assert dump_state(db) == before
+
+
+def test_late_reason_preconfiguration_rejects_inactive_group(
+    scoped_client, db, valid_snapshot
+):
+    valid_snapshot["users"][0].update(require_late_reason=True, group_ref="id:11")
+    before = dump_state(db)
+    response = scoped_client("admin").put(
+        "/api/v1/settings/snapshot", json=valid_snapshot
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "GROUP_INACTIVE"
+    assert dump_state(db) == before
+
+
+def test_foreign_group_cannot_receive_lateness_settings(
+    scoped_client, db, valid_snapshot
+):
+    valid_snapshot["groups"][0].update(id=20, break_limit_minutes=12)
+    before = dump_state(db)
+    response = scoped_client("admin").put(
+        "/api/v1/settings/snapshot", json=valid_snapshot
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["field"] == "groups.0.id"
+    assert dump_state(db) == before
+
+
+def test_loaded_lateness_settings_are_tenant_scoped(scoped_client, db):
+    db.get(WidgetGroup, 10).break_limit_minutes = 45
+    db.get(WidgetGroup, 20).break_limit_minutes = 719
+    db.get(GroupMember, 1).require_late_reason = True
+    db.add(
+        GroupMember(account_id=11, group_id=20, user_id=4, require_late_reason=False)
+    )
+    db.commit()
+    loaded = scoped_client("admin").get("/api/v1/settings/snapshot").json()
+    assert {g["id"]: g["break_limit_minutes"] for g in loaded["groups"]} == {
+        11: 60,
+        10: 45,
+    }
+    assert {u["amocrm_user_id"]: u["require_late_reason"] for u in loaded["users"]} == {
+        101: False,
+        102: True,
+        103: False,
+    }

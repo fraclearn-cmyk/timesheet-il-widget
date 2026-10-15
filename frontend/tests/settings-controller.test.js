@@ -17,16 +17,16 @@ function snapshot() {
     groups: [{
       id: 10, account_id: 1, name: 'Продажи', timezone: 'Europe/Minsk',
       work_start_time: '09:00:00', work_end_time: '18:00:00',
-      manager_amocrm_user_id: 102, is_active: true, allow_restart_session: false,
+      manager_amocrm_user_id: 102, is_active: true, allow_restart_session: false, break_limit_minutes: 60,
     }],
     users: [{
       amocrm_user_id: 101, name: 'Анна', email: 'anna@example.test', avatar_url: null,
       amocrm_group_id: 900, amocrm_group_label: 'Отдел A', is_active: true,
-      track_time: false, hide_widget: false, group_id: null,
+      track_time: false, hide_widget: false, require_late_reason: false, group_id: null,
     }, {
       amocrm_user_id: 102, name: 'Борис', email: 'boris@example.test', avatar_url: null,
       amocrm_group_id: 901, amocrm_group_label: 'Отдел B', is_active: true,
-      track_time: true, hide_widget: false, group_id: 10,
+      track_time: true, hide_widget: false, require_late_reason: true, group_id: 10,
     }],
   };
 }
@@ -66,9 +66,9 @@ test('hide_widget does not change track_time and serializes all visible users', 
   controller.setUser(101, { track_time: true, group_ref: 'id:10' });
   controller.setUser(101, { hide_widget: true });
   assert.deepEqual(JSON.parse(JSON.stringify(controller.serialize().users)), [{
-    amocrm_user_id: 101, track_time: true, hide_widget: true, group_ref: 'id:10',
+    amocrm_user_id: 101, track_time: true, hide_widget: true, require_late_reason: false, group_ref: 'id:10',
   }, {
-    amocrm_user_id: 102, track_time: true, hide_widget: false, group_ref: 'id:10',
+    amocrm_user_id: 102, track_time: true, hide_widget: false, require_late_reason: true, group_ref: 'id:10',
   }]);
 });
 
@@ -103,10 +103,11 @@ test('inactive historical user remains visible and read-only', async () => {
   assert.ok(row);
   assert.equal(row.querySelector('[data-field="track_time"]').disabled, true);
   assert.equal(row.querySelector('[data-field="hide_widget"]').disabled, true);
+  assert.equal(row.querySelector('[data-field="require_late_reason"]').disabled, true);
   assert.equal(row.querySelector('[data-field="group_ref"]').disabled, true);
   assert.throws(() => controller.setUser(102, { hide_widget: true }), /inactive/i);
   assert.deepEqual(JSON.parse(JSON.stringify(controller.serialize().users[1])), {
-    amocrm_user_id: 102, track_time: true, hide_widget: false, group_ref: 'id:10',
+    amocrm_user_id: 102, track_time: true, hide_widget: false, require_late_reason: true, group_ref: 'id:10',
   });
 });
 
@@ -148,7 +149,7 @@ test('settings and group controls serialize exact backend fields', async () => {
   assert.deepEqual(payload.groups[0], {
     id: 10, name: 'Новая группа', timezone: 'Europe/Minsk',
     work_start_time: '09:00:00', work_end_time: '18:00:00',
-    manager_amocrm_user_id: 102, is_active: true, allow_restart_session: false,
+    manager_amocrm_user_id: 102, is_active: true, allow_restart_session: false, break_limit_minutes: 60,
   });
   assert.equal('account_id' in payload, false);
 });
@@ -427,6 +428,81 @@ test('unchanged inactive historical user does not fail active-group client valid
   assert.equal(controller.validate().length, 0);
   await controller.save();
   assert.deepEqual(JSON.parse(JSON.stringify(saves[0].users[1])), {
-    amocrm_user_id: 102, track_time: true, hide_widget: false, group_ref: 'id:10',
+    amocrm_user_id: 102, track_time: true, hide_widget: false, require_late_reason: true, group_ref: 'id:10',
   });
+});
+
+
+test('late reason checkbox serializes independently with the existing group reference', async () => {
+  const { root, controller } = setup();
+  await controller.ready;
+  const row = root.querySelector('[data-user-id="102"]');
+  const input = row.querySelector('[data-field="require_late_reason"]');
+  assert.ok(input);
+  assert.equal(input.type, 'checkbox');
+  assert.equal(input.checked, true);
+  assert.match(input.closest('label').textContent, /Объяснительная при опоздании/);
+  input.checked = false;
+  input.dispatchEvent(new root.ownerDocument.defaultView.Event('change', { bubbles: true }));
+  assert.deepEqual(JSON.parse(JSON.stringify(controller.serialize().users[1])), {
+    amocrm_user_id: 102, track_time: true, hide_widget: false,
+    require_late_reason: false, group_ref: 'id:10',
+  });
+  controller.setUser(102, { require_late_reason: true, track_time: false });
+  assert.equal(controller.serialize().users[1].require_late_reason, true);
+  assert.equal(controller.validate().length, 0);
+});
+
+test('break limit control loads and serializes integer boundaries and new group default', async () => {
+  const data = snapshot();
+  data.groups[0].break_limit_minutes = 45;
+  const { root, controller } = setup(data);
+  await controller.ready;
+  let input = root.querySelector('[data-group-ref="id:10"] [data-field="break_limit_minutes"]');
+  assert.ok(input);
+  assert.equal(input.type, 'number');
+  assert.equal(input.min, '1');
+  assert.equal(input.max, '720');
+  assert.equal(input.step, '1');
+  assert.equal(input.value, '45');
+  assert.match(input.closest('label').textContent, /Допустимый перерыв, минут/);
+  for (const value of ['1', '720']) {
+    input.value = value;
+    input.dispatchEvent(new root.ownerDocument.defaultView.Event('input', { bubbles: true }));
+    assert.equal(controller.serialize().groups[0].break_limit_minutes, Number(value));
+    assert.equal(controller.validate().length, 0);
+  }
+  controller.addGroup();
+  assert.equal(controller.serialize().groups[1].break_limit_minutes, 60);
+  assert.equal(root.querySelector('[data-group-ref^="client:"] [data-field="break_limit_minutes"]').value, '60');
+});
+
+for (const value of ['0', '721', '1.5', '']) {
+  test('invalid break limit ' + JSON.stringify(value) + ' blocks transport and marks the field', async () => {
+    const { root, controller, saves } = setup();
+    await controller.ready;
+    const input = root.querySelector('[data-field="break_limit_minutes"]');
+    assert.ok(input);
+    input.value = value;
+    input.dispatchEvent(new root.ownerDocument.defaultView.Event('input', { bubbles: true }));
+    await assert.rejects(controller.save());
+    assert.equal(saves.length, 0);
+    assert.equal(input.getAttribute('aria-invalid'), 'true');
+    assert.match(root.querySelector('.timesheet-settings__message').textContent, /целое число от 1 до 720/);
+  });
+}
+
+test('requiring a late reason needs an active accounting group before transport', async () => {
+  const { controller, saves } = setup();
+  await controller.ready;
+  controller.setUser(101, { require_late_reason: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(controller.validate())), [{
+    code: 'LATE_REASON_GROUP_REQUIRED', field: 'users.0.group_ref',
+  }]);
+  await assert.rejects(controller.save());
+  assert.equal(saves.length, 0);
+  controller.setUser(101, { group_ref: 'id:10' });
+  assert.equal(controller.validate().length, 0);
+  controller.groups[0].is_active = false;
+  assert.equal(controller.validate()[0].code, 'GROUP_INACTIVE');
 });

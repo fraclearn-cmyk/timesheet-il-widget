@@ -629,7 +629,7 @@ def test_timesheet_transition_recomputes_presence_before_commit(db, action):
     db.commit()
     context = RequestContext(ACCOUNT_ID, user)
     timesheet = TimesheetService(db)
-    timesheet.apply(context, "start-work", uuid4(), START)
+    timesheet.apply(context, "start-work", uuid4(), now_utc=START)
     work = db.query(WorkSession).one()
     record(
         ActivityIntervalService(db),
@@ -640,7 +640,7 @@ def test_timesheet_transition_recomputes_presence_before_commit(db, action):
     work.unconfirmed_duration = 999
     db.flush()
 
-    timesheet.apply(context, action, uuid4(), START + timedelta(minutes=2))
+    timesheet.apply(context, action, uuid4(), now_utc=START + timedelta(minutes=2))
 
     assert work.unconfirmed_duration == 50
 

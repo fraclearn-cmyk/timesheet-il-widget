@@ -14,7 +14,7 @@ function snapshot(revision = 3) {
     groups: [],
     users: [{ amocrm_user_id: 101, name: 'Anna', email: 'anna@example.test', avatar_url: null,
       amocrm_group_id: 900, amocrm_group_label: 'Sales', is_active: true,
-      track_time: false, hide_widget: false, group_id: null }],
+      track_time: false, hide_widget: false, require_late_reason: false, group_id: null }],
   };
 }
 
@@ -43,13 +43,15 @@ test('amoMarket settings smoke saves through the explicit page action', async ()
     assert.equal(payload.revision, 3);
     assert.equal(payload.users[0].track_time, true);
     assert.equal(payload.users[0].hide_widget, false);
+    assert.equal(payload.users[0].require_late_reason, true);
+    assert.equal(payload.groups[0].break_limit_minutes, 35);
     assert.match(payload.users[0].group_ref, /^client:group_\d+$/);
     assert.deepEqual(payload.groups.map(({ name, timezone }) => ({ name, timezone })),
       [{ name: 'Sales', timezone: 'Europe/Minsk' }]);
     assert.equal(payload.users[0].group_ref, 'client:' + payload.groups[0].client_key);
     const canonical = snapshot(4);
     canonical.groups = [{ ...payload.groups[0], id: 20, account_id: 1 }];
-    canonical.users[0] = { ...canonical.users[0], track_time: true, group_id: 20 };
+    canonical.users[0] = { ...canonical.users[0], track_time: true, require_late_reason: true, group_id: 20 };
     return Promise.resolve(canonical);
   };
   widget.callbacks.settings();
@@ -62,13 +64,23 @@ test('amoMarket settings smoke saves through the explicit page action', async ()
   const name = newGroup.querySelector('[data-field="name"]');
   name.value = 'Sales';
   name.dispatchEvent(new window.Event('input', { bubbles: true }));
+  const limit = newGroup.querySelector('[data-field="break_limit_minutes"]');
+  assert.ok(limit);
+  limit.value = '35';
+  limit.dispatchEvent(new window.Event('input', { bubbles: true }));
   widget.settingsController.setUser(101, { track_time: true, group_ref: newGroup.getAttribute('data-group-ref') });
+  const lateReason = document.querySelector('[data-user-id="101"] [data-field="require_late_reason"]');
+  assert.ok(lateReason);
+  lateReason.checked = true;
+  lateReason.dispatchEvent(new window.Event('change', { bubbles: true }));
   document.querySelector('.timesheet-settings__save').click();
   await new Promise(setImmediate);
   await new Promise(setImmediate);
   assert.deepEqual(requests.map((request) => request.method), ['GET', 'PUT']);
   assert.equal(widget.settingsController.serialize().revision, 4);
   assert.equal(widget.settingsController.serialize().users[0].group_ref, 'id:20');
+  assert.equal(widget.settingsController.serialize().users[0].require_late_reason, true);
+  assert.equal(widget.settingsController.serialize().groups[0].break_limit_minutes, 35);
   widget.callbacks.destroy();
   assert.equal(document.querySelector('.timesheet-settings'), null);
   widget.system = () => ({ area: 'lcard' });

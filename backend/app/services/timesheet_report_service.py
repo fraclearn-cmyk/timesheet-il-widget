@@ -13,11 +13,13 @@ from app.core.access_policy import AccessPolicy, RequestContext
 from app.core.report_period import validate_report_period
 from app.core.time_utils import utc_now
 from app.models.group_member import GroupMember
+from app.models.lateness_incident import LatenessIncident, LatenessKind
 from app.models.status_transition import StatusTransition
 from app.models.user import User
 from app.models.widget_group import WidgetGroup
 from app.models.work_session import WorkSession
 from app.schemas.report import (
+    BreakLateness,
     DetailedReportResponse,
     DetailedReportRow,
     DetailedReportTotals,
@@ -248,7 +250,8 @@ class TimesheetReportService:
                 WorkSession.end_time.label("ended_at"),
                 WorkSession.total_work_time.label("legacy_work"),
                 WorkSession.total_break_time.label("legacy_break"),
-                WorkSession.late_minutes.label("late_minutes"),
+                WorkSession.late_minutes.label("legacy_late_minutes"),
+                LatenessIncident.late_minutes.label("shift_late_minutes"),
                 StatusTransition.id.label("transition_id"),
                 StatusTransition.timestamp.label("transition_at"),
                 StatusTransition.to_status.label("to_status"),
@@ -262,6 +265,16 @@ class TimesheetReportService:
             )
             .outerjoin(
                 StatusTransition, StatusTransition.work_session_id == WorkSession.id
+            )
+            .outerjoin(
+                LatenessIncident,
+                and_(
+                    LatenessIncident.account_id == WorkSession.amocrm_account_id,
+                    LatenessIncident.amocrm_user_id == WorkSession.amocrm_user_id,
+                    LatenessIncident.work_session_id == WorkSession.id,
+                    LatenessIncident.kind == LatenessKind.SHIFT_START,
+                    LatenessIncident.sequence == 0,
+                ),
             )
             .filter(
                 WorkSession.amocrm_account_id == account,
@@ -304,7 +317,12 @@ class TimesheetReportService:
                 current_session_id = row.session_id
                 day_key = (row.user_id, row.day)
                 if day_key != current_day:
-                    late_total += max(0, int(row.late_minutes or 0)) * 60
+                    minutes = (
+                        row.shift_late_minutes
+                        if row.shift_late_minutes is not None
+                        else row.legacy_late_minutes
+                    )
+                    late_total += max(0, int(minutes or 0)) * 60
                     current_day = day_key
                 ended_at = row.ended_at
                 legacy_work, legacy_break = row.legacy_work, row.legacy_break
@@ -428,6 +446,7 @@ class TimesheetReportService:
         for session, internal_id in sessions:
             by_key[(internal_id, session.business_date)].append(session)
         transitions_by_session: dict[int, list[StatusTransition]] = defaultdict(list)
+        incidents_by_session: dict[int, list[LatenessIncident]] = defaultdict(list)
         if sessions:
             transition_query = (
                 self.db.query(StatusTransition)
@@ -449,6 +468,16 @@ class TimesheetReportService:
             )
             for transition in _bounded_source_rows(transition_query):
                 transitions_by_session[transition.work_session_id].append(transition)
+            incident_query = self.db.query(LatenessIncident).filter(
+                LatenessIncident.account_id == account,
+                tuple_(
+                    LatenessIncident.work_session_id, LatenessIncident.amocrm_user_id
+                ).in_(
+                    [(session.id, session.amocrm_user_id) for session, _ in sessions]
+                ),
+            )
+            for incident in _bounded_source_rows(incident_query):
+                incidents_by_session[incident.work_session_id].append(incident)
 
         page_rows = {}
         for key, day_sessions in by_key.items():
@@ -464,6 +493,31 @@ class TimesheetReportService:
                 breaks += session_breaks
             first = day_sessions[0]
             latest = day_sessions[-1]
+            shift = next(
+                (
+                    incident
+                    for incident in incidents_by_session[first.id]
+                    if incident.kind == LatenessKind.SHIFT_START
+                ),
+                None,
+            )
+            shift_seconds = (
+                max(0, int(shift.late_minutes if shift else first.late_minutes or 0))
+                * 60
+            )
+            break_incidents = [
+                BreakLateness(
+                    sequence=incident.sequence,
+                    late_seconds=incident.late_minutes * 60,
+                    reason=incident.reason,
+                )
+                for session in day_sessions
+                for incident in sorted(
+                    incidents_by_session[session.id],
+                    key=lambda item: (item.sequence, item.id),
+                )
+                if incident.kind == LatenessKind.BREAK_RETURN
+            ]
             page_rows[key] = DetailedReportRow(
                 user_id=internal_id,
                 amocrm_user_id=user.amocrm_user_id,
@@ -476,7 +530,13 @@ class TimesheetReportService:
                 ended_at=latest.end_time,
                 break_seconds=breaks,
                 work_seconds=work,
-                late_seconds=max(0, int(first.late_minutes or 0)) * 60,
+                late_seconds=shift_seconds,
+                shift_late_seconds=shift_seconds,
+                shift_late_reason=shift.reason if shift else None,
+                break_late_seconds=sum(
+                    incident.late_seconds for incident in break_incidents
+                ),
+                break_late_reason=break_incidents,
                 status=(
                     "on_break"
                     if latest.current_status.value == "break"
