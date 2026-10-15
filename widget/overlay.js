@@ -11,7 +11,7 @@
     };
     var reasonSequence = 0;
     function createOverlay(doc) {
-        var host = null, trap = null, command = null, reasonInput = null, reasonContext = null, listeners = [];
+        var host = null, trap = null, command = null, reasonInput = null, renderedContext = null, listeners = [];
         function listen(node, type, handler) {
             node.addEventListener(type, handler);
             listeners.push(function() { node.removeEventListener(type, handler); });
@@ -25,15 +25,24 @@
             listeners = [];
             if (reasonInput) reasonInput.value = '';
             reasonInput = null;
-            reasonContext = null;
+            renderedContext = null;
             if (host) host.remove();
             host = null;
             command = null;
         }
         function render(snapshot, onCommand) {
             var context = snapshot ? JSON.stringify([snapshot.session_id, snapshot.status,
-                snapshot.late_reason_kind, snapshot.break_sequence]) : null;
-            var draft = reasonInput && context === reasonContext ? reasonInput.value : '';
+                snapshot.late_reason_kind, snapshot.break_sequence, snapshot.late_reason_required,
+                snapshot.status === 'finished' && snapshot.restart_allowed]) : null;
+            var sameContext = host && host.isConnected && context === renderedContext;
+            var draft = sameContext && reasonInput ? reasonInput.value : '';
+            var editing = sameContext && reasonInput ? { start: reasonInput.selectionStart,
+                end: reasonInput.selectionEnd, direction: reasonInput.selectionDirection,
+                top: reasonInput.scrollTop, left: reasonInput.scrollLeft } : null;
+            var focused = doc.activeElement;
+            var inputFocused = sameContext && focused === reasonInput;
+            var actionFocused = sameContext && host.contains(focused) && focused.tagName === 'BUTTON' ? focused.dataset.action : null;
+            var panelFocused = sameContext && host.contains(focused) && focused.classList.contains('timesheet-overlay__panel');
             clear();
             if (!snapshot || !snapshot.track_time || snapshot.hide_widget || !actions[snapshot.status]) return;
             command = onCommand;
@@ -77,7 +86,6 @@
                 reasonInput.required = true;
                 reasonInput.value = draft;
                 reasonInput.setAttribute('aria-describedby', explanation.id + ' ' + prefix + '-count');
-                reasonContext = context;
                 panel.appendChild(reasonInput);
                 counter = doc.createElement('p');
                 counter.id = prefix + '-count';
@@ -112,6 +120,7 @@
             if (blocked && !permitted.length) panel.tabIndex = -1;
             host.appendChild(panel);
             doc.body.appendChild(host);
+            renderedContext = context;
             if (blocked) {
                 trap = function(event) {
                     if (!host) return;
@@ -137,7 +146,17 @@
                 ['keydown', 'keyup', 'keypress'].forEach(function(type) {
                     doc.addEventListener(type, trap, true);
                 });
-                (panel.querySelector('textarea, button:not(:disabled)') || panel).focus();
+                if (!sameContext) (panel.querySelector('textarea, button:not(:disabled)') || panel).focus();
+                else if (inputFocused && reasonInput) reasonInput.focus({ preventScroll: true });
+                else if (actionFocused) {
+                    var previousAction = panel.querySelector('button[data-action="' + actionFocused + '"]:not(:disabled)');
+                    if (previousAction) previousAction.focus({ preventScroll: true });
+                } else if (panelFocused) panel.focus({ preventScroll: true });
+            }
+            if (editing && reasonInput) {
+                reasonInput.setSelectionRange(editing.start, editing.end, editing.direction);
+                reasonInput.scrollTop = editing.top;
+                reasonInput.scrollLeft = editing.left;
             }
         }
         return { render: render, clear: clear };

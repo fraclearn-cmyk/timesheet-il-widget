@@ -117,6 +117,48 @@ for (const [status, action, kind, sequence, label, message] of [
     expect(posted.url).toBe('https://api.test/api/v1/' + 'timesheet/' + action);
     expect(JSON.parse(posted.data).reason).toBe(literal);
   });
+
+  test(`${status}: same-event refresh preserves editing focus, selection, scroll and focused action`, async ({ page }) => {
+    await page.clock.install();
+    await boot(page, (route) => route.fulfill({ contentType: 'text/css', body: css }), 'employee', status,
+      { late_reason_required: true, late_reason_kind: kind, late_minutes: 8, break_sequence: sequence });
+    const input = page.getByRole('textbox', { name: 'Причина опоздания' });
+    const button = page.getByRole('button', { name: label, exact: true });
+    const draft = 'alpha beta\n' + 'another line\n'.repeat(30);
+    await input.fill(draft);
+    const editing = await input.evaluate((node) => {
+      node.setSelectionRange(2, 7, 'backward');
+      node.scrollTop = 50;
+      return { start: node.selectionStart, end: node.selectionEnd, direction: node.selectionDirection, top: node.scrollTop };
+    });
+    await page.evaluate(() => {
+      const original = window.widget.$authorizedAjax;
+      window.widget.$authorizedAjax = (request) => Promise.resolve(original(request)).then((snapshot) =>
+        request.url.includes('/timesheet/my-status') ? { ...snapshot, late_minutes: 9 } : snapshot);
+    });
+    await page.clock.runFor(30000);
+    await expect(page.locator('.timesheet-overlay__message')).toContainText('9 мин.');
+    await expect(input).toBeFocused();
+    expect(await input.evaluate((node) => ({ start: node.selectionStart, end: node.selectionEnd,
+      direction: node.selectionDirection, top: node.scrollTop }))).toEqual(editing);
+    await input.evaluate((node) => node.setSelectionRange(5, 5));
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect.poll(() => page.evaluate(() => window.calls.filter((call) => call.url.includes('/timesheet/my-status')).length)).toBe(3);
+    await expect(input).toBeFocused();
+    await input.pressSequentially(' INSERTED');
+    await expect(input).toHaveValue('alpha INSERTED beta\n' + 'another line\n'.repeat(30));
+    await button.focus();
+    await page.evaluate(async () => window.widget.timesheetController.load());
+    await expect(button).toBeFocused();
+    const monitoring = page.locator('.ts-monitoring-widget__launcher');
+    await monitoring.focus();
+    await page.evaluate(async () => window.widget.timesheetController.load());
+    await expect(monitoring).toBeFocused();
+    const oldInput = await input.elementHandle();
+    await page.evaluate(() => window.widget.callbacks.destroy());
+    expect(await oldInput.evaluate((node) => ({ value: node.value, focused: document.activeElement === node,
+      connected: node.isConnected }))).toEqual({ value: '', focused: false, connected: false });
+  });
 }
 
 test('admin report launcher opens its own panel and leaves native CRM content intact', async ({ page }) => {
