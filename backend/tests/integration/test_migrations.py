@@ -43,6 +43,76 @@ from datetime import datetime, timezone
 from datetime import timedelta
 
 
+def test_015_empty_upgrade_and_downgrade(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "014")
+    command.upgrade(config, "015")
+    schema = inspect(engine)
+    assert "lateness_incidents" in schema.get_table_names()
+    hashes = {column["name"]: column for column in schema.get_columns("timesheet_commands")}
+    assert hashes["request_hash"]["nullable"] is True
+    assert hashes["request_hash"]["type"].length == 64
+    indexes = {tuple(index["column_names"]) for index in schema.get_indexes("lateness_incidents")}
+    assert ("account_id", "amocrm_user_id", "occurred_at") in indexes
+    assert ("account_id", "work_session_id") in indexes
+    assert {tuple(fk["constrained_columns"]) for fk in schema.get_foreign_keys("lateness_incidents")} == {
+        ("account_id", "amocrm_user_id"),
+        ("account_id", "amocrm_user_id", "work_session_id"),
+    }
+    command.downgrade(config, "014")
+    assert "lateness_incidents" not in inspect(engine).get_table_names()
+    assert "request_hash" not in {column["name"] for column in inspect(engine).get_columns("timesheet_commands")}
+
+
+def test_015_preserves_populated_sessions_defaults_and_legacy_commands(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "014")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One'), (8,800,100,'Other'), (9,700,200,'Foreign')"))
+        conn.execute(text("INSERT INTO widget_groups (id,account_id,name,name_key,timezone,work_start_time,work_end_time,is_active,allow_restart_session,created_at,updated_at) VALUES (10,100,'Sales','sales','UTC','09:00','18:00',true,false,now(),now())"))
+        conn.execute(text("INSERT INTO group_members (id,account_id,group_id,user_id,track_time,hide_widget,is_active,created_at,updated_at) VALUES (20,100,10,7,true,false,true,now(),now())"))
+        conn.execute(text("INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,late_minutes,late_reason,created_at,updated_at) VALUES (1,100,700,'One','2026-10-15 09:01:00','working',1,'legacy reason',now(),now())"))
+        conn.execute(text("INSERT INTO timesheet_commands (account_id,amocrm_user_id,key,action,response,created_at) VALUES (100,700,'11111111-1111-4111-8111-111111111111','start-work','{}',now())"))
+        before = conn.execute(text("SELECT * FROM work_sessions")).all()
+    command.upgrade(config, "015")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT * FROM work_sessions")).all() == before
+        assert conn.scalar(text("SELECT require_late_reason FROM group_members")) is False
+        assert conn.scalar(text("SELECT break_limit_minutes FROM widget_groups")) == 60
+        assert conn.scalar(text("SELECT request_hash FROM timesheet_commands")) is None
+        assert conn.scalar(text("SELECT count(*) FROM lateness_incidents")) == 0
+    # Every invalid write rolls back independently, preserving the round-trip fixture.
+    for values in ({"account": 200}, {"user": 800}, {"session": 999}, {"minutes": 0}, {"sequence": 1}, {"kind": "unknown"}, {"reason": "x" * 1001}):
+        with pytest.raises(IntegrityError):
+            with engine.begin() as conn:
+                conn.execute(text("INSERT INTO lateness_incidents (account_id,work_session_id,amocrm_user_id,kind,sequence,occurred_at,late_minutes,reason,created_at) VALUES (:account,:session,:user,:kind,:sequence,now(),:minutes,:reason,now())"), {"account": 100, "session": 1, "user": 700, "kind": "shift_start", "sequence": 0, "minutes": 1, "reason": None, **values})
+    for limit in (0, 721):
+        with pytest.raises(IntegrityError):
+            with engine.begin() as conn:
+                conn.execute(text("UPDATE widget_groups SET break_limit_minutes=:limit"), {"limit": limit})
+    command.downgrade(config, "014")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT * FROM work_sessions")).all() == before
+        assert conn.scalar(text("SELECT count(*) FROM timesheet_commands")) == 1
+
+
+def test_015_enforces_incident_uniqueness_and_refuses_lossy_downgrade(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "015")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id,amocrm_user_id,amocrm_account_id,name) VALUES (7,700,100,'One')"))
+        conn.execute(text("INSERT INTO work_sessions (id,amocrm_account_id,amocrm_user_id,user_name,start_time,current_status,created_at,updated_at) VALUES (1,100,700,'One',now(),'working',now(),now())"))
+        conn.execute(text("INSERT INTO lateness_incidents (account_id,work_session_id,amocrm_user_id,kind,sequence,occurred_at,late_minutes,reason,created_at) VALUES (100,1,700,'shift_start',0,now(),1,:reason,now()), (100,1,700,'break_return',1,now(),2,NULL,now()), (100,1,700,'break_return',2,now(),3,NULL,now())"), {"reason": "x" * 1000})
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO lateness_incidents (account_id,work_session_id,amocrm_user_id,kind,sequence,occurred_at,late_minutes,created_at) VALUES (100,1,700,'break_return',1,now(),1,now())"))
+    with pytest.raises(RuntimeError, match="lateness explanation data"):
+        command.downgrade(config, "014")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM lateness_incidents")) == 3
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "015"
+
+
 def test_011_backfills_group_business_date_and_rejects_duplicate_open_sessions(
     migrated_db,
 ):

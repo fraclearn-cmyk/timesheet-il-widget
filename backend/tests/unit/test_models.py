@@ -350,3 +350,98 @@ def test_employee_report_event_count_stays_in_account_and_period(db):
     today = first.start_time.date()
     report = ReportService.get_employee_report(db, "100", 700, today, today)
     assert report.activities[0].event_count == 1
+
+
+def test_lateness_settings_and_old_command_defaults_are_persisted(db):
+    from app.models import GroupMember, TimesheetCommand, WorkSession
+
+    group = WidgetGroup(account_id=100, name="Lateness")
+    db.add(group)
+    db.flush()
+    member = GroupMember(account_id=100, group_id=group.id, user_id=7)
+    command = TimesheetCommand(account_id=100, amocrm_user_id=700, key="old", action="start-work", response={})
+    db.add_all([member, command])
+    db.commit()
+    assert group.break_limit_minutes == 60
+    assert member.require_late_reason is False
+    assert command.request_hash is None
+    assert TimesheetCommand.__table__.c.request_hash.type.length == 64
+    assert WorkSession.__table__.c.late_reason.type.length == 1000
+
+
+@pytest.mark.parametrize("limit", [0, 721])
+def test_group_break_limit_rejects_out_of_range_storage(db, limit):
+    db.add(WidgetGroup(account_id=100, name="Invalid", break_limit_minutes=limit))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+@pytest.fixture
+def lateness_db():
+    from sqlalchemy import event
+    from app.models import WorkSession
+
+    engine = create_engine("sqlite://")
+
+    @event.listens_for(engine, "connect")
+    def enforce_foreign_keys(connection, _record):
+        connection.execute("PRAGMA foreign_keys=ON")
+
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all([
+            User(id=7, amocrm_user_id=700, amocrm_account_id=100, name="One"),
+            User(id=8, amocrm_user_id=800, amocrm_account_id=100, name="Other"),
+            User(id=9, amocrm_user_id=700, amocrm_account_id=200, name="Foreign"),
+        ])
+        session.flush()
+        session.add(WorkSession(id=10, amocrm_account_id=100, amocrm_user_id=700, user_name="One"))
+        session.commit()
+        yield session
+    engine.dispose()
+
+
+def _incident(**changes):
+    from app.models import LatenessIncident, LatenessKind
+
+    return LatenessIncident(**{
+        "account_id": 100, "work_session_id": 10, "amocrm_user_id": 700,
+        "kind": LatenessKind.SHIFT_START, "sequence": 0,
+        "occurred_at": datetime(2026, 10, 15, 9, 1), "late_minutes": 1,
+        **changes,
+    })
+
+
+def test_lateness_incidents_keep_separate_breaks_and_reject_duplicate_event(lateness_db):
+    from app.models import LatenessKind
+
+    db = lateness_db
+    db.add_all([_incident(), _incident(kind=LatenessKind.BREAK_RETURN, sequence=1, reason="x" * 1000), _incident(kind=LatenessKind.BREAK_RETURN, sequence=2)])
+    db.commit()
+    db.add(_incident(kind=LatenessKind.BREAK_RETURN, sequence=1))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+    assert db.query(type(_incident())).count() == 3
+
+
+@pytest.mark.parametrize("changes", [
+    {"account_id": 200}, {"amocrm_user_id": 800}, {"work_session_id": 999},
+    {"late_minutes": 0}, {"late_minutes": -1}, {"kind": "unknown"},
+    {"sequence": 1}, {"kind": "break_return", "sequence": 0},
+    {"kind": "break_return", "sequence": -1}, {"reason": "x" * 1001},
+])
+def test_lateness_incident_rejects_invalid_identity_or_event(lateness_db, changes):
+    lateness_db.add(_incident(**changes))
+    with pytest.raises(IntegrityError):
+        lateness_db.commit()
+    lateness_db.rollback()
+
+
+def test_lateness_lookup_indexes_are_account_scoped():
+    from app.models import LatenessIncident
+
+    indexes = {tuple(column.name for column in index.columns) for index in LatenessIncident.__table__.indexes}
+    assert ("account_id", "amocrm_user_id", "occurred_at") in indexes
+    assert ("account_id", "work_session_id") in indexes

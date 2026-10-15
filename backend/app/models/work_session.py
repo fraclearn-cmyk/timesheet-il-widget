@@ -10,6 +10,7 @@ from sqlalchemy import (
     text,
     ForeignKeyConstraint,
     CheckConstraint,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from app.core.time_utils import utc_now
@@ -31,6 +32,7 @@ class WorkSession(Base):
 
     __tablename__ = "work_sessions"
     __table_args__ = (
+        UniqueConstraint("amocrm_account_id", "amocrm_user_id", "id", name="uq_work_sessions_account_user_id"),
         CheckConstraint(
             "current_status IN ('working','break','finished')",
             name="ck_work_sessions_status",
@@ -98,7 +100,7 @@ class WorkSession(Base):
     # Late arrival tracking
     is_late = Column(Boolean, default=False)
     late_minutes = Column(Integer, nullable=True)  # Количество минут опоздания
-    late_reason = Column(String(500), nullable=True)  # Причина опоздания
+    late_reason = Column(String(1000), nullable=True)  # Причина опоздания
 
     # Forced finish tracking
     forced_finish = Column(Boolean, default=False)
@@ -119,6 +121,9 @@ class WorkSession(Base):
         "ActivityInterval",
         back_populates="work_session",
         cascade="all, delete-orphan",
+    )
+    lateness_incidents = relationship(
+        "LatenessIncident", back_populates="work_session", cascade="all, delete-orphan"
     )
 
     @staticmethod

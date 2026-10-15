@@ -22,6 +22,7 @@ from app.models.ingestion_cursor import IngestionCursor
 from app.models.raw_ingestion_event import RawIngestionEvent
 from app.models.event_type_catalog import EventTypeCatalog
 from app.models.presence_batch import PresenceBatch
+from app.models.lateness_incident import LatenessIncident, LatenessKind
 
 __all__ = [
     "User",
@@ -49,4 +50,6 @@ __all__ = [
     "RawIngestionEvent",
     "EventTypeCatalog",
     "PresenceBatch",
+    "LatenessIncident",
+    "LatenessKind",
 ]

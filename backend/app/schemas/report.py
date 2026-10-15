@@ -3,7 +3,8 @@ Report Schemas
 Pydantic схемы для отчётов
 """
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from app.schemas.timesheet import LatenessReason
 from datetime import datetime, date
 from typing import Optional, Dict, Any, List
 from enum import Enum
@@ -21,8 +22,24 @@ class TimesheetColumn(str, Enum):
     END = "end"
     BREAK = "break"
     WORK = "work"
-    LATENESS = "lateness"
     STATUS = "status"
+    SHIFT_LATENESS = "shift_lateness"
+    SHIFT_LATE_REASON = "shift_late_reason"
+    BREAK_LATENESS = "break_lateness"
+    BREAK_LATE_REASON = "break_late_reason"
+    # Preserve callers using the old enum member as well as persisted wire values.
+    LATENESS = "shift_lateness"
+
+    @classmethod
+    def _missing_(cls, value):
+        if value == "lateness":
+            return cls.SHIFT_LATENESS
+
+
+class BreakLateness(_StrictReportModel):
+    sequence: int = Field(strict=True, ge=1)
+    late_seconds: int = Field(strict=True, ge=0)
+    reason: LatenessReason | None = None
 
 
 class DetailedReportRow(_StrictReportModel):
@@ -37,8 +54,19 @@ class DetailedReportRow(_StrictReportModel):
     ended_at: datetime | None
     break_seconds: int = Field(ge=0)
     work_seconds: int = Field(ge=0)
-    late_seconds: int = Field(ge=0)
+    late_seconds: int = Field(ge=0, description="Legacy alias for shift-start lateness in seconds.")
+    shift_late_seconds: int = Field(default=0, strict=True, ge=0)
+    shift_late_reason: LatenessReason | None = None
+    break_late_seconds: int = Field(default=0, strict=True, ge=0)
+    break_late_reason: list[BreakLateness] = Field(default_factory=list)
     status: Literal["working", "on_break", "finished"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def legacy_shift_lateness(cls, data):
+        if isinstance(data, dict) and "shift_late_seconds" not in data and "late_seconds" in data:
+            return {**data, "shift_late_seconds": data["late_seconds"]}
+        return data
 
 
 class DetailedReportTotals(_StrictReportModel):

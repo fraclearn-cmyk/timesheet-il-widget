@@ -10,6 +10,7 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
     ForeignKeyConstraint,
+    CheckConstraint,
 )
 from sqlalchemy.orm import relationship, validates
 
@@ -21,6 +22,7 @@ class WidgetGroup(Base):
 
     __tablename__ = "widget_groups"
     __table_args__ = (
+        CheckConstraint("break_limit_minutes BETWEEN 1 AND 720", name="ck_widget_groups_break_limit_minutes"),
         UniqueConstraint("account_id", "id", name="uq_widget_groups_account_id"),
         UniqueConstraint(
             "account_id", "name_key", name="uq_widget_groups_account_name_key"
@@ -46,6 +48,7 @@ class WidgetGroup(Base):
     manager_role_id = Column(Integer, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     allow_restart_session = Column(Boolean, nullable=False, default=False)
+    break_limit_minutes = Column(Integer, nullable=False, default=60, server_default="60")
     created_at = Column(DateTime, nullable=False, default=utc_now)
     updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
 

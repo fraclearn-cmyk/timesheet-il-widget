@@ -12,5 +12,6 @@ class TimesheetCommand(Base):
     amocrm_user_id = Column(Integer, nullable=False)
     key = Column(String(36), nullable=False)
     action = Column(String(30), nullable=False)
+    request_hash = Column(String(64), nullable=True)
     response = Column(JSON, nullable=False)
     created_at = Column(DateTime, nullable=False, default=utc_now)

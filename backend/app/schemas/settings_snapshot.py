@@ -26,6 +26,7 @@ class SettingsGroup(_StrictResponseModel):
     manager_amocrm_user_id: int | None = Field(default=None, gt=0)
     is_active: bool
     allow_restart_session: bool
+    break_limit_minutes: int = Field(default=60, strict=True, ge=1, le=720)
 
 
 class SettingsUser(_StrictResponseModel):
@@ -38,6 +39,7 @@ class SettingsUser(_StrictResponseModel):
     is_active: bool
     track_time: bool
     hide_widget: bool
+    require_late_reason: StrictBool = False
     group_id: int | None = Field(default=None, gt=0)
 
 
@@ -72,6 +74,7 @@ class SettingsGroupUpdate(_StrictResponseModel):
     manager_amocrm_user_id: PositiveId | None = None
     is_active: StrictBool
     allow_restart_session: StrictBool
+    break_limit_minutes: int = Field(default=60, strict=True, ge=1, le=720)
 
     @property
     def reference(self) -> str:
@@ -82,6 +85,7 @@ class SettingsUserUpdate(_StrictResponseModel):
     amocrm_user_id: PositiveId
     track_time: StrictBool
     hide_widget: StrictBool
+    require_late_reason: StrictBool = False
     group_ref: str | None = Field(
         max_length=71, pattern=r"^(id:[1-9][0-9]*|client:[A-Za-z0-9_-]{1,64})$"
     )
