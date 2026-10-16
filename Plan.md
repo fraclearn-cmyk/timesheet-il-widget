@@ -1719,7 +1719,8 @@ flowchart TD
 - [x] Финальное независимое review всего диапазона `726f0a6..e89b33f` завершено со статусом `APPROVED`, замечаний к коду нет. Рецензент повторил backend `188 passed, 48 skipped`, Node `102 passed`, package `22 passed`, проверил 25 файлов ZIP и подтвердил сохранённый полный PostgreSQL-прогон `864 passed, 0 skipped`.
 - [x] Ветка объединена в `main` и отправлена в GitHub. CI run [`38792644952`](https://github.com/fraclearn-cmyk/timesheet-il-widget/actions/runs/38792644952) на commit `53f853c7a44aec7bc82cf3086b88aca4408ff629` завершён со статусом `success`: PostgreSQL backend, Node, браузер, пакет, Compose и production image прошли.
 - [ ] Target Docker/backup/restore/schema preflight/readiness/load остаются внешними gates на сервере заказчика; успешная сборка image в GitHub CI не заменяет запуск и проверку целевой среды.
-- [ ] Controlled live amoCRM остаётся внешним gate: известный локальный backend на 8000 и cloudflared не запущены; текущий HTTPS API и авторизованная browser-сессия не подтверждены. Настройки и CRM-данные не менялись. Точный сценарий проверки и восстановления тестовых значений записан в `docs/release-checklist.md`.
+- [x] Локальный запуск `scripts/start-local.ps1 -LiveAmoCrm` сохраняет разрешённый origin `https://fracreserv.amocrm.ru` вместе с loopback-origin. Синтаксис PowerShell проверен, миграция 015 применена, локальный `/health/ready` возвращает `ready`.
+- [ ] Controlled live amoCRM остаётся внешним gate: backend на 8000 работает, но временные HTTPS-туннели оборвались, а Edge перестал передавать вкладку в канал управления. В карточке интеграции сохранён временный API URL уже завершившегося туннеля; пакет 3.0.20 ещё не загружен, ролевые сценарии в живой amoCRM не выполнены. До нового HTTPS-адреса настройки виджета будут показывать ошибку загрузки. Точный сценарий проверки и восстановления тестовых значений записан в `docs/release-checklist.md`.
 
 #### Созданные и изменённые файлы фазы 6 — 27 файлов
 

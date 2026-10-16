@@ -102,10 +102,11 @@ $env:DEBUG = "true"
 $env:INGESTION_WORKER_ENABLED = "false"
 if ($LiveAmoCrm) {
     Remove-Item Env:AMOCRM_REDIRECT_URI -ErrorAction SilentlyContinue
+    $env:ALLOWED_ORIGINS = "[`"https://fracreserv.amocrm.ru`",`"http://127.0.0.1:$BackendPort`",`"http://localhost:$BackendPort`"]"
 } else {
     $env:AMOCRM_REDIRECT_URI = "https://localhost.invalid/api/v1/auth/callback"
+    $env:ALLOWED_ORIGINS = "[`"http://127.0.0.1:$BackendPort`",`"http://localhost:$BackendPort`"]"
 }
-$env:ALLOWED_ORIGINS = "[`"http://127.0.0.1:$BackendPort`",`"http://localhost:$BackendPort`"]"
 
 Push-Location $backendRoot
 try {
