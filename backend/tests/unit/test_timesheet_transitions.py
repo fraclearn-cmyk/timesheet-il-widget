@@ -124,6 +124,40 @@ def test_invalid_transition_and_restart_permission(scope):
     assert db.query(WorkSession).count() == 2
 
 
+def test_restart_permission_allows_only_one_additional_session_per_day(scope):
+    db, context, group = scope
+    service = TimesheetService(db)
+    member = db.query(GroupMember).one()
+    member.require_late_reason = True
+    group.allow_restart_session = True
+    db.commit()
+
+    service.apply(context, "start-work", uuid4(), now_utc=NOW)
+    service.apply(context, "finish-work", uuid4(), now_utc=NOW + timedelta(minutes=1))
+    service.apply(
+        context,
+        "start-work",
+        uuid4(),
+        reason="повторный запуск разрешён",
+        now_utc=NOW + timedelta(minutes=2),
+    )
+    second_finish = service.apply(
+        context, "finish-work", uuid4(), now_utc=NOW + timedelta(minutes=3)
+    )
+
+    assert second_finish.restart_allowed is False
+    assert second_finish.late_reason_required is False
+    with pytest.raises(TimesheetConflict, match="STATUS_TRANSITION_INVALID"):
+        service.apply(
+            context,
+            "start-work",
+            uuid4(),
+            reason="третий запуск запрещён",
+            now_utc=NOW + timedelta(minutes=4),
+        )
+    assert db.query(WorkSession).count() == 2
+
+
 def test_track_time_false_denies_commands(scope):
     db, context, _ = scope
     db.query(GroupMember).one().track_time = False

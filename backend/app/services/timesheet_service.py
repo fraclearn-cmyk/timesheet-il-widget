@@ -94,14 +94,14 @@ class TimesheetService:
             .one_or_none()
         )
 
-    def _lateness_fields(self, context, now, membership, work=None):
+    def _lateness_fields(
+        self, context, now, membership, work=None, restart_allowed=False
+    ):
         member, group = membership
         decision = None
         if member.track_time:
             service = LatenessService(self.db)
-            if work is None or (
-                work.end_time is not None and group.allow_restart_session
-            ):
+            if work is None or (work.end_time is not None and restart_allowed):
                 decision = service.for_shift_start(context, member, group, now)
             elif work.current_status == WorkStatus.BREAK:
                 decision = service.for_break_return(context, work, member, group, now)
@@ -154,6 +154,11 @@ class TimesheetService:
             if work.current_status == WorkStatus.BREAK
             else work.current_status.value
         )
+        restart_allowed = (
+            status == "finished"
+            and bool(group.allow_restart_session)
+            and len(sessions) == 1
+        )
         break_seconds = int(work.total_break_time or 0)
         if status == "on_break":
             last = (
@@ -172,8 +177,10 @@ class TimesheetService:
             break_seconds,
             bool(member.track_time),
             bool(member.hide_widget),
-            status == "finished" and bool(group.allow_restart_session),
-            **self._lateness_fields(context, now, membership, work),
+            restart_allowed,
+            **self._lateness_fields(
+                context, now, membership, work, restart_allowed=restart_allowed
+            ),
         )
 
     def get_status(self, context, now_utc=None):
@@ -253,7 +260,11 @@ class TimesheetService:
                 "not_started": {"start-work"},
                 "working": {"start-break", "finish-work"},
                 "on_break": {"end-break", "finish-work"},
-                "finished": {"start-work"} if group.allow_restart_session else set(),
+                "finished": (
+                    {"start-work"}
+                    if group.allow_restart_session and len(sessions) == 1
+                    else set()
+                ),
             }
             if action not in allowed[state]:
                 raise TimesheetConflict("STATUS_TRANSITION_INVALID")

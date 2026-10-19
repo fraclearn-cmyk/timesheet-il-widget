@@ -295,7 +295,6 @@ class TimesheetReportService:
         )
         work_total = break_total = late_total = 0
         current_session_id = None
-        current_day = None
         session_work = session_break = 0
         has_transition = False
 
@@ -315,15 +314,12 @@ class TimesheetReportService:
                     work_total += work
                     break_total += breaks
                 current_session_id = row.session_id
-                day_key = (row.user_id, row.day)
-                if day_key != current_day:
-                    minutes = (
-                        row.shift_late_minutes
-                        if row.shift_late_minutes is not None
-                        else row.legacy_late_minutes
-                    )
-                    late_total += max(0, int(minutes or 0)) * 60
-                    current_day = day_key
+                minutes = (
+                    row.shift_late_minutes
+                    if row.shift_late_minutes is not None
+                    else row.legacy_late_minutes
+                )
+                late_total += max(0, int(minutes or 0)) * 60
                 ended_at = row.ended_at
                 legacy_work, legacy_break = row.legacy_work, row.legacy_break
                 start = _utc_naive(row.started_at)
@@ -493,17 +489,32 @@ class TimesheetReportService:
                 breaks += session_breaks
             first = day_sessions[0]
             latest = day_sessions[-1]
-            shift = next(
-                (
-                    incident
-                    for incident in incidents_by_session[first.id]
-                    if incident.kind == LatenessKind.SHIFT_START
-                ),
-                None,
-            )
-            shift_seconds = (
-                max(0, int(shift.late_minutes if shift else first.late_minutes or 0))
-                * 60
+            shift_incidents = []
+            shift_seconds = 0
+            for session in day_sessions:
+                shift = next(
+                    (
+                        incident
+                        for incident in sorted(
+                            incidents_by_session[session.id],
+                            key=lambda item: item.id,
+                        )
+                        if incident.kind == LatenessKind.SHIFT_START
+                    ),
+                    None,
+                )
+                if shift is not None:
+                    shift_incidents.append(shift)
+                    shift_seconds += max(0, int(shift.late_minutes or 0)) * 60
+                else:
+                    shift_seconds += max(0, int(session.late_minutes or 0)) * 60
+            shift_reason = (
+                "\n".join(
+                    incident.reason
+                    for incident in shift_incidents
+                    if incident.reason is not None
+                )
+                or None
             )
             break_incidents = [
                 BreakLateness(
@@ -532,7 +543,7 @@ class TimesheetReportService:
                 work_seconds=work,
                 late_seconds=shift_seconds,
                 shift_late_seconds=shift_seconds,
-                shift_late_reason=shift.reason if shift else None,
+                shift_late_reason=shift_reason,
                 break_late_seconds=sum(
                     incident.late_seconds for incident in break_incidents
                 ),

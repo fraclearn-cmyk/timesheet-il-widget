@@ -137,6 +137,48 @@ def test_each_lateness_field_is_independent_with_three_header_rows(
         assert ws["A4"].data_type == "s"
 
 
+def test_restarted_shift_reasons_are_visible_in_excel(scoped_client, db):
+    from app.models.lateness_incident import LatenessIncident, LatenessKind
+
+    first = add_session(
+        db,
+        start=datetime(2026, 9, 22, 6),
+        end=datetime(2026, 9, 22, 7),
+    )
+    second = add_session(
+        db,
+        start=datetime(2026, 9, 22, 8),
+        end=datetime(2026, 9, 22, 9),
+    )
+    for session, minutes, reason in [
+        (first, 7, "автобус"),
+        (second, 11, "врач"),
+    ]:
+        db.add(
+            LatenessIncident(
+                account_id=10,
+                amocrm_user_id=102,
+                work_session_id=session.id,
+                kind=LatenessKind.SHIFT_START,
+                sequence=0,
+                occurred_at=session.start_time,
+                late_minutes=minutes,
+                reason=reason,
+            )
+        )
+    db.commit()
+
+    ws = sheet(
+        export(
+            scoped_client("admin"),
+            columns=["shift_lateness", "shift_late_reason"],
+        )
+    )
+    assert ws["A4"].value == 18
+    assert ws["B4"].value == "автобус\nврач"
+    assert ws["B4"].alignment.wrap_text
+
+
 def test_default_workbook_groups_headers_and_preserves_minute_units(scoped_client, db):
     add_session(db, late=75)
     db.commit()
@@ -518,7 +560,7 @@ def test_selected_columns_local_times_durations_and_same_day_merge(
         datetime(2026, 9, 22, 9, 15),
         timedelta(seconds=5400),
         timedelta(seconds=1800),
-        15,
+        195,
         "Employee",
         datetime(2026, 9, 22),
     ]

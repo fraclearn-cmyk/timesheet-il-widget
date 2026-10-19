@@ -138,6 +138,30 @@ def test_structured_shift_and_ordered_break_incidents(scoped_client, db, actor):
     assert_problem(get(scoped_client("employee")), 403, "ACCESS_DENIED")
 
 
+def test_restarted_shift_lateness_and_reasons_are_combined_for_the_day(
+    scoped_client, db
+):
+    first = add_session(
+        db,
+        start=datetime(2026, 9, 22, 6),
+        end=datetime(2026, 9, 22, 7),
+    )
+    second = add_session(
+        db,
+        start=datetime(2026, 9, 22, 8),
+        end=datetime(2026, 9, 22, 9),
+    )
+    add_incident(db, first, LatenessKind.SHIFT_START, 0, 7, "автобус")
+    add_incident(db, second, LatenessKind.SHIFT_START, 0, 11, "врач")
+    db.commit()
+
+    payload = get(scoped_client("admin")).json()
+    row = payload["items"][0]
+    assert row["shift_late_seconds"] == row["late_seconds"] == 18 * 60
+    assert row["shift_late_reason"] == "автобус\nврач"
+    assert payload["totals"]["late_seconds"] == 18 * 60
+
+
 @pytest.mark.parametrize("minutes", [0, 17])
 def test_legacy_session_never_exposes_historical_reason(scoped_client, db, minutes):
     session = add_session(db, late=minutes)
@@ -314,9 +338,10 @@ def test_same_day_sessions_merge_and_transitions_override_legacy_counters(
     assert (row["work_seconds"], row["break_seconds"], row["late_seconds"]) == (
         5400,
         1800,
-        900,
+        11700,
     )
     assert body["totals"]["work_seconds"] == 5400
+    assert body["totals"]["late_seconds"] == 11700
     assert not (
         {"activities", "events", "calls", "activity_count", "entity_url"} & set(row)
     )
@@ -516,8 +541,8 @@ def test_break_incidents_from_all_same_day_sessions_are_retained(scoped_client, 
     add_incident(db, second, LatenessKind.BREAK_RETURN, 1, 5, "связь")
     db.commit()
     row = get(scoped_client("admin")).json()["items"][0]
-    assert row["shift_late_seconds"] == 600
-    assert row["shift_late_reason"] is None
+    assert row["shift_late_seconds"] == 6540
+    assert row["shift_late_reason"] == "second start"
     assert row["break_late_seconds"] == 780
     assert [incident["reason"] for incident in row["break_late_reason"]] == [
         None,
