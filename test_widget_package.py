@@ -82,7 +82,7 @@ class WidgetPackageTests(unittest.TestCase):
 
     def test_manifest_initializes_cards_settings_and_role_scoped_report_page(self):
         manifest = json.loads((ROOT / "widget" / "manifest.json").read_text("utf-8"))
-        self.assertEqual(manifest["widget"]["version"], "3.0.20")
+        self.assertEqual(manifest["widget"]["version"], "3.0.21")
         self.assertEqual(
             manifest["locations"],
             [
@@ -101,15 +101,26 @@ class WidgetPackageTests(unittest.TestCase):
         self.assertEqual(len(RUNTIME), 25)
         self.assertTrue(WidgetValidator(self.make_zip(entries)).validate())
 
+    def test_settings_requests_allow_slow_live_amocrm_verification(self):
+        script = (ROOT / "widget" / "script.js").read_text("utf-8")
+        self.assertIn(
+            "'/settings/snapshot', method: 'GET', dataType: 'json', timeout: 30000",
+            script,
+        )
+        self.assertIn(
+            "'/settings/snapshot', method: 'PUT', contentType: 'application/json', dataType: 'json', timeout: 30000",
+            script,
+        )
+
     def test_validator_rejects_consistently_stale_release(self):
         entries = self.entries()
         entries["manifest.json"] = entries["manifest.json"].replace(
-            b"3.0.20", b"3.0.19"
+            b"3.0.21", b"3.0.20"
         )
-        entries["script.js"] = entries["script.js"].replace(b"3.0.20", b"3.0.19")
+        entries["script.js"] = entries["script.js"].replace(b"3.0.21", b"3.0.20")
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
-        self.assertIn("manifest.json widget version must be 3.0.20", validator.errors)
+        self.assertIn("manifest.json widget version must be 3.0.21", validator.errors)
 
     def test_validator_rejects_extra_stale_amd_cache_url(self):
         entries = self.entries()
@@ -177,10 +188,10 @@ class WidgetPackageTests(unittest.TestCase):
         entries = self.entries()
         entries["script.js"] = (
             entries["script.js"].replace(
-                b"'./reports/controller.js?v=3.0.20'",
-                b"'./reports/missing.js?v=3.0.20'",
+                b"'./reports/controller.js?v=3.0.21'",
+                b"'./reports/missing.js?v=3.0.21'",
             )
-            + b"\n// './reports/controller.js?v=3.0.20'\n"
+            + b"\n// './reports/controller.js?v=3.0.21'\n"
         )
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
@@ -198,8 +209,8 @@ class WidgetPackageTests(unittest.TestCase):
     def test_validator_rejects_report_dependency_only_inside_amd_array_comment(self):
         entries = self.entries()
         entries["script.js"] = entries["script.js"].replace(
-            b"'./reports/controller.js?v=3.0.20'",
-            b"'./reports/missing.js?v=3.0.20', /* './reports/controller.js?v=3.0.20' */",
+            b"'./reports/controller.js?v=3.0.21'",
+            b"'./reports/missing.js?v=3.0.21', /* './reports/controller.js?v=3.0.21' */",
             1,
         )
         validator = WidgetValidator(self.make_zip(entries))

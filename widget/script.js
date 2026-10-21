@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings.js?v=3.0.20', './timesheet/controller.js?v=3.0.20', './overlay.js?v=3.0.20', './activity-tracker.js?v=3.0.20', './monitoring/timeline.js?v=3.0.20', './monitoring/activity-modal.js?v=3.0.20', './monitoring/dashboard.js?v=3.0.20', './reports/controller.js?v=3.0.20'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
+define(['jquery', './settings/settings.js?v=3.0.21', './timesheet/controller.js?v=3.0.21', './overlay.js?v=3.0.21', './activity-tracker.js?v=3.0.21', './monitoring/timeline.js?v=3.0.21', './monitoring/activity-modal.js?v=3.0.21', './monitoring/dashboard.js?v=3.0.21', './reports/controller.js?v=3.0.21'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
     if (ActivityModal && typeof ActivityModal.setTimeline === 'function') ActivityModal.setTimeline(Timeline);
     if (MonitoringDashboard && typeof MonitoringDashboard.setActivityModal === 'function') MonitoringDashboard.setActivityModal(ActivityModal);
 
@@ -16,8 +16,8 @@ define(['jquery', './settings/settings.js?v=3.0.20', './timesheet/controller.js?
 
     function createSettingsTransport(widget) {
         return {
-            load: function() { return toPromise(widget.$authorizedAjax({ url: apiUrl(widget) + '/settings/snapshot', method: 'GET', dataType: 'json' })); },
-            save: function(payload) { return toPromise(widget.$authorizedAjax({ url: apiUrl(widget) + '/settings/snapshot', method: 'PUT', contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload) })); }
+            load: function() { return toPromise(widget.$authorizedAjax({ url: apiUrl(widget) + '/settings/snapshot', method: 'GET', dataType: 'json', timeout: 30000 })); },
+            save: function(payload) { return toPromise(widget.$authorizedAjax({ url: apiUrl(widget) + '/settings/snapshot', method: 'PUT', contentType: 'application/json', dataType: 'json', timeout: 30000, data: JSON.stringify(payload) })); }
         };
     }
 
