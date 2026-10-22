@@ -1823,7 +1823,9 @@ flowchart TD
 - [x] Добавлена адаптация шкалы для узкой панели и клавиатурный фокус для доступного управления.
 - [x] Версия пакета повышена до `3.0.22` для сброса кэша amoCRM. `widget.zip` собран из 25 runtime-файлов: размер `56 538` байт, SHA-256 `4DACA1DFD510C6C86CA7BCD4AD248E2484B2267BEC4CD7E6572C891FAF06A16B`.
 - [x] Автоматические проверки завершены: backend — `777 passed, 90 skipped`; frontend — `137 passed`; пакет — `23 passed`; валидатор архива — `VALIDATION PASSED`.
-- [ ] Загрузить `widget.zip` версии `3.0.22` в приватную интеграцию amoCRM и подтвердить шкалу на реальных 19 событиях «Тест Сотрудник» после отдельного подтверждения загрузки файла.
+- [x] `widget.zip` версии `3.0.22` загружен в приватную интеграцию amoCRM; URL API и OAuth callback обновлены на действующий HTTPS-туннель.
+- [x] Живая проверка в роли администратора: панель показывает 3 сотрудников и шкалу `00:00–24:00` в каждой строке; нажатие на шкалу «Тест Сотрудник» открывает подробности с 19 событиями за `21.10.2026`.
+- [x] Подтверждено корректное пустое состояние шкалы за `22.10.2026`: зелёных участков нет, потому что подтверждённая CRM-активность за текущий день равна 0 минут.
 
 Изменённые файлы этой фазы: `backend/app/schemas/team.py`, `backend/app/services/team_service.py`, `backend/tests/api/test_team_visibility.py`, `frontend/monitoring/dashboard.js`, `frontend/monitoring/styles.css`, `frontend/tests/monitoring-dashboard.test.js`, `frontend/tests/widget-lifecycle.test.js`, `widget/manifest.json`, `widget/script.js`, `validate_widget_zip.py`, `test_widget_package.py`, `docs/release-checklist.md`, `Plan.md`. Собран локальный `widget.zip`, который не входит в Git.
 
