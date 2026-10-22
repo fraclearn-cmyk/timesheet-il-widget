@@ -1826,6 +1826,7 @@ flowchart TD
 - [x] `widget.zip` версии `3.0.22` загружен в приватную интеграцию amoCRM; URL API и OAuth callback обновлены на действующий HTTPS-туннель.
 - [x] Живая проверка в роли администратора: панель показывает 3 сотрудников и шкалу `00:00–24:00` в каждой строке; нажатие на шкалу «Тест Сотрудник» открывает подробности с 19 событиями за `21.10.2026`.
 - [x] Подтверждено корректное пустое состояние шкалы за `22.10.2026`: зелёных участков нет, потому что подтверждённая CRM-активность за текущий день равна 0 минут.
+- [x] После тайм-аута `localhost.run` тестовое окружение переключено на HTTPS-туннель Serveo; health, CORS и повторная загрузка панели в amoCRM подтверждены в `19:59` по Москве. Туннель остаётся временным и не заменяет целевой сервер заказчика.
 
 Изменённые файлы этой фазы: `backend/app/schemas/team.py`, `backend/app/services/team_service.py`, `backend/tests/api/test_team_visibility.py`, `frontend/monitoring/dashboard.js`, `frontend/monitoring/styles.css`, `frontend/tests/monitoring-dashboard.test.js`, `frontend/tests/widget-lifecycle.test.js`, `widget/manifest.json`, `widget/script.js`, `validate_widget_zip.py`, `test_widget_package.py`, `docs/release-checklist.md`, `Plan.md`. Собран локальный `widget.zip`, который не входит в Git.
 
