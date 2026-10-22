@@ -26,6 +26,12 @@ class TeamGroupSummary(_StrictTeamModel):
     employee_count: int
 
 
+class TeamActivitySegment(_StrictTeamModel):
+    started_at: datetime
+    ended_at: datetime
+    is_point: bool
+
+
 class TeamMemberSummary(_StrictTeamModel):
     id: int
     amocrm_user_id: int
@@ -45,6 +51,7 @@ class TeamMemberSummary(_StrictTeamModel):
     break_seconds: int
     confirmed_seconds: int
     confirmed_events: int
+    activity_segments: list[TeamActivitySegment]
     activity_detail_allowed: bool
     report_filter_allowed: bool = False
 

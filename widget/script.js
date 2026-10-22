@@ -1,4 +1,4 @@
-define(['jquery', './settings/settings.js?v=3.0.21', './timesheet/controller.js?v=3.0.21', './overlay.js?v=3.0.21', './activity-tracker.js?v=3.0.21', './monitoring/timeline.js?v=3.0.21', './monitoring/activity-modal.js?v=3.0.21', './monitoring/dashboard.js?v=3.0.21', './reports/controller.js?v=3.0.21'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
+define(['jquery', './settings/settings.js?v=3.0.22', './timesheet/controller.js?v=3.0.22', './overlay.js?v=3.0.22', './activity-tracker.js?v=3.0.22', './monitoring/timeline.js?v=3.0.22', './monitoring/activity-modal.js?v=3.0.22', './monitoring/dashboard.js?v=3.0.22', './reports/controller.js?v=3.0.22'], function($, SettingsController, TimesheetController, Overlay, ActivityTracker, Timeline, ActivityModal, MonitoringDashboard, ReportsController) {
     if (ActivityModal && typeof ActivityModal.setTimeline === 'function') ActivityModal.setTimeline(Timeline);
     if (MonitoringDashboard && typeof MonitoringDashboard.setActivityModal === 'function') MonitoringDashboard.setActivityModal(ActivityModal);
 

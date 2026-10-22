@@ -310,6 +310,23 @@ def test_status_workday_and_aggregate_contract(scoped_client, db, monkeypatch):
     assert row["break_seconds"] == 900
     assert row["confirmed_seconds"] == 480
     assert row["confirmed_events"] == 3
+    assert row["activity_segments"] == [
+        {
+            "started_at": "2026-09-28T10:00:00Z",
+            "ended_at": "2026-09-28T10:05:00Z",
+            "is_point": False,
+        },
+        {
+            "started_at": "2026-09-28T10:03:00Z",
+            "ended_at": "2026-09-28T10:08:00Z",
+            "is_point": False,
+        },
+        {
+            "started_at": "2026-09-28T10:09:00Z",
+            "ended_at": "2026-09-28T10:09:00Z",
+            "is_point": True,
+        },
+    ]
     assert rows[6]["work_seconds"] == 4_800
     assert rows[6]["break_seconds"] == 600
     totals = response.json()["totals"]
@@ -327,12 +344,12 @@ def test_status_workday_and_aggregate_contract(scoped_client, db, monkeypatch):
     assert totals["confirmed_events"] == 3
 
 
-def test_forty_accounts_duplicate_ids_and_constant_query_count(
+def test_fifty_accounts_duplicate_ids_and_constant_query_count(
     scoped_client, db, monkeypatch
 ):
     monkeypatch.setattr("app.api.v1.team.utc_now", lambda: NOW)
     monkeypatch.setattr("app.services.team_service.utc_now", lambda: NOW)
-    for offset in range(40):
+    for offset in range(50):
         account_id = 1000 + offset
         user_id = 1000 + offset
         db.add(
@@ -341,7 +358,7 @@ def test_forty_accounts_duplicate_ids_and_constant_query_count(
         db.add(
             WidgetGroup(id=1000 + offset, account_id=account_id, name=f"Group {offset}")
         )
-    for offset in range(39):
+    for offset in range(49):
         db.add(_user(2000 + offset, 5000 + offset, 10, f"Visible {offset}"))
     db.add_all(
         [
@@ -379,7 +396,7 @@ def test_forty_accounts_duplicate_ids_and_constant_query_count(
 
     # Every repeated external identity resolves inside its verified account.
     raw_client = scoped_client("admin")._client
-    for offset in range(40):
+    for offset in range(50):
         response = raw_client.get(
             "/api/v1/team/status",
             headers={"X-User-Id": "777", "X-Account-Id": str(1000 + offset)},
@@ -414,5 +431,5 @@ def test_forty_accounts_duplicate_ids_and_constant_query_count(
         event.remove(engine, "before_cursor_execute", count_selects)
     assert small.status_code == 200
     assert response.status_code == 200
-    assert len(response.json()["employees"]) == 42
+    assert len(response.json()["employees"]) == 52
     assert selects == small_selects == 6

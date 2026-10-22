@@ -51,6 +51,54 @@
     return `${value.year}-${value.month}-${value.day}`;
   }
 
+  function minuteOfDay(value, timezone) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return null;
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone || 'UTC', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      }).formatToParts(date);
+      const clockParts = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return (Number(clockParts.hour) * 60) + Number(clockParts.minute);
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function activityScale(document, employee) {
+    const canOpen = Boolean(employee.activity_detail_allowed);
+    const scale = element(document, canOpen ? 'button' : 'div', 'ts-monitoring__inline-activity');
+    if (canOpen) {
+      scale.type = 'button';
+      scale.dataset.activityUserId = String(employee.id);
+    }
+    scale.setAttribute('aria-label', `Активность: ${employee.name}`);
+    const track = element(document, 'span', 'ts-monitoring__activity-track');
+    for (const source of Array.isArray(employee.activity_segments) ? employee.activity_segments : []) {
+      const start = minuteOfDay(source.started_at, employee.timezone);
+      if (start === null) continue;
+      const segment = element(document, 'span', 'ts-monitoring__activity-segment');
+      const point = Boolean(source.is_point) || source.started_at === source.ended_at;
+      segment.style.left = `${(start / 1440) * 100}%`;
+      if (point) {
+        segment.classList.add('ts-monitoring__activity-segment--point');
+      } else {
+        const durationMinutes = Math.max(0, (Date.parse(source.ended_at) - Date.parse(source.started_at)) / 60000);
+        const visibleMinutes = Math.min(durationMinutes, Math.max(0, 1440 - start));
+        if (!Number.isFinite(visibleMinutes) || visibleMinutes <= 0) continue;
+        segment.style.width = `${(visibleMinutes / 1440) * 100}%`;
+      }
+      track.appendChild(segment);
+    }
+    scale.appendChild(track);
+    const ticks = element(document, 'span', 'ts-monitoring__activity-ticks');
+    ['00:00', '06:00', '12:00', '18:00', '24:00'].forEach((label) => {
+      ticks.appendChild(element(document, 'span', 'ts-monitoring__activity-tick', label));
+    });
+    scale.appendChild(ticks);
+    return scale;
+  }
+
   function shiftDate(isoDate, days) {
     const date = new Date(`${isoDate}T12:00:00Z`);
     date.setUTCDate(date.getUTCDate() + days);
@@ -167,13 +215,7 @@
       metrics.textContent = `Работа: ${duration(employee.work_seconds)} · Перерыв: ${duration(employee.break_seconds)} · Активность: ${duration(employee.confirmed_seconds)}`;
       const shift = element(document, 'div', 'ts-monitoring__shift',
         `Рабочий день: ${clock(employee.workday_started_at, employee.timezone)}–${clock(employee.workday_ended_at, employee.timezone)}`);
-      row.append(identity, metrics, shift);
-      if (employee.activity_detail_allowed) {
-        const button = element(document, 'button', 'ts-monitoring__activity', '⋮');
-        button.type = 'button'; button.dataset.activityUserId = String(employee.id);
-        button.setAttribute('aria-label', `Активность: ${employee.name}`);
-        row.appendChild(button);
-      }
+      row.append(identity, metrics, shift, activityScale(document, employee));
       return row;
     }
 

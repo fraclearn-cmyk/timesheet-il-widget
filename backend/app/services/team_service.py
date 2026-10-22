@@ -29,6 +29,7 @@ from app.schemas.team import (
     ActivityWindowTarget,
     ActivityWindowTotals,
     TeamGroupSummary,
+    TeamActivitySegment,
     TeamMemberSummary,
     TeamStatusResponse,
     TeamStatusTotals,
@@ -582,8 +583,13 @@ class TeamService:
                 break_seconds += session_break
 
             confirmed_ranges: list[tuple[datetime, datetime]] = []
+            activity_segments: list[TeamActivitySegment] = []
             confirmed_events = 0
-            for interval in intervals_by_user.get(user_id, []):
+            user_intervals = sorted(
+                intervals_by_user.get(user_id, []),
+                key=lambda item: (item.started_at, item.ended_at, item.id),
+            )
+            for interval in user_intervals:
                 start = max(interval.started_at, day_start)
                 end = min(interval.ended_at, day_end)
                 is_point = interval.started_at == interval.ended_at
@@ -594,6 +600,13 @@ class TeamService:
                 )
                 if overlaps:
                     confirmed_events += 1
+                    activity_segments.append(
+                        TeamActivitySegment(
+                            started_at=self._utc(start),
+                            ended_at=self._utc(end),
+                            is_point=is_point,
+                        )
+                    )
                     if end > start:
                         confirmed_ranges.append((start, end))
             confirmed_ranges.sort()
@@ -639,6 +652,7 @@ class TeamService:
                     break_seconds=break_seconds,
                     confirmed_seconds=confirmed_seconds,
                     confirmed_events=confirmed_events,
+                    activity_segments=activity_segments,
                     activity_detail_allowed=detail_allowed,
                     report_filter_allowed=report_filter_allowed,
                 )

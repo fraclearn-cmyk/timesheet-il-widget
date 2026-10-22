@@ -14,12 +14,16 @@ function response(overrides = {}) {
         group_name: 'Продажи', timezone: 'Europe/Moscow', workday_started_at: '2026-09-29T06:00:00Z',
         workday_ended_at: '2026-09-29T15:00:00Z', status: 'working', status_since: '2026-09-29T06:00:00Z',
         session_started_at: '2026-09-29T06:00:00Z', session_ended_at: null, work_seconds: 3600,
-        break_seconds: 60, confirmed_seconds: 600, confirmed_events: 2, activity_detail_allowed: true },
+        break_seconds: 60, confirmed_seconds: 600, confirmed_events: 2, activity_detail_allowed: true,
+        activity_segments: [
+          { started_at: '2026-09-29T06:00:00Z', ended_at: '2026-09-29T06:30:00Z', is_point: false },
+          { started_at: '2026-09-29T09:00:00Z', ended_at: '2026-09-29T09:00:00Z', is_point: true },
+        ] },
       { id: 3, amocrm_user_id: 103, account_id: 1, name: 'Борис', avatar_url: null, group_id: 20,
         group_name: 'Поддержка', timezone: 'Europe/Moscow', workday_started_at: '2026-09-29T06:00:00Z',
         workday_ended_at: '2026-09-29T15:00:00Z', status: 'not_started', status_since: null,
         session_started_at: null, session_ended_at: null, work_seconds: 0, break_seconds: 0,
-        confirmed_seconds: 0, confirmed_events: 0, activity_detail_allowed: false },
+        confirmed_seconds: 0, confirmed_events: 0, activity_detail_allowed: false, activity_segments: [] },
     ],
     totals: { working: 1, on_break: 0, finished: 0, not_started: 1, work_seconds: 3600,
       break_seconds: 60, confirmed_seconds: 600, confirmed_events: 2 },
@@ -81,6 +85,42 @@ test('renders grouped rows, totals, Russian statuses, and activity permission', 
   assert.match(fixture.document.body.textContent, /Рабочий день: 09:00–18:00/);
   assert.equal(fixture.document.querySelectorAll('[data-activity-user-id]').length, 1);
   assert.match(fixture.document.querySelector('.ts-monitoring__totals').textContent, /Работают: 1/);
+  fixture.dashboard.destroy();
+});
+
+test('renders a 24-hour inline activity scale and opens detail from the scale', async () => {
+  const fixture = boot();
+  await fixture.dashboard.ready;
+  const timeline = fixture.document.querySelector('[data-activity-user-id="2"].ts-monitoring__inline-activity');
+  assert.ok(timeline);
+  assert.equal(timeline.getAttribute('aria-label'), 'Активность: Анна');
+  assert.deepEqual(
+    Array.from(timeline.querySelectorAll('.ts-monitoring__activity-tick'), (node) => node.textContent),
+    ['00:00', '06:00', '12:00', '18:00', '24:00'],
+  );
+  const segments = timeline.querySelectorAll('.ts-monitoring__activity-segment');
+  assert.equal(segments.length, 2);
+  assert.equal(segments[0].style.left, '37.5%');
+  assert.equal(segments[0].style.width, '2.083333333333333%');
+  assert.equal(segments[1].classList.contains('ts-monitoring__activity-segment--point'), true);
+  timeline.click();
+  await tick();
+  assert.equal(fixture.calls.at(-1).kind, 'activity');
+  assert.equal(fixture.calls.at(-1).userId, 2);
+  fixture.dashboard.destroy();
+});
+
+test('keeps an empty read-only activity scale visible without a detail request', async () => {
+  const fixture = boot();
+  await fixture.dashboard.ready;
+  const row = fixture.document.querySelector('[data-user-id="3"]');
+  const timeline = row.querySelector('.ts-monitoring__inline-activity');
+  assert.ok(timeline);
+  assert.equal(timeline.tagName, 'DIV');
+  assert.equal(timeline.querySelectorAll('.ts-monitoring__activity-segment').length, 0);
+  timeline.click();
+  await tick();
+  assert.equal(fixture.calls.filter((call) => call.kind === 'activity').length, 0);
   fixture.dashboard.destroy();
 });
 
@@ -241,8 +281,8 @@ test('destroy aborts work, removes listeners and DOM, and remount is clean', asy
   second.destroy();
 });
 
-test('forty account dashboards keep rows, requests, and polling timers isolated', async () => {
-  const fixtures = Array.from({ length: 40 }, (_, index) => {
+test('fifty account dashboards keep rows, requests, and polling timers isolated', async () => {
+  const fixtures = Array.from({ length: 50 }, (_, index) => {
     const accountId = index + 1;
     const dom = new JSDOM('<main id="root"></main>', { url: `https://account-${accountId}.amocrm.ru` });
     Object.defineProperty(dom.window.document, 'hidden', { value: false, configurable: true });
@@ -270,7 +310,7 @@ test('forty account dashboards keep rows, requests, and polling timers isolated'
     assert.equal(fixture.calls.length, 1);
     assert.equal(fixture.fake.jobs.filter((job) => !job.cancelled).length, 1);
     assert.match(fixture.dom.window.document.body.textContent, new RegExp(`Сотрудник ${fixture.accountId}`));
-    const foreign = fixture.accountId === 40 ? 1 : fixture.accountId + 1;
+    const foreign = fixture.accountId === 50 ? 1 : fixture.accountId + 1;
     assert.doesNotMatch(fixture.dom.window.document.body.textContent, new RegExp(`Сотрудник ${foreign}(?!\\d)`));
     fixture.dashboard.destroy();
     fixture.dom.window.close();

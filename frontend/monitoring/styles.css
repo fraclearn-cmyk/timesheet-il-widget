@@ -20,7 +20,7 @@
 }
 
 .ts-monitoring-widget__panel {
-  width: min(720px, calc(100vw - 32px));
+  width: min(980px, calc(100vw - 32px));
   max-height: min(720px, calc(100vh - 100px));
   margin-bottom: 10px;
   overflow: auto;
@@ -45,7 +45,7 @@
 .ts-monitoring__message { min-height: 20px; color: #b54708; }
 .ts-monitoring__group { margin-top: 14px; }
 .ts-monitoring__group-title { margin: 0 0 6px; font-size: 15px; }
-.ts-monitoring__employee { position: relative; display: grid; grid-template-columns: 10px minmax(130px, 1fr) minmax(210px, 1.4fr) auto; gap: 10px; align-items: center; padding: 10px 40px 10px 12px; border-top: 1px solid #eaecf0; }
+.ts-monitoring__employee { position: relative; display: grid; grid-template-columns: 10px minmax(130px, 1fr) minmax(190px, 1.2fr) minmax(145px, .9fr) minmax(240px, 1.5fr); gap: 10px; align-items: center; padding: 10px 12px; border-top: 1px solid #eaecf0; }
 .ts-monitoring__employee::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #98a2b3; }
 .ts-monitoring__employee--working::before { background: #22a06b; }
 .ts-monitoring__employee--on_break::before { background: #f79009; }
@@ -54,9 +54,15 @@
 .ts-monitoring__employee-status,
 .ts-monitoring__metrics,
 .ts-monitoring__shift { color: #667085; font-size: 12px; }
-.ts-monitoring__activity { position: absolute; right: 8px; width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; font-size: 22px; cursor: pointer; }
-.ts-monitoring__activity:hover,
-.ts-monitoring__activity:focus-visible { background: #eef4ff; outline: 2px solid #84adff; }
+.ts-monitoring__inline-activity { display: block; min-width: 0; padding: 4px 0 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+button.ts-monitoring__inline-activity { cursor: pointer; }
+button.ts-monitoring__inline-activity:hover .ts-monitoring__activity-track { border-color: #84adff; background: #eef4ff; }
+button.ts-monitoring__inline-activity:focus-visible { border-radius: 5px; outline: 2px solid #2563eb; outline-offset: 3px; }
+.ts-monitoring__activity-track { position: relative; display: block; height: 14px; overflow: hidden; border: 1px solid #d0d5dd; border-radius: 7px; background: #f2f4f7; }
+.ts-monitoring__activity-track::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), rgba(152, 162, 179, .35) 25%); pointer-events: none; }
+.ts-monitoring__activity-segment { position: absolute; top: 1px; bottom: 1px; z-index: 1; min-width: 2px; border-radius: 2px; background: #32c766; }
+.ts-monitoring__activity-segment--point { width: 3px; }
+.ts-monitoring__activity-ticks { display: flex; justify-content: space-between; margin-top: 2px; color: #98a2b3; font-size: 9px; line-height: 1; }
 
 .ts-activity-modal {
   position: fixed;
@@ -153,7 +159,8 @@
   .ts-monitoring__controls { grid-template-columns: 1fr 1fr; }
   .ts-monitoring__employee { grid-template-columns: 10px 1fr; }
   .ts-monitoring__metrics,
-  .ts-monitoring__shift { grid-column: 2; }
+  .ts-monitoring__shift,
+  .ts-monitoring__inline-activity { grid-column: 2; }
   .ts-activity-modal { padding: 0; }
   .ts-activity-modal__panel { max-height: 100vh; border-radius: 0; }
 }
