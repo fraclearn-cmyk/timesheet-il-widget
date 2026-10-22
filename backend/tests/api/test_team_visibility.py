@@ -306,7 +306,9 @@ def test_status_workday_and_aggregate_contract(scoped_client, db, monkeypatch):
     assert row["workday_started_at"] == "2026-09-28T09:00:00Z"
     assert row["workday_ended_at"] == "2026-09-28T18:00:00Z"
     assert row["session_started_at"] == "2026-09-28T08:30:00Z"
-    assert row["work_seconds"] == 9_900
+    # Фактическая смена учитывается целиком в пределах календарного дня,
+    # даже если сотрудник начал работу раньше настроенного графика.
+    assert row["work_seconds"] == 11_700
     assert row["break_seconds"] == 900
     assert row["confirmed_seconds"] == 480
     assert row["confirmed_events"] == 3
@@ -342,6 +344,85 @@ def test_status_workday_and_aggregate_contract(scoped_client, db, monkeypatch):
     }
     assert totals["confirmed_seconds"] == 480
     assert totals["confirmed_events"] == 3
+
+
+def test_status_includes_after_hours_sessions_and_activity(
+    scoped_client, db, monkeypatch
+):
+    now = datetime(2026, 9, 28, 20, 30)
+    monkeypatch.setattr("app.api.v1.team.utc_now", lambda: now)
+    monkeypatch.setattr("app.services.team_service.utc_now", lambda: now)
+    group = db.get(WidgetGroup, 10)
+    group.timezone = "UTC"
+    group.work_start_time = time(9)
+    group.work_end_time = time(18)
+    db.add_all(
+        [
+            WorkSession(
+                id=220,
+                amocrm_user_id=102,
+                amocrm_account_id=10,
+                user_name="Employee",
+                start_time=datetime(2026, 9, 28, 9),
+                end_time=datetime(2026, 9, 28, 10),
+                current_status=WorkStatus.FINISHED,
+            ),
+            WorkSession(
+                id=221,
+                amocrm_user_id=102,
+                amocrm_account_id=10,
+                user_name="Employee",
+                start_time=datetime(2026, 9, 28, 20),
+                current_status=WorkStatus.WORKING,
+            ),
+        ]
+    )
+    db.flush()
+    db.add_all(
+        [
+            StatusTransition(
+                work_session_id=220,
+                from_status=None,
+                to_status="working",
+                timestamp=datetime(2026, 9, 28, 9),
+            ),
+            StatusTransition(
+                work_session_id=220,
+                from_status="working",
+                to_status="finished",
+                timestamp=datetime(2026, 9, 28, 10),
+            ),
+            StatusTransition(
+                work_session_id=221,
+                from_status=None,
+                to_status="working",
+                timestamp=datetime(2026, 9, 28, 20),
+            ),
+            ActivityInterval(
+                account_id=10,
+                user_id=2,
+                work_session_id=221,
+                started_at=datetime(2026, 9, 28, 20, 5),
+                ended_at=datetime(2026, 9, 28, 20, 10),
+                kind="confirmed",
+                source="crm_event",
+                duration_source="calculated",
+            ),
+        ]
+    )
+    db.commit()
+
+    response = scoped_client("admin").get("/api/v1/team/status?group_id=10")
+
+    assert response.status_code == 200
+    row = next(item for item in response.json()["employees"] if item["id"] == 2)
+    assert row["workday_started_at"] == "2026-09-28T09:00:00Z"
+    assert row["workday_ended_at"] == "2026-09-28T18:00:00Z"
+    assert row["status"] == "working"
+    assert row["session_started_at"] == "2026-09-28T20:00:00Z"
+    assert row["work_seconds"] == 5_400
+    assert row["confirmed_seconds"] == 300
+    assert row["confirmed_events"] == 1
 
 
 def test_fifty_accounts_duplicate_ids_and_constant_query_count(

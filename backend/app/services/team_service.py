@@ -467,8 +467,17 @@ class TeamService:
             user_id: self._workday(group, now)
             for user_id, (_user, _membership, group) in visible.items()
         }
-        min_start = min((value[1] for value in workdays.values()), default=now)
-        max_end = max((value[2] for value in workdays.values()), default=now)
+        calendar_days = {}
+        for user_id, (_user, _membership, group) in visible.items():
+            timezone_name = group.timezone if group else "UTC"
+            local_day = (
+                now.replace(tzinfo=timezone.utc)
+                .astimezone(ZoneInfo(timezone_name))
+                .date()
+            )
+            calendar_days[user_id] = local_period_utc_bounds(local_day, timezone_name)
+        min_start = min((value[0] for value in calendar_days.values()), default=now)
+        max_end = max((value[1] for value in calendar_days.values()), default=now)
         external_ids = {row[0].amocrm_user_id for row in visible.values()}
         sessions = []
         if external_ids:
@@ -529,7 +538,8 @@ class TeamService:
             search.strip().casefold() if search and search.strip() else None
         )
         for user_id, (user, membership, group) in visible.items():
-            timezone_name, day_start, day_end = workdays[user_id]
+            timezone_name, workday_start, workday_end = workdays[user_id]
+            day_start, day_end = calendar_days[user_id]
             user_sessions = [
                 item
                 for item in sessions_by_external.get(user.amocrm_user_id, [])
@@ -640,8 +650,8 @@ class TeamService:
                     group_id=group.id if group else None,
                     group_name=group.name if group else None,
                     timezone=timezone_name,
-                    workday_started_at=self._utc(day_start),
-                    workday_ended_at=self._utc(day_end),
+                    workday_started_at=self._utc(workday_start),
+                    workday_ended_at=self._utc(workday_end),
                     status=canonical_status,
                     status_since=self._utc(status_since),
                     session_started_at=(
