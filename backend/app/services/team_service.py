@@ -683,6 +683,12 @@ class TeamService:
             _zone, start, end = self._workday(group, now)
             count = sum(1 for item in employees if item.group_id == group.id)
             group_history_days = 365 if is_admin else group.report_history_days
+            group_business_date = business_date(
+                now,
+                group.timezone,
+                group.work_start_time,
+                group.work_end_time,
+            )
             group_summaries.append(
                 TeamGroupSummary(
                     id=group.id,
@@ -692,9 +698,9 @@ class TeamService:
                     workday_ended_at=self._utc(end),
                     employee_count=count,
                     report_history_days=group_history_days,
-                    report_min_date=now.date()
+                    report_min_date=group_business_date
                     - timedelta(days=group_history_days - 1),
-                    report_max_date=now.date(),
+                    report_max_date=group_business_date,
                 )
             )
         counts = {
@@ -703,8 +709,11 @@ class TeamService:
         }
         report_period = None
         if is_admin or is_manager:
+            period_groups = (
+                [groups_by_id[group_id]] if group_id is not None else groups
+            )
             period = resolve_report_access_period(
-                self.db, context, group_id, today=now.date()
+                self.db, context, group_id, now=now, groups=period_groups
             )
             report_period = TeamReportPeriod(
                 min_date=period.min_date,

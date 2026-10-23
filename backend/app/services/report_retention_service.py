@@ -1,6 +1,7 @@
 """Bounded annual cleanup for normalized timesheet report data."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -17,6 +18,8 @@ from app.models.status_transition import StatusTransition
 from app.models.timesheet_command import TimesheetCommand
 from app.models.work_comment import WorkComment
 from app.models.work_session import WorkSession
+from app.models.widget_group import WidgetGroup
+from app.core.business_time import business_date
 
 
 REPORT_RETENTION_DAYS = 365
@@ -80,12 +83,34 @@ class ReportRetentionService:
     def cleanup(self, now: datetime, batch_size: int = 1000) -> int:
         if batch_size < 1:
             raise ValueError("report retention batch size must be positive")
-        cutoff_date = now.date() - timedelta(days=REPORT_RETENTION_DAYS - 1)
-        cutoff_at = datetime.combine(cutoff_date, datetime.min.time())
+        group_boundaries = [
+            (
+                business_date(
+                    now,
+                    group.timezone,
+                    group.work_start_time,
+                    group.work_end_time,
+                )
+                - timedelta(days=REPORT_RETENTION_DAYS - 1),
+                group.timezone,
+            )
+            for group in self.db.query(WidgetGroup)
+            .filter(WidgetGroup.is_active.is_(True))
+            .all()
+        ]
+        if group_boundaries:
+            cutoff_date = min(day for day, _zone in group_boundaries)
+            cutoff_at = min(
+                datetime.combine(day, time.min, ZoneInfo(zone))
+                .astimezone(timezone.utc)
+                .replace(tzinfo=None)
+                for day, zone in group_boundaries
+            )
+        else:
+            cutoff_date = now.date() - timedelta(days=REPORT_RETENTION_DAYS - 1)
+            cutoff_at = datetime.combine(cutoff_date, time.min)
 
-        deleted = self._delete_sessions(cutoff_date, cutoff_at, batch_size)
-        if deleted:
-            return deleted
+        deleted_total = self._delete_sessions(cutoff_date, cutoff_at, batch_size)
         for model, timestamp, extra in (
             (CrmEvent, CrmEvent.occurred_at, ()),
             (CallEvent, CallEvent.occurred_at, ()),
@@ -101,10 +126,11 @@ class ReportRetentionService:
             (PresenceBatch, PresenceBatch.last_seen_at, ()),
             (Report, Report.end_date, ()),
         ):
-            deleted = self._delete_batch(
-                model, timestamp, cutoff_at, batch_size, *extra
+            remaining = batch_size - deleted_total
+            if remaining == 0:
+                break
+            deleted_total += self._delete_batch(
+                model, timestamp, cutoff_at, remaining, *extra
             )
-            if deleted:
-                return deleted
-        return 0
+        return deleted_total
 

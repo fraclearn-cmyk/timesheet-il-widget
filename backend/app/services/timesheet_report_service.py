@@ -96,29 +96,34 @@ class TimesheetReportService:
         context: RequestContext,
         group_id: int | None,
         user_id: int | None,
-    ) -> dict[int, tuple[User, WidgetGroup]]:
+    ) -> tuple[dict[int, tuple[User, WidgetGroup]], list[WidgetGroup]]:
         policy = AccessPolicy(self.db, context)
         is_admin = policy.is_admin()
-        if not is_admin and not policy.is_manager():
+        if not is_admin and (
+            not context.privileges_verified
+            or not isinstance(context.user.amocrm_role_id, int)
+        ):
             raise access_denied()
         account = context.account_id
-        group_scope = [
+        groups_query = self.db.query(WidgetGroup).filter(
             WidgetGroup.account_id == account,
             WidgetGroup.is_active.is_(True),
-        ]
+        )
         if not is_admin:
-            group_scope += [
+            groups_query = groups_query.filter(
                 WidgetGroup.manager_user_id == context.user.id,
                 WidgetGroup.manager_role_id == context.user.amocrm_role_id,
-            ]
-        if group_id is not None:
-            group = (
-                self.db.query(WidgetGroup.id)
-                .filter(WidgetGroup.id == group_id, *group_scope)
-                .first()
             )
-            if group is None:
+        if group_id is not None:
+            groups_query = groups_query.filter(WidgetGroup.id == group_id)
+        groups = groups_query.all()
+        if not groups:
+            if group_id is not None:
                 raise not_found()
+            if not is_admin:
+                raise access_denied()
+            return {}, []
+        accessible_group_ids = [group.id for group in groups]
         membership = (
             self.db.query(User, WidgetGroup)
             .join(
@@ -141,17 +146,15 @@ class TimesheetReportService:
                 GroupMember.account_id == account,
                 GroupMember.is_active.is_(True),
                 GroupMember.track_time.is_(True),
-                *group_scope,
+                WidgetGroup.id.in_(accessible_group_ids),
             )
         )
-        if group_id is not None:
-            membership = membership.filter(WidgetGroup.id == group_id)
         if user_id is not None:
             membership = membership.filter(User.id == user_id)
         visible = {user.id: (user, group) for user, group in membership.all()}
         if user_id is not None and user_id not in visible:
             raise not_found()
-        return visible
+        return visible, groups
 
     def _ordered_keys(
         self,
@@ -199,9 +202,18 @@ class TimesheetReportService:
         user_id: int | None = None,
         now: datetime | None = None,
     ) -> list[DetailedReportRow]:
-        validate_report_period(date_from, date_to)
-        visible = self._visible_members(context, group_id, user_id)
-        require_report_period(self.db, context, date_from, date_to, group_id)
+        validate_report_period(
+            date_from, date_to, enforce_three_month_limit=False
+        )
+        visible, groups = self._visible_members(context, group_id, user_id)
+        require_report_period(
+            self.db,
+            context,
+            date_from,
+            date_to,
+            group_id,
+            groups=groups,
+        )
         if not visible:
             return []
         keys = self._ordered_keys(
@@ -363,12 +375,21 @@ class TimesheetReportService:
         page: int = 1,
         now: datetime | None = None,
     ) -> DetailedReportResponse:
-        validate_report_period(date_from, date_to)
+        validate_report_period(
+            date_from, date_to, enforce_three_month_limit=False
+        )
         if page < 1:
             raise ValueError("page must be positive")
         account = context.account_id
-        visible = self._visible_members(context, group_id, user_id)
-        require_report_period(self.db, context, date_from, date_to, group_id)
+        visible, groups = self._visible_members(context, group_id, user_id)
+        require_report_period(
+            self.db,
+            context,
+            date_from,
+            date_to,
+            group_id,
+            groups=groups,
+        )
         if not visible:
             return DetailedReportResponse(
                 items=[],

@@ -24,13 +24,19 @@ def maximum_report_date(date_from: date) -> date:
     return date(year, month, min(date_from.day, monthrange(year, month)[1]))
 
 
-def validate_report_period(date_from: date, date_to: date) -> None:
+def validate_report_period(
+    date_from: date,
+    date_to: date,
+    *,
+    enforce_three_month_limit: bool = True,
+) -> None:
     if date_to < date_from:
         raise ReportPeriodError(
             "REPORT_DATE_RANGE_INVALID",
             "Дата окончания периода не может быть раньше даты начала.",
         )
-    if date_to > maximum_report_date(date_from):
+    maximum = maximum_report_date(date_from)
+    if enforce_three_month_limit and date_to > maximum:
         raise ReportPeriodError(
             "REPORT_RANGE_LIMIT", "Период отчёта не может быть больше 3 месяцев."
         )

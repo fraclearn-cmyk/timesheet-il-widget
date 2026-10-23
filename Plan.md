@@ -1972,7 +1972,7 @@ flowchart TD
 - [x] Отдельно очищаются старые CRM-события, звонки, закрытые интервалы присутствия, команды, агрегаты присутствия и сохранённые отчёты.
 - [x] Сырые входящие данные продолжают очищаться прежним независимым правилом за 30 дней.
 - [x] Очистка ограничена пакетами, безопасно продолжается на следующем цикле, изолирует транзакцию и запускается не чаще раза в сутки.
-- [x] Проверки границы 365/366 дней, двух аккаунтов, открытой смены, зависимых данных и повторного запуска прошли: `23 passed, 1 skipped`; полный backend-набор — `791 passed, 91 skipped`.
+- [x] Проверки границы 365/366 дней, двух аккаунтов, открытой смены, зависимых данных, часовых поясов и повторного запуска прошли; полный backend-набор — `796 passed, 91 skipped`.
 
 Создан файл `backend/app/services/report_retention_service.py`. Изменены `backend/app/services/ingestion_worker.py`, `backend/app/main.py`, `backend/tests/integration/test_ingestion_worker.py`; создан `backend/tests/integration/test_report_retention.py`.
 
@@ -1982,7 +1982,9 @@ flowchart TD
 
 - [x] Обновлены контракт API и release checklist для годового хранения и периода руководителя.
 - [x] Версия манифеста, AMD-зависимостей и валидатора повышена с `3.0.26` до `3.0.27` через RED→GREEN; пакетные тесты — `23 passed`.
-- [x] Общий release gate, сборка точного архива и миграция PostgreSQL `015 -> 016` выполнены; независимое ревью выполняется следующим шагом.
+- [x] Общий release gate, сборка точного архива и миграция PostgreSQL `015 -> 016` выполнены.
+- [x] Независимое ревью завершено без оставшихся Critical/Important: исправлены полный год вместо прежних трёх месяцев, очистка всех категорий, границы часовых поясов, защита периода от обхода через `user_id` и fail-closed `403` для неподтверждённых прав.
+- [x] Повторные проверки после ревью: backend `796 passed, 91 skipped`, frontend Node `147 passed`, Playwright `36 passed`.
 - [ ] Загрузить `3.0.27` в amoCRM и проверить администратора и руководителя в Edge.
 
 Изменённые файлы подготовки: `docs/api-contract.md`, `docs/release-checklist.md`, `widget/manifest.json`, `widget/script.js`, `validate_widget_zip.py`, `test_widget_package.py`, `frontend/tests/widget-lifecycle.test.js`.

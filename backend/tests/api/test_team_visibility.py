@@ -85,6 +85,23 @@ def test_role_visibility_filters_and_stable_errors(scoped_client, db, monkeypatc
     assert invalid.status_code == 422
 
 
+def test_team_report_bounds_use_group_business_date(scoped_client, db, monkeypatch):
+    now = datetime(2026, 10, 23, 23, 30)
+    monkeypatch.setattr("app.api.v1.team.utc_now", lambda: now)
+    monkeypatch.setattr("app.services.team_service.utc_now", lambda: now)
+    group = db.get(WidgetGroup, 10)
+    group.timezone = "Asia/Vladivostok"
+    group.work_start_time = time(9)
+    group.work_end_time = time(18)
+    db.commit()
+
+    response = scoped_client("admin").get("/api/v1/team/status?group_id=10")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["report_period"]["max_date"] == "2026-10-24"
+    assert payload["groups"][0]["report_max_date"] == "2026-10-24"
+
+
 def test_report_filter_choices_match_active_tracked_membership_and_viewer_scope(
     scoped_client, db
 ):

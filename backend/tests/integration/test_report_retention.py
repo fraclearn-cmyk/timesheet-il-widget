@@ -1,6 +1,6 @@
 """Annual retention of normalized timesheet and activity data."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from uuid import uuid4
 
 from sqlalchemy import create_engine
@@ -22,6 +22,7 @@ from app.models import (
     User,
     WorkComment,
     WorkSession,
+    WidgetGroup,
 )
 from app.services.report_retention_service import ReportRetentionService
 
@@ -151,4 +152,114 @@ def test_session_cleanup_is_bounded_and_repeatable():
     db.commit()
     service = ReportRetentionService(db)
     assert drain(service, batch_size=1) == [1, 1, 1, 0]
+
+
+def test_cleanup_uses_remaining_batch_capacity_across_data_categories():
+    db = database()
+    old_time = datetime(2025, 10, 24, 23, 59)
+    session(db, row_id=30, day=date(2025, 10, 24))
+    db.add_all([
+        CrmEvent(
+            account_id=10,
+            external_id="old-mixed-crm",
+            user_id=1,
+            author_amocrm_user_id=101,
+            event_type="card_updated",
+            occurred_at=old_time,
+            is_complete=1,
+        ),
+        CallEvent(
+            account_id=10,
+            source_event_id="old-mixed-call",
+            user_id=1,
+            author_amocrm_user_id=101,
+            direction="outgoing",
+            duration_seconds=1,
+            occurred_at=old_time,
+            is_complete=1,
+        ),
+    ])
+    db.commit()
+
+    deleted = ReportRetentionService(db).cleanup(NOW, batch_size=100)
+    db.commit()
+
+    assert deleted == 3
+    assert db.query(WorkSession).count() == 0
+    assert db.query(CrmEvent).count() == 0
+    assert db.query(CallEvent).count() == 0
+
+
+def test_cleanup_preserves_oldest_day_visible_in_western_group_timezone():
+    db = database()
+    db.add(
+        WidgetGroup(
+            id=10,
+            account_id=10,
+            name="Pacific",
+            timezone="America/Los_Angeles",
+            work_start_time=time(9),
+            work_end_time=time(18),
+        )
+    )
+    expired = session(db, row_id=40, day=date(2025, 10, 23))
+    boundary = session(db, row_id=41, day=date(2025, 10, 24))
+    db.commit()
+    expired_id, boundary_id = expired.id, boundary.id
+
+    deleted = ReportRetentionService(db).cleanup(
+        datetime(2026, 10, 24, 1), batch_size=100
+    )
+    db.commit()
+
+    assert deleted == 1
+    assert db.get(WorkSession, expired_id) is None
+    assert db.get(WorkSession, boundary_id) is not None
+
+
+def test_cleanup_preserves_timestamp_rows_from_eastern_boundary_day():
+    db = database()
+    db.add(
+        WidgetGroup(
+            id=10,
+            account_id=10,
+            name="Vladivostok",
+            timezone="Asia/Vladivostok",
+            work_start_time=time(9),
+            work_end_time=time(18),
+        )
+    )
+    session(db, row_id=50, day=date(2025, 10, 25))
+    db.add_all([
+        CrmEvent(
+            account_id=10,
+            external_id="boundary-east-crm",
+            user_id=1,
+            author_amocrm_user_id=101,
+            event_type="card_updated",
+            occurred_at=datetime(2025, 10, 24, 23, 30),
+            is_complete=1,
+        ),
+        CallEvent(
+            account_id=10,
+            source_event_id="boundary-east-call",
+            user_id=1,
+            author_amocrm_user_id=101,
+            direction="outgoing",
+            duration_seconds=1,
+            occurred_at=datetime(2025, 10, 24, 23, 45),
+            is_complete=1,
+        ),
+    ])
+    db.commit()
+
+    deleted = ReportRetentionService(db).cleanup(
+        datetime(2026, 10, 24, 12), batch_size=100
+    )
+    db.commit()
+
+    assert deleted == 0
+    assert db.query(WorkSession).count() == 1
+    assert db.query(CrmEvent).count() == 1
+    assert db.query(CallEvent).count() == 1
 

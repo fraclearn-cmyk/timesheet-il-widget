@@ -125,6 +125,44 @@ def test_manager_period_is_enforced_for_preview_and_excel(scoped_client, db, mon
     assert scoped_client("admin").get(PATH, params=expired).status_code == 200
 
 
+def test_admin_can_request_full_retained_year_for_preview_and_excel(
+    scoped_client, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.core.report_access_period.utc_now", lambda: datetime(2026, 10, 24, 12)
+    )
+    period = {"date_from": "2025-10-25", "date_to": "2026-10-24"}
+    assert scoped_client("admin").get(PATH, params=period).status_code == 200
+    response = scoped_client("admin").post(
+        "/api/v1/reports/export-excel-json",
+        json={**period, "columns": ["employee"]},
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_report_period_uses_selected_group_business_date(
+    scoped_client, db, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.core.report_access_period.utc_now", lambda: datetime(2026, 10, 23, 23, 30)
+    )
+    group = db.get(WidgetGroup, 10)
+    group.timezone = "Asia/Vladivostok"
+    group.work_start_time = time(9)
+    group.work_end_time = time(18)
+    db.commit()
+
+    response = scoped_client("admin").get(
+        PATH,
+        params={
+            "date_from": "2026-10-24",
+            "date_to": "2026-10-24",
+            "group_id": 10,
+        },
+    )
+    assert response.status_code == 200, response.text
+
+
 def test_manager_all_groups_uses_shortest_assigned_period(scoped_client, db, monkeypatch):
     monkeypatch.setattr(
         "app.core.report_access_period.utc_now", lambda: datetime(2026, 10, 24, 12)
@@ -148,12 +186,56 @@ def test_manager_all_groups_uses_shortest_assigned_period(scoped_client, db, mon
         422,
         "REPORT_PERIOD_ACCESS_DENIED",
     )
+    assert_problem(
+        scoped_client("manager").get(PATH, params={**params, "user_id": 2}),
+        422,
+        "REPORT_PERIOD_ACCESS_DENIED",
+    )
     assert (
         scoped_client("manager")
         .get(PATH, params={**params, "group_id": 10})
         .status_code
         == 200
     )
+
+
+def test_supplied_group_period_keeps_manager_verification_fail_closed(db):
+    from app.core.report_access_period import resolve_report_access_period
+
+    manager = db.get(User, 3)
+    group = db.get(WidgetGroup, 10)
+    with pytest.raises(PermissionError):
+        resolve_report_access_period(
+            db,
+            RequestContext(
+                account_id=10, user=manager, privileges_verified=False
+            ),
+            groups=[group],
+            today=date(2026, 10, 24),
+        )
+
+    from app.api.v1.dependencies import APIProblem
+    from app.services.timesheet_report_service import TimesheetReportService
+
+    with pytest.raises(APIProblem) as denied:
+        TimesheetReportService(db).list_rows(
+            RequestContext(
+                account_id=10, user=manager, privileges_verified=False
+            ),
+            date(2026, 10, 24),
+            date(2026, 10, 24),
+        )
+    assert denied.value.status_code == 403
+
+    manager.amocrm_role_id = None
+    group.manager_role_id = None
+    with pytest.raises(PermissionError):
+        resolve_report_access_period(
+            db,
+            RequestContext(account_id=10, user=manager),
+            groups=[group],
+            today=date(2026, 10, 24),
+        )
 
 
 def add_incident(db, session, kind, sequence, minutes, reason=None):
@@ -269,7 +351,7 @@ def test_incidents_are_batched_and_isolated_for_fifty_accounts(db):
     assert result.total == 1
     assert result.items[0].break_late_seconds == 60
     assert result.items[0].break_late_reason[0].reason == "10"
-    assert len(selects) == 6
+    assert len(selects) == 7
 
 
 def test_admin_and_current_manager_are_scoped_to_active_tracked_members(
@@ -505,7 +587,6 @@ def test_distinct_keys_sort_and_page_before_loading_sessions(scoped_client, db):
     "start,end,code",
     [
         ("2026-09-23", "2026-09-22", "REPORT_DATE_RANGE_INVALID"),
-        ("2026-01-31", "2026-05-01", "REPORT_RANGE_LIMIT"),
         ("9999-12-31", "9999-12-31", "REPORT_DATE_OUT_OF_RANGE"),
     ],
 )
@@ -584,7 +665,7 @@ def test_service_select_count_is_bounded_by_fixed_bulk_queries(db, employee_coun
     assert result.total == employee_count
     assert len(result.items) == min(10, employee_count)
     assert all(row.break_late_seconds == 480 for row in result.items)
-    assert len(selects) == 6, "unexpected N+1 queries: " + repr(selects)
+    assert len(selects) == 7, "unexpected N+1 queries: " + repr(selects)
 
 
 def test_break_incidents_from_all_same_day_sessions_are_retained(scoped_client, db):
@@ -685,7 +766,7 @@ def test_empty_page_streams_full_totals_without_loading_page_rows(db):
     assert empty.items == []
     assert first.totals == empty.totals
     assert empty.totals.work_seconds == 4260
-    assert len(first_selects) == 6
+    assert len(first_selects) == 7
     assert (
         sum(
             "(users.id, work_sessions.business_date) in" in statement
@@ -693,7 +774,7 @@ def test_empty_page_streams_full_totals_without_loading_page_rows(db):
         )
         == 2
     )
-    assert len(selects) == 3
+    assert len(selects) == 4
     assert sum("work_sessions" in statement for statement in selects) == 2
     assert sum("status_transitions" in statement for statement in selects) == 1
 
@@ -763,4 +844,4 @@ def test_postgres_real_scoped_bulk_report(postgres_db):
     assert result.total == 1
     assert result.items[0].user_id == 2
     assert result.totals.work_seconds == 60
-    assert len(selects) == 6, "unexpected N+1 queries: " + repr(selects)
+    assert len(selects) == 7, "unexpected N+1 queries: " + repr(selects)
