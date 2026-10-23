@@ -668,6 +668,34 @@ def test_invalid_break_limit_is_atomic(scoped_client, db, valid_snapshot, limit)
     assert dump_state(db) == before
 
 
+@pytest.mark.parametrize("days", [1, 365])
+def test_manager_report_history_round_trip(scoped_client, db, valid_snapshot, days):
+    next(group for group in valid_snapshot["groups"] if group["id"] == 10)[
+        "report_history_days"
+    ] = days
+    response = scoped_client("admin").put(
+        "/api/v1/settings/snapshot", json=valid_snapshot
+    )
+    assert response.status_code == 200, response.text
+    group = next(group for group in response.json()["groups"] if group["id"] == 10)
+    assert group["report_history_days"] == days
+    assert db.get(WidgetGroup, 10).report_history_days == days
+
+
+@pytest.mark.parametrize("days", [0, 366, 1.5, True, "90"])
+def test_invalid_manager_report_history_is_atomic(
+    scoped_client, db, valid_snapshot, days
+):
+    valid_snapshot["groups"][0]["report_history_days"] = days
+    before = dump_state(db)
+    response = scoped_client("admin").put(
+        "/api/v1/settings/snapshot", json=valid_snapshot
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["field"] == "groups.0.report_history_days"
+    assert dump_state(db) == before
+
+
 def test_new_group_defaults_to_sixty_and_new_membership_keeps_flag(
     scoped_client, db, valid_snapshot
 ):
@@ -689,6 +717,7 @@ def test_new_group_defaults_to_sixty_and_new_membership_keeps_flag(
     assert response.status_code == 200, response.text
     group = next(g for g in response.json()["groups"] if g["name"] == "New")
     assert group["break_limit_minutes"] == 60
+    assert group["report_history_days"] == 365
     member = db.query(GroupMember).filter_by(user_id=2, is_active=True).one()
     assert member.group_id == group["id"]
     assert member.require_late_reason is True

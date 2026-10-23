@@ -182,6 +182,7 @@ def test_groups_endpoint_matches_stably_sorted_snapshot_groups(scoped_client):
         "is_active",
         "allow_restart_session",
         "break_limit_minutes",
+        "report_history_days",
     }
     assert response.json()[1]["manager_amocrm_user_id"] == 103
 

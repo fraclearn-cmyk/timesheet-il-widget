@@ -320,6 +320,7 @@ class SettingsSnapshotService:
                 "is_active",
                 "allow_restart_session",
                 "break_limit_minutes",
+                "report_history_days",
             ):
                 setattr(group, key, getattr(entry, key))
             if entry.manager_amocrm_user_id is None:
@@ -446,6 +447,7 @@ class SettingsSnapshotService:
                 is_active=group.is_active,
                 allow_restart_session=group.allow_restart_session,
                 break_limit_minutes=group.break_limit_minutes,
+                report_history_days=group.report_history_days,
             )
             for group, manager_amocrm_user_id in rows
         ]

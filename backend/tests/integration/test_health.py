@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
 
-EXPECTED_HEAD = "015"
+EXPECTED_HEAD = "016"
 
 
 @pytest.fixture

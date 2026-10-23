@@ -78,6 +78,31 @@ def test_015_empty_upgrade_and_downgrade(migrated_db):
         assert conn.scalar(text("SELECT count(*) FROM lateness_incidents")) == 0
 
 
+def test_016_adds_bounded_manager_report_history(migrated_db):
+    config, engine = migrated_db
+    command.upgrade(config, "015")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO widget_groups (id,account_id,name,name_key,timezone,work_start_time,work_end_time,is_active,allow_restart_session,break_limit_minutes,created_at,updated_at) VALUES (10,100,'Sales','sales','UTC','09:00','18:00',true,false,60,now(),now())"
+            )
+        )
+    command.upgrade(config, "016")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT report_history_days FROM widget_groups")) == 365
+    for days in (0, 366):
+        with pytest.raises(IntegrityError):
+            with engine.begin() as conn:
+                conn.execute(
+                    text("UPDATE widget_groups SET report_history_days=:days"),
+                    {"days": days},
+                )
+    command.downgrade(config, "015")
+    assert "report_history_days" not in {
+        column["name"] for column in inspect(engine).get_columns("widget_groups")
+    }
+
+
 def test_015_preserves_populated_sessions_defaults_and_legacy_commands(migrated_db):
     config, engine = migrated_db
     command.upgrade(config, "014")

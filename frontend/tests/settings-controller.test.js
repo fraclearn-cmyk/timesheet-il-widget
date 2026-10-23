@@ -18,6 +18,7 @@ function snapshot() {
       id: 10, account_id: 1, name: 'Продажи', timezone: 'Europe/Minsk',
       work_start_time: '09:00:00', work_end_time: '18:00:00',
       manager_amocrm_user_id: 102, is_active: true, allow_restart_session: false, break_limit_minutes: 60,
+      report_history_days: 365,
     }],
     users: [{
       amocrm_user_id: 101, name: 'Анна', email: 'anna@example.test', avatar_url: null,
@@ -150,6 +151,7 @@ test('settings and group controls serialize exact backend fields', async () => {
     id: 10, name: 'Новая группа', timezone: 'Europe/Minsk',
     work_start_time: '09:00:00', work_end_time: '18:00:00',
     manager_amocrm_user_id: 102, is_active: true, allow_restart_session: false, break_limit_minutes: 60,
+    report_history_days: 365,
   });
   assert.equal('account_id' in payload, false);
 });
@@ -476,6 +478,42 @@ test('break limit control loads and serializes integer boundaries and new group 
   assert.equal(controller.serialize().groups[1].break_limit_minutes, 60);
   assert.equal(root.querySelector('[data-group-ref^="client:"] [data-field="break_limit_minutes"]').value, '60');
 });
+
+test('manager report history control loads, serializes boundaries and defaults to one year', async () => {
+  const data = snapshot();
+  data.groups[0].report_history_days = 90;
+  const { root, controller } = setup(data);
+  await controller.ready;
+  let input = root.querySelector('[data-group-ref="id:10"] [data-field="report_history_days"]');
+  assert.ok(input);
+  assert.equal(input.type, 'number');
+  assert.equal(input.min, '1');
+  assert.equal(input.max, '365');
+  assert.equal(input.step, '1');
+  assert.equal(input.value, '90');
+  for (const value of ['1', '365']) {
+    input.value = value;
+    input.dispatchEvent(new root.ownerDocument.defaultView.Event('input', { bubbles: true }));
+    assert.equal(controller.serialize().groups[0].report_history_days, Number(value));
+    assert.equal(controller.validate().length, 0);
+  }
+  controller.addGroup();
+  assert.equal(controller.serialize().groups[1].report_history_days, 365);
+});
+
+for (const value of ['0', '366', '1.5', '']) {
+  test('invalid manager report history ' + JSON.stringify(value) + ' blocks save', async () => {
+    const { root, controller, saves } = setup();
+    await controller.ready;
+    const input = root.querySelector('[data-field="report_history_days"]');
+    assert.ok(input);
+    input.value = value;
+    input.dispatchEvent(new root.ownerDocument.defaultView.Event('input', { bubbles: true }));
+    await assert.rejects(controller.save());
+    assert.equal(saves.length, 0);
+    assert.equal(input.getAttribute('aria-invalid'), 'true');
+  });
+}
 
 for (const value of ['0', '721', '1.5', '']) {
   test('invalid break limit ' + JSON.stringify(value) + ' blocks transport and marks the field', async () => {

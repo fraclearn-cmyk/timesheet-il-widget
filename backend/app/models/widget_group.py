@@ -26,6 +26,10 @@ class WidgetGroup(Base):
             "break_limit_minutes BETWEEN 1 AND 720",
             name="ck_widget_groups_break_limit_minutes",
         ),
+        CheckConstraint(
+            "report_history_days BETWEEN 1 AND 365",
+            name="ck_widget_groups_report_history_days",
+        ),
         UniqueConstraint("account_id", "id", name="uq_widget_groups_account_id"),
         UniqueConstraint(
             "account_id", "name_key", name="uq_widget_groups_account_name_key"
@@ -53,6 +57,9 @@ class WidgetGroup(Base):
     allow_restart_session = Column(Boolean, nullable=False, default=False)
     break_limit_minutes = Column(
         Integer, nullable=False, default=60, server_default="60"
+    )
+    report_history_days = Column(
+        Integer, nullable=False, default=365, server_default="365"
     )
     created_at = Column(DateTime, nullable=False, default=utc_now)
     updated_at = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)

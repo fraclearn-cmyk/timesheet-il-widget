@@ -1928,3 +1928,15 @@ flowchart TD
 - [x] Составлен пошаговый план реализации и миграции: `docs/superpowers/plans/2026-10-24-timesheet-retention-and-manager-period.md`.
 - [ ] Реализовать через тесты, обновить API, настройки, общий табель, Excel и фоновую очистку.
 - [ ] Собрать пакет, выполнить локальную и живую проверку ролей в amoCRM.
+
+##### Блок 1 — настройка периода и миграция
+
+- [x] Добавлена миграция `016`: поле `report_history_days` для группы, значение по умолчанию `365`, допустимый диапазон `1..365`.
+- [x] Поле включено в модель, API-снимок настроек и атомарное сохранение.
+- [x] В карточке группы добавлено поле «Период табеля руководителя, дней» с клиентской проверкой и значением по умолчанию 365.
+- [x] TDD: frontend-тесты сначала не находили поле; API отклонял его как неизвестное. После реализации frontend — `40 passed`, API настроек — `67 passed`; одна голова Alembic — `016`.
+- [x] Полный backend-прогон выявил два устаревших ожидания состава группы и головы миграций; они обновлены, соответствующие тесты — `2 passed`. Итоговый полный прогон будет повторён после остальных блоков.
+
+Изменённые и созданные файлы блока: `backend/migrations/versions/016_report_history_retention.py`, `backend/app/models/widget_group.py`, `backend/app/schemas/settings_snapshot.py`, `backend/app/services/settings_snapshot_service.py`, `frontend/settings/settings.js`, `backend/tests/integration/test_migrations.py`, `backend/tests/integration/test_health.py`, `backend/tests/api/test_settings.py`, `backend/tests/api/test_groups.py`, `frontend/tests/settings-controller.test.js`.
+
+Что уже можно проверить локально: в настройках группы поле периода принимает только целые значения от 1 до 365. В живой amoCRM оно появится после выпуска всего согласованного изменения и применения миграции.

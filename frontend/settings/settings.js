@@ -263,6 +263,15 @@
         group.break_limit_minutes = breakLimit.value === '' ? null : Number(breakLimit.value);
       });
       card.append(labeled(doc, 'Допустимый перерыв, минут', breakLimit));
+      var reportHistory = control(doc, 'input', 'report_history_days', group.report_history_days);
+      reportHistory.type = 'number';
+      reportHistory.min = '1';
+      reportHistory.max = '365';
+      reportHistory.step = '1';
+      reportHistory.addEventListener('input', function () {
+        group.report_history_days = reportHistory.value === '' ? null : Number(reportHistory.value);
+      });
+      card.append(labeled(doc, 'Период табеля руководителя, дней', reportHistory));
       var manager = control(doc, 'select', 'manager_amocrm_user_id');
       var empty = node(doc, 'option', '', 'Без руководителя');
       empty.value = '';
@@ -293,7 +302,7 @@
     this.groupCounter += 1;
     this.groups.push({ client_key: 'group_' + this.groupCounter, name: '', timezone: 'Europe/Minsk',
       work_start_time: '09:00:00', work_end_time: '18:00:00', manager_amocrm_user_id: null,
-      is_active: true, allow_restart_session: false, break_limit_minutes: 60 });
+      is_active: true, allow_restart_session: false, break_limit_minutes: 60, report_history_days: 365 });
     this.render();
   };
   SettingsController.prototype.setUser = function (id, changes) {
@@ -327,6 +336,9 @@
       if (!group.name.trim()) errors.push({ code: 'GROUP_NAME_REQUIRED', field: 'groups.' + index + '.name' });
       if (!Number.isInteger(group.break_limit_minutes) || group.break_limit_minutes < 1 || group.break_limit_minutes > 720) {
         errors.push({ code: 'BREAK_LIMIT_INVALID', field: 'groups.' + index + '.break_limit_minutes' });
+      }
+      if (!Number.isInteger(group.report_history_days) || group.report_history_days < 1 || group.report_history_days > 365) {
+        errors.push({ code: 'REPORT_HISTORY_INVALID', field: 'groups.' + index + '.report_history_days' });
       }
     });
     var active = new Set(this.groups.filter(function (group) { return group.is_active; }).map(function (group) { return self.groupRef(group); }));
@@ -401,7 +413,9 @@
     if (!this.snapshot || this.destroyed) throw new Error('Settings are unavailable');
     var errors = this.validate();
     if (errors.length) {
-      var message = errors.some(function (error) { return error.code === 'BREAK_LIMIT_INVALID'; }) ?
+      var message = errors.some(function (error) { return error.code === 'REPORT_HISTORY_INVALID'; }) ?
+        'Период табеля руководителя: укажите целое число от 1 до 365 дней.' :
+        errors.some(function (error) { return error.code === 'BREAK_LIMIT_INVALID'; }) ?
         'Допустимый перерыв: укажите целое число от 1 до 720 минут.' :
         errors.some(function (error) { return error.code === 'LATE_REASON_GROUP_REQUIRED'; }) ?
           'Для обязательной объяснительной выберите группу учёта.' : 'Проверьте обязательные поля.';

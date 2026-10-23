@@ -27,6 +27,7 @@ class SettingsGroup(_StrictResponseModel):
     is_active: bool
     allow_restart_session: bool
     break_limit_minutes: int = Field(default=60, strict=True, ge=1, le=720)
+    report_history_days: int = Field(default=365, strict=True, ge=1, le=365)
 
 
 class SettingsUser(_StrictResponseModel):
@@ -75,6 +76,7 @@ class SettingsGroupUpdate(_StrictResponseModel):
     is_active: StrictBool
     allow_restart_session: StrictBool
     break_limit_minutes: int = Field(default=60, strict=True, ge=1, le=720)
+    report_history_days: int = Field(default=365, strict=True, ge=1, le=365)
 
     @property
     def reference(self) -> str:
