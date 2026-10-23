@@ -47,20 +47,14 @@
     }
 
     candidates.sort((left, right) => left.startMs - right.startMs || left.endMs - right.endMs || String(left.id).localeCompare(String(right.id)));
-    const laneEnds = [];
-    const items = candidates.map((item) => {
-      let lane = laneEnds.findIndex((laneEnd) => item.startMs >= laneEnd);
-      if (lane === -1) lane = laneEnds.length;
-      laneEnds[lane] = Math.max(laneEnds[lane] || startMs, item.isPoint ? item.startMs + 1 : item.endMs);
-      return { ...item, lane };
-    });
+    const items = candidates.map((item) => ({ ...item, lane: 0 }));
 
     return {
       ...day,
       startMs,
       endMs,
       durationMinutes: (endMs - startMs) / MINUTE_MS,
-      laneCount: Math.max(1, laneEnds.length),
+      laneCount: 1,
       items,
     };
   }
@@ -137,6 +131,28 @@
     return ({ incoming: 'Входящий', outgoing: 'Исходящий' })[value] || String(value || 'Не указано');
   }
 
+  function groupRenderItems(items) {
+    const result = [];
+    for (const item of items) {
+      const left = item.left;
+      const right = item.left + item.width;
+      const existing = result[result.length - 1];
+      if (existing && left < existing.renderRight && right > existing.left) {
+        existing.members.push(item);
+        existing.renderRight = Math.max(existing.renderRight, right);
+        existing.width = existing.renderRight - existing.left;
+        existing.endMs = Math.max(existing.endMs, item.endMs);
+        existing.isPoint = existing.members.every((member) => member.isPoint);
+        existing.kind = existing.members.every((member) => member.kind === existing.members[0].kind)
+          ? existing.members[0].kind
+          : 'mixed';
+      } else {
+        result.push({ ...item, members: [item], renderRight: right });
+      }
+    }
+    return result;
+  }
+
   function render(root, day, options) {
     if (!root || !root.ownerDocument) throw new TypeError('A DOM root is required');
     const settings = options || {};
@@ -156,7 +172,7 @@
     const track = document.createElement('div');
     track.className = 'ts-timeline__track';
     track.style.width = `${layout.width}px`;
-    track.style.height = `${Math.max(34, layout.laneCount * 30 + 4)}px`;
+    track.style.height = '34px';
     viewport.appendChild(track);
     root.appendChild(viewport);
 
@@ -178,33 +194,47 @@
       tooltip = document.createElement('div');
       tooltip.className = 'ts-timeline__tooltip';
       tooltip.setAttribute('role', 'status');
-      appendText(document, tooltip, 'ts-timeline__tooltip-title', sourceLabel(item));
-      const endLabel = item.isPoint ? '' : `–${formatClock(item.endMs, settings.timezone)}`;
-      appendText(document, tooltip, 'ts-timeline__tooltip-date', `Дата: ${formatDate(layout.date)}`);
-      appendText(document, tooltip, 'ts-timeline__tooltip-time', `Время: ${formatClock(item.startMs, settings.timezone)}${endLabel}`);
-      appendText(document, tooltip, 'ts-timeline__tooltip-type', `Тип: ${item.event_type || 'Не указан'}`);
-      if (item.object_type || item.object_id !== null && item.object_id !== undefined) {
-        const identifier = item.object_id === null || item.object_id === undefined ? '' : ` #${item.object_id}`;
-        appendText(document, tooltip, 'ts-timeline__tooltip-object', `Объект: ${item.object_type || 'Не указан'}${identifier}`);
+      const members = item.members || [item];
+      if (members.length > 1) {
+        appendText(document, tooltip, 'ts-timeline__tooltip-title', `${members.length} события в CRM`);
+        appendText(document, tooltip, 'ts-timeline__tooltip-date', `Дата: ${formatDate(layout.date)}`);
       }
-      appendText(document, tooltip, 'ts-timeline__tooltip-description', `Описание: ${item.description || item.message || 'Нет описания'}`);
-      appendText(document, tooltip, 'ts-timeline__tooltip-source', `Источник: ${sourceName(item.source)}`);
-      appendText(document, tooltip, 'ts-timeline__tooltip-duration', `Длительность: ${Math.max(0, Number(item.duration_seconds) || 0)} сек.`);
-      appendText(document, tooltip, 'ts-timeline__tooltip-duration-source', `Способ определения: ${durationSourceName(item.duration_source)}`);
-      if (item.call_direction) {
-        appendText(document, tooltip, 'ts-timeline__tooltip-call-direction', `Направление звонка: ${callDirectionName(item.call_direction)}`);
-      }
-      if (item.call_duration_seconds !== null && item.call_duration_seconds !== undefined) {
-        appendText(document, tooltip, 'ts-timeline__tooltip-call', `Длительность звонка: ${item.call_duration_seconds} сек.`);
-      }
-      const href = safeCardUrl(document, item.card_url);
-      if (href) {
-        const link = document.createElement('a');
-        link.href = href;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = 'Открыть карточку';
-        tooltip.appendChild(link);
+      for (const member of members) {
+        const container = members.length > 1 ? document.createElement('div') : tooltip;
+        if (members.length > 1) {
+          container.className = 'ts-timeline__tooltip-event';
+          tooltip.appendChild(container);
+        }
+        appendText(document, container, members.length > 1 ? 'ts-timeline__tooltip-event-title' : 'ts-timeline__tooltip-title', sourceLabel(member));
+        const endLabel = member.isPoint ? '' : `–${formatClock(member.endMs, settings.timezone)}`;
+        if (members.length === 1) {
+          appendText(document, container, 'ts-timeline__tooltip-date', `Дата: ${formatDate(layout.date)}`);
+        }
+        appendText(document, container, 'ts-timeline__tooltip-time', `Время: ${formatClock(member.startMs, settings.timezone)}${endLabel}`);
+        appendText(document, container, 'ts-timeline__tooltip-type', `Тип: ${member.event_type || 'Не указан'}`);
+        if (member.object_type || member.object_id !== null && member.object_id !== undefined) {
+          const identifier = member.object_id === null || member.object_id === undefined ? '' : ` #${member.object_id}`;
+          appendText(document, container, 'ts-timeline__tooltip-object', `Объект: ${member.object_type || 'Не указан'}${identifier}`);
+        }
+        appendText(document, container, 'ts-timeline__tooltip-description', `Описание: ${member.description || member.message || 'Нет описания'}`);
+        appendText(document, container, 'ts-timeline__tooltip-source', `Источник: ${sourceName(member.source)}`);
+        appendText(document, container, 'ts-timeline__tooltip-duration', `Длительность: ${Math.max(0, Number(member.duration_seconds) || 0)} сек.`);
+        appendText(document, container, 'ts-timeline__tooltip-duration-source', `Способ определения: ${durationSourceName(member.duration_source)}`);
+        if (member.call_direction) {
+          appendText(document, container, 'ts-timeline__tooltip-call-direction', `Направление звонка: ${callDirectionName(member.call_direction)}`);
+        }
+        if (member.call_duration_seconds !== null && member.call_duration_seconds !== undefined) {
+          appendText(document, container, 'ts-timeline__tooltip-call', `Длительность звонка: ${member.call_duration_seconds} сек.`);
+        }
+        const href = safeCardUrl(document, member.card_url);
+        if (href) {
+          const link = document.createElement('a');
+          link.href = href;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = 'Открыть карточку';
+          container.appendChild(link);
+        }
       }
       anchor.setAttribute('aria-expanded', 'true');
       activeAnchor = anchor;
@@ -212,21 +242,24 @@
       root.appendChild(tooltip);
     }
 
-    for (const item of layout.items) {
+    for (const item of groupRenderItems(layout.items)) {
       const element = document.createElement('button');
       element.type = 'button';
       element.setAttribute('role', 'button');
       element.className = 'ts-timeline__item';
       if (item.isPoint) {
         element.classList.add('ts-timeline__item--point', `ts-timeline__item--${item.kind}-point`);
+        if (item.members.length > 1) element.classList.add('ts-timeline__item--cluster');
       } else {
-        element.classList.add(`ts-timeline__item--${item.kind === 'confirmed' ? 'confirmed' : 'unconfirmed'}`);
+        element.classList.add(`ts-timeline__item--${item.kind === 'confirmed' ? 'confirmed' : item.kind === 'mixed' ? 'mixed' : 'unconfirmed'}`);
+        if (item.members.length > 1) element.classList.add('ts-timeline__item--cluster');
       }
       element.style.left = `${item.left}px`;
       element.style.width = `${item.width}px`;
-      element.style.top = `${item.lane * 30 + 2}px`;
+      element.style.top = '5px';
       element.setAttribute('aria-expanded', 'false');
-      element.setAttribute('aria-label', `${sourceLabel(item)}, ${formatClock(item.startMs, settings.timezone)}`);
+      const itemLabel = item.members.length > 1 ? `${item.members.length} события` : sourceLabel(item);
+      element.setAttribute('aria-label', `${itemLabel}, ${formatClock(item.startMs, settings.timezone)}`);
       const interactionState = { hovered: false, focused: false, pinned: false };
       function refreshTooltip() {
         if (interactionState.hovered || interactionState.focused || interactionState.pinned) {

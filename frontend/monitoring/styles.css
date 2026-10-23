@@ -138,8 +138,11 @@ button.ts-monitoring__inline-activity:focus-visible { border-radius: 5px; outlin
   border-color: #98a2b3;
 }
 .ts-timeline__item--point { min-width: 6px; border-radius: 50%; }
+.ts-timeline__item--cluster { box-shadow: 0 0 0 2px #fff, 0 0 0 3px currentColor; }
 .ts-timeline__item--confirmed-point { background: #2563eb; border-color: #1d4ed8; }
 .ts-timeline__item--unconfirmed-point { background: #98a2b3; border-color: #667085; }
+.ts-timeline__item--mixed,
+.ts-timeline__item--mixed-point { background: repeating-linear-gradient(135deg, #16a34a 0 4px, #98a2b3 4px 8px); border-color: #475467; }
 .ts-timeline__item:focus-visible { outline: 3px solid #84adff; outline-offset: 2px; }
 .ts-timeline__tooltip {
   margin-top: 7px;
@@ -150,6 +153,8 @@ button.ts-monitoring__inline-activity:focus-visible { border-radius: 5px; outlin
   font-size: 13px;
 }
 .ts-timeline__tooltip-title { font-weight: 600; }
+.ts-timeline__tooltip-event { margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; }
+.ts-timeline__tooltip-event-title { font-weight: 600; }
 .ts-timeline__tooltip a { display: inline-block; margin-top: 6px; }
 
 @media (max-width: 640px) {

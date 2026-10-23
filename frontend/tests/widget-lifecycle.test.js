@@ -82,8 +82,8 @@ function boot(options = {}) {
   };
   window.eval(widgetSource);
   assert.deepEqual(moduleIds, [
-    'jquery', './settings/settings.js?v=3.0.22', './timesheet/controller.js?v=3.0.22', './overlay.js?v=3.0.22', './activity-tracker.js?v=3.0.22',
-    './monitoring/timeline.js?v=3.0.22', './monitoring/activity-modal.js?v=3.0.22', './monitoring/dashboard.js?v=3.0.22', './reports/controller.js?v=3.0.22',
+    'jquery', './settings/settings.js?v=3.0.23', './timesheet/controller.js?v=3.0.23', './overlay.js?v=3.0.23', './activity-tracker.js?v=3.0.23',
+    './monitoring/timeline.js?v=3.0.23', './monitoring/activity-modal.js?v=3.0.23', './monitoring/dashboard.js?v=3.0.23', './reports/controller.js?v=3.0.23',
   ]);
   const requests = [];
   const widget = new Widget();

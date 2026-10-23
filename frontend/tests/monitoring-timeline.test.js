@@ -80,7 +80,7 @@ test('runtime modules register through AMD as well as CommonJS', () => {
   dom.window.close();
 });
 
-test('normalizeDay clips intervals, preserves empty time, and assigns overlap lanes', () => {
+test('normalizeDay clips intervals and keeps overlapping activity in one lane', () => {
   const normalized = Timeline.normalizeDay(day({
     intervals: [
       interval({ id: 1, started_at: '2026-03-28T23:30:00Z', ended_at: '2026-03-29T01:00:00Z', duration_seconds: 5400 }),
@@ -94,11 +94,47 @@ test('normalizeDay clips intervals, preserves empty time, and assigns overlap la
   assert.equal(normalized.items[0].startMs, Date.parse('2026-03-29T00:00:00Z'));
   assert.equal(normalized.items[0].endMs, Date.parse('2026-03-29T01:00:00Z'));
   assert.equal(normalized.items[0].lane, 0);
-  assert.equal(normalized.items[1].lane, 1);
+  assert.equal(normalized.items[1].lane, 0);
   assert.equal(normalized.items[2].isPoint, true);
   assert.equal(normalized.items[2].endMs, normalized.items[2].startMs);
   assert.equal(normalized.items[3].endMs, Date.parse('2026-03-29T23:00:00Z'));
-  assert.equal(normalized.laneCount, 2);
+  assert.equal(normalized.laneCount, 1);
+});
+
+test('render keeps one horizontal band and groups every visually overlapping item', () => {
+  const dom = new JSDOM('<main id="root"></main>');
+  const root = dom.window.document.querySelector('#root');
+  Timeline.render(root, day({
+    intervals: [
+      interval({ id: 1, started_at: '2026-03-29T01:00:00Z', ended_at: '2026-03-29T03:00:00Z', description: 'Первый интервал' }),
+      interval({ id: 2, started_at: '2026-03-29T02:00:00Z', ended_at: '2026-03-29T04:00:00Z', description: 'Второй интервал' }),
+      interval({ id: 3, started_at: '2026-03-29T05:00:00Z', ended_at: '2026-03-29T05:00:00Z', duration_source: 'point', description: 'Создана сделка' }),
+      interval({ id: 4, started_at: '2026-03-29T05:00:00Z', ended_at: '2026-03-29T05:00:00Z', duration_source: 'point', kind: 'unconfirmed', description: 'Добавлена задача' }),
+    ],
+  }), { zoom: 1, timezone: 'Europe/Berlin' });
+
+  const track = root.querySelector('.ts-timeline__track');
+  const items = Array.from(track.querySelectorAll('.ts-timeline__item'));
+  const clusters = Array.from(track.querySelectorAll('.ts-timeline__item--cluster'));
+  assert.equal(track.style.height, '34px');
+  assert.deepEqual([...new Set(items.map((item) => item.style.top))], ['5px']);
+  assert.equal(items.length, 2);
+  assert.equal(clusters.length, 2);
+
+  clusters[0].click();
+  let tooltip = root.querySelector('.ts-timeline__tooltip');
+  assert.match(tooltip.textContent, /Первый интервал/);
+  assert.match(tooltip.textContent, /Второй интервал/);
+  assert.match(tooltip.textContent, /03:00–05:00/);
+  assert.match(tooltip.textContent, /04:00–06:00/);
+
+  clusters[1].click();
+  tooltip = root.querySelector('.ts-timeline__tooltip');
+  assert.match(clusters[1].getAttribute('aria-label'), /2 события/);
+  assert.ok(clusters[1].classList.contains('ts-timeline__item--mixed-point'));
+  assert.match(tooltip.textContent, /Создана сделка/);
+  assert.match(tooltip.textContent, /Добавлена задача/);
+  dom.window.close();
 });
 
 test('layoutDay supports only zoom 1, 2, 4 without changing data durations', () => {
