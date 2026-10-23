@@ -59,6 +59,14 @@ def test_role_visibility_filters_and_stable_errors(scoped_client, db, monkeypatc
     assert manager.status_code == 200
     payload = manager.json()
     assert payload["viewer"] == {"id": 3, "role": "manager", "can_view_activity": True}
+    assert payload["report_period"] == {
+        "min_date": "2025-09-29",
+        "max_date": "2026-09-28",
+        "history_days": 365,
+    }
+    assert payload["groups"][0]["report_history_days"] == 365
+    assert payload["groups"][0]["report_min_date"] == "2025-09-29"
+    assert payload["groups"][0]["report_max_date"] == "2026-09-28"
     assert [row["amocrm_user_id"] for row in payload["employees"]] == [105]
     assert all(row["account_id"] == 10 for row in payload["employees"])
 

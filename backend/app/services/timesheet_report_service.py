@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import APIProblem, access_denied, not_found
 from app.core.access_policy import AccessPolicy, RequestContext
 from app.core.report_period import validate_report_period
+from app.core.report_access_period import require_report_period
 from app.core.time_utils import utc_now
 from app.models.group_member import GroupMember
 from app.models.lateness_incident import LatenessIncident, LatenessKind
@@ -200,6 +201,7 @@ class TimesheetReportService:
     ) -> list[DetailedReportRow]:
         validate_report_period(date_from, date_to)
         visible = self._visible_members(context, group_id, user_id)
+        require_report_period(self.db, context, date_from, date_to, group_id)
         if not visible:
             return []
         keys = self._ordered_keys(
@@ -366,6 +368,7 @@ class TimesheetReportService:
             raise ValueError("page must be positive")
         account = context.account_id
         visible = self._visible_members(context, group_id, user_id)
+        require_report_period(self.db, context, date_from, date_to, group_id)
         if not visible:
             return DetailedReportResponse(
                 items=[],

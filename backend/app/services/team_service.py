@@ -21,6 +21,7 @@ from app.core.business_time import (
     shift_start_utc,
 )
 from app.core.time_utils import utc_now
+from app.core.report_access_period import resolve_report_access_period
 from app.schemas.team import (
     ActivityWindowDay,
     ActivityWindowGroup,
@@ -34,6 +35,7 @@ from app.schemas.team import (
     TeamStatusResponse,
     TeamStatusTotals,
     TeamViewer,
+    TeamReportPeriod,
 )
 
 
@@ -680,6 +682,7 @@ class TeamService:
         for group in sorted(groups, key=lambda item: (item.name.casefold(), item.id)):
             _zone, start, end = self._workday(group, now)
             count = sum(1 for item in employees if item.group_id == group.id)
+            group_history_days = 365 if is_admin else group.report_history_days
             group_summaries.append(
                 TeamGroupSummary(
                     id=group.id,
@@ -688,12 +691,26 @@ class TeamService:
                     workday_started_at=self._utc(start),
                     workday_ended_at=self._utc(end),
                     employee_count=count,
+                    report_history_days=group_history_days,
+                    report_min_date=now.date()
+                    - timedelta(days=group_history_days - 1),
+                    report_max_date=now.date(),
                 )
             )
         counts = {
             status: sum(item.status == status for item in employees)
             for status in ("working", "on_break", "finished", "not_started")
         }
+        report_period = None
+        if is_admin or is_manager:
+            period = resolve_report_access_period(
+                self.db, context, group_id, today=now.date()
+            )
+            report_period = TeamReportPeriod(
+                min_date=period.min_date,
+                max_date=period.max_date,
+                history_days=period.history_days,
+            )
         return TeamStatusResponse(
             generated_at=self._utc(now),
             viewer=TeamViewer(
@@ -714,6 +731,7 @@ class TeamService:
                 confirmed_seconds=sum(item.confirmed_seconds for item in employees),
                 confirmed_events=sum(item.confirmed_events for item in employees),
             ),
+            report_period=report_period,
         )
 
     def get_team_status(

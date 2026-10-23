@@ -103,6 +103,59 @@ def assert_problem(response, status, code):
     assert response.json()["error"]["message"]
 
 
+def test_manager_period_is_enforced_for_preview_and_excel(scoped_client, db, monkeypatch):
+    monkeypatch.setattr(
+        "app.core.report_access_period.utc_now", lambda: datetime(2026, 10, 24, 12)
+    )
+    db.get(WidgetGroup, 10).report_history_days = 30
+    db.commit()
+    allowed = {"date_from": "2026-09-25", "date_to": "2026-10-24"}
+    expired = {"date_from": "2026-09-24", "date_to": "2026-10-24"}
+    assert scoped_client("manager").get(PATH, params=allowed).status_code == 200
+    assert_problem(
+        scoped_client("manager").get(PATH, params=expired),
+        422,
+        "REPORT_PERIOD_ACCESS_DENIED",
+    )
+    export = scoped_client("manager").post(
+        "/api/v1/reports/export-excel-json",
+        json={**expired, "columns": ["employee"]},
+    )
+    assert_problem(export, 422, "REPORT_PERIOD_ACCESS_DENIED")
+    assert scoped_client("admin").get(PATH, params=expired).status_code == 200
+
+
+def test_manager_all_groups_uses_shortest_assigned_period(scoped_client, db, monkeypatch):
+    monkeypatch.setattr(
+        "app.core.report_access_period.utc_now", lambda: datetime(2026, 10, 24, 12)
+    )
+    db.get(WidgetGroup, 10).report_history_days = 30
+    db.add(
+        WidgetGroup(
+            id=12,
+            account_id=10,
+            name="Short",
+            timezone="UTC",
+            manager_user_id=3,
+            manager_role_id=77,
+            report_history_days=7,
+        )
+    )
+    db.commit()
+    params = {"date_from": "2026-10-15", "date_to": "2026-10-24"}
+    assert_problem(
+        scoped_client("manager").get(PATH, params=params),
+        422,
+        "REPORT_PERIOD_ACCESS_DENIED",
+    )
+    assert (
+        scoped_client("manager")
+        .get(PATH, params={**params, "group_id": 10})
+        .status_code
+        == 200
+    )
+
+
 def add_incident(db, session, kind, sequence, minutes, reason=None):
     db.add(
         LatenessIncident(
@@ -370,7 +423,10 @@ def test_historical_counter_fallback_and_final_status(scoped_client, db):
     ]
 
 
-def test_overnight_dst_uses_persisted_business_date(scoped_client, db):
+def test_overnight_dst_uses_persisted_business_date(scoped_client, db, monkeypatch):
+    monkeypatch.setattr(
+        "app.core.report_access_period.utc_now", lambda: datetime(2026, 10, 25, 12)
+    )
     group = db.get(WidgetGroup, 10)
     group.timezone = "Europe/Berlin"
     group.work_start_time, group.work_end_time = time(22), time(6)

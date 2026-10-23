@@ -24,6 +24,15 @@ class TeamGroupSummary(_StrictTeamModel):
     workday_started_at: datetime
     workday_ended_at: datetime
     employee_count: int
+    report_history_days: int = Field(ge=1, le=365)
+    report_min_date: date
+    report_max_date: date
+
+
+class TeamReportPeriod(_StrictTeamModel):
+    min_date: date
+    max_date: date
+    history_days: int = Field(ge=1, le=365)
 
 
 class TeamActivitySegment(_StrictTeamModel):
@@ -74,6 +83,7 @@ class TeamStatusResponse(_StrictTeamModel):
     groups: list[TeamGroupSummary]
     employees: list[TeamMemberSummary]
     totals: TeamStatusTotals
+    report_period: TeamReportPeriod | None
 
 
 class ActivityWindowTarget(_StrictTeamModel):

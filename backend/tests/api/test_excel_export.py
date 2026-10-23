@@ -747,8 +747,12 @@ def test_export_rejects_employee_day_count_above_limit(scoped_client, db, monkey
     assert any("а" <= char <= "я" for char in response.json()["error"]["message"])
 
 
-def test_real_ten_thousand_day_boundary(db):
+def test_real_ten_thousand_day_boundary(db, monkeypatch):
     from app.services.timesheet_report_service import TimesheetReportService
+
+    monkeypatch.setattr(
+        "app.core.report_access_period.utc_now", lambda: datetime(2026, 11, 30, 12)
+    )
 
     users = [
         User(

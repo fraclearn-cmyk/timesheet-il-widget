@@ -1940,3 +1940,15 @@ flowchart TD
 Изменённые и созданные файлы блока: `backend/migrations/versions/016_report_history_retention.py`, `backend/app/models/widget_group.py`, `backend/app/schemas/settings_snapshot.py`, `backend/app/services/settings_snapshot_service.py`, `frontend/settings/settings.js`, `backend/tests/integration/test_migrations.py`, `backend/tests/integration/test_health.py`, `backend/tests/api/test_settings.py`, `backend/tests/api/test_groups.py`, `frontend/tests/settings-controller.test.js`.
 
 Что уже можно проверить локально: в настройках группы поле периода принимает только целые значения от 1 до 365. В живой amoCRM оно появится после выпуска всего согласованного изменения и применения миграции.
+
+##### Блок 2 — единые серверные границы общего табеля
+
+- [x] Добавлен единый расчёт доступной истории: администратору доступны 365 дней, руководителю — период назначенной группы.
+- [x] Для режима «Все группы» руководителя применяется самый короткий период среди его активных групп.
+- [x] Одинаковая серверная проверка действует для просмотра табеля и выгрузки Excel; изменение дат или группы в запросе не обходит ограничение.
+- [x] Каталог сотрудников возвращает общие границы периода и отдельные границы каждой видимой группы для следующего блока интерфейса.
+- [x] TDD: целевые проверки сначала падали без серверного расчёта; после реализации `33 passed, 1 skipped`. Полный backend-прогон дал `786 passed, 91 skipped` и выявил один тест с будущей фиксированной датой; дата теста закреплена, повторная целевая проверка прошла.
+
+Изменённые и созданные файлы блока: `backend/app/core/report_access_period.py`, `backend/app/schemas/team.py`, `backend/app/services/team_service.py`, `backend/app/services/timesheet_report_service.py`, `backend/tests/api/test_reports.py`, `backend/tests/api/test_team_visibility.py`, `backend/tests/api/test_excel_export.py`.
+
+Что уже можно проверить через API: руководитель не сможет открыть или скачать Excel старше разрешённого числа дней; администратор сможет запросить любой период внутри сохранённого года. Ограничения полей дат в самом окне табеля будут добавлены в следующем блоке.
