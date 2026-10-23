@@ -25,13 +25,21 @@ class PresenceService(Protocol):
     def close_stale_presence(self, *, now: datetime, batch_size: int = 100) -> int: ...
 
 
+class RetentionService(Protocol):
+    def cleanup(self, now: datetime, batch_size: int = 1000) -> int: ...
+
+
 class DatabaseIngestionRuntime:
     """Open one database session per scan, account poll, or cleanup batch."""
 
-    def __init__(self, *, session_factory, ingestion_factory, presence_factory):
+    def __init__(
+        self, *, session_factory, ingestion_factory, presence_factory,
+        retention_factory=None,
+    ):
         self._session_factory = session_factory
         self._ingestion_factory = ingestion_factory
         self._presence_factory = presence_factory
+        self._retention_factory = retention_factory
 
     def due_accounts(self, now: datetime) -> Sequence[int]:
         with self._session_factory() as db:
@@ -61,6 +69,18 @@ class DatabaseIngestionRuntime:
                 now, batch_size=batch_size
             )
 
+    def cleanup(self, now: datetime, batch_size: int = 1000) -> int:
+        if self._retention_factory is None:
+            return 0
+        with self._session_factory() as db:
+            try:
+                count = self._retention_factory(db).cleanup(now, batch_size=batch_size)
+                db.commit()
+                return count
+            except Exception:
+                db.rollback()
+                raise
+
 
 class IngestionWorker:
     """Poll due accounts while delegating exclusion/backoff to ingestion leases."""
@@ -70,6 +90,7 @@ class IngestionWorker:
         ingestion: IngestionService,
         presence: PresenceService,
         *,
+        retention: RetentionService | None = None,
         clock: Callable[[], datetime] = utc_now,
         interval_seconds: int = 60,
         commit: Callable[[], None] | None = None,
@@ -90,10 +111,12 @@ class IngestionWorker:
             raise ValueError("presence and account budgets must be positive")
         self._ingestion = ingestion
         self._presence = presence
+        self._retention = retention
         self._clock = clock
         self._interval_seconds = interval_seconds
         self._stop_event = asyncio.Event()
         self._last_cleanup_at: datetime | None = None
+        self._last_retention_cleanup_at: datetime | None = None
         self._commit = commit or (lambda: None)
         self._rollback = rollback or (lambda: None)
         self._cleanup_batch_size = cleanup_batch_size
@@ -101,6 +124,7 @@ class IngestionWorker:
         self._presence_batch_size = presence_batch_size
         self._account_budget_seconds = account_budget_seconds
         self._cleanup_pending = False
+        self._retention_cleanup_pending = False
         self._max_concurrent_accounts = max_concurrent_accounts
         self._active_accounts: dict[int, asyncio.Task] = {}
         self._pending_accounts: deque[int] = deque()
@@ -177,6 +201,29 @@ class IngestionWorker:
                 self._last_cleanup_at = current_utc
                 logger.exception(
                     "raw cleanup failed", extra={"error_code": "raw_cleanup_failed"}
+                )
+
+        if self._retention is not None and (
+            self._retention_cleanup_pending
+            or self._last_retention_cleanup_at is None
+            or current_utc - self._last_retention_cleanup_at >= timedelta(days=1)
+        ):
+            self._retention_cleanup_pending = True
+            try:
+                for _ in range(self._cleanup_max_batches_per_scan):
+                    deleted = self._retention.cleanup(
+                        current_utc, batch_size=self._cleanup_batch_size
+                    )
+                    if deleted < self._cleanup_batch_size:
+                        self._retention_cleanup_pending = False
+                        self._last_retention_cleanup_at = current_utc
+                        break
+            except Exception:
+                self._retention_cleanup_pending = False
+                self._last_retention_cleanup_at = current_utc
+                logger.exception(
+                    "report retention cleanup failed",
+                    extra={"error_code": "report_retention_cleanup_failed"},
                 )
 
     async def run_once(self) -> None:

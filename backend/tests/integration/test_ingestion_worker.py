@@ -86,6 +86,16 @@ class FakePresence:
         return 0
 
 
+class FakeRetention:
+    def __init__(self, results=None):
+        self.results = list(results or [])
+        self.calls = []
+
+    def cleanup(self, now, batch_size=1000):
+        self.calls.append((now, batch_size))
+        return self.results.pop(0) if self.results else 0
+
+
 @pytest.mark.asyncio
 async def test_due_account_runs_within_sixty_seconds_and_closes_presence():
     clock, service, presence = FakeClock(), FakeService(), FakePresence()
@@ -181,6 +191,23 @@ async def test_daily_cleanup_is_bounded_per_scan_and_continues_until_drained():
     clock.now += timedelta(days=1)
     await worker.run_once()
     assert service.cleanup_calls == 4
+
+
+@pytest.mark.asyncio
+async def test_annual_report_cleanup_is_bounded_and_runs_at_most_daily():
+    clock, service, presence = FakeClock(), FakeService(), FakePresence()
+    retention = FakeRetention([1000, 7, 0])
+    worker = IngestionWorker(
+        service, presence, retention=retention, clock=clock,
+        interval_seconds=60, cleanup_max_batches_per_scan=2,
+    )
+    await worker.run_once()
+    assert retention.calls == [(clock.now, 1000), (clock.now, 1000)]
+    await worker.run_once()
+    assert len(retention.calls) == 2
+    clock.now += timedelta(days=1)
+    await worker.run_once()
+    assert retention.calls[-1] == (clock.now, 1000)
 
 
 @pytest.mark.asyncio

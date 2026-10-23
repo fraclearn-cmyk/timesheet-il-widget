@@ -66,6 +66,7 @@ async def lifespan(application: FastAPI):
         from app.integrations.oauth import OAuthService, OAuthTokenCipher
         from app.services.activity_interval_service import ActivityIntervalService
         from app.services.event_ingestion_service import EventIngestionService
+        from app.services.report_retention_service import ReportRetentionService
         from app.services.ingestion_worker import (
             DatabaseIngestionRuntime,
             IngestionWorker,
@@ -106,10 +107,12 @@ async def lifespan(application: FastAPI):
             session_factory=SessionLocal,
             ingestion_factory=ingestion_factory,
             presence_factory=ActivityIntervalService,
+            retention_factory=ReportRetentionService,
         )
         worker = IngestionWorker(
             runtime,
             runtime,
+            retention=runtime,
             interval_seconds=settings.EVENT_POLL_INTERVAL_SECONDS,
             max_concurrent_accounts=settings.INGESTION_MAX_CONCURRENT_ACCOUNTS,
             account_budget_seconds=10,
