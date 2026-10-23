@@ -21,7 +21,11 @@ async function boot(page, role = 'admin') {
       window.downloads.push({ filename: this.download, href: this.href, attached: document.body.contains(this) });
     };
     const directory = { generated_at: '2026-09-29T09:00:00Z', viewer: { role: viewerRole, can_view_activity: false },
-      groups: [{ id: 10, name: 'Продажи' }, { id: 20, name: 'Поддержка' }],
+      report_period: { min_date: '2025-09-30', max_date: '2026-09-29', history_days: 365 },
+      groups: [
+        { id: 10, name: 'Продажи', report_history_days: 365, report_min_date: '2025-09-30', report_max_date: '2026-09-29' },
+        { id: 20, name: 'Поддержка', report_history_days: 365, report_min_date: '2025-09-30', report_max_date: '2026-09-29' },
+      ],
       employees: [{ id: 2, name: 'Анна', group_id: 10, report_filter_allowed: true },
         { id: 3, name: 'Борис', group_id: 20, report_filter_allowed: false }],
       totals: { employees: 2, working: 1, on_break: 0, finished: 1, not_started: 0 } };
@@ -60,6 +64,8 @@ async function boot(page, role = 'admin') {
 for (const role of ['admin', 'manager']) {
   test(`${role} filters authorized employees and paginates ten rows`, async ({ page }) => {
     await boot(page, role);
+    await expect(page.locator('[data-filter="date-from"]')).toHaveAttribute('min', '2025-09-30');
+    await expect(page.locator('[data-filter="date-from"]')).toHaveAttribute('max', '2026-09-29');
     await expect(page.locator('tbody tr')).toHaveCount(10);
     await expect(page.locator('tbody td').first()).toHaveText('<b>Анна</b>');
     await expect(page.locator('tbody b')).toHaveCount(0);

@@ -7,7 +7,11 @@ const Reports = require('../reports/controller');
 
 const directory = (role = 'admin') => ({
   generated_at: '2026-09-29T09:00:00Z', viewer: { role, can_view_activity: false },
-  groups: [{ id: 10, name: 'Продажи' }, { id: 20, name: 'Поддержка' }],
+  report_period: { min_date: '2025-10-01', max_date: '2026-09-30', history_days: 365 },
+  groups: [
+    { id: 10, name: 'Продажи', report_history_days: 365, report_min_date: '2025-10-01', report_max_date: '2026-09-30' },
+    { id: 20, name: 'Поддержка', report_history_days: 365, report_min_date: '2025-10-01', report_max_date: '2026-09-30' },
+  ],
   employees: [
     { id: 2, amocrm_user_id: 102, account_id: 1, name: 'Анна', group_id: 10, group_name: 'Продажи', timezone: 'Europe/Moscow', status: 'working', report_filter_allowed: true },
     { id: 3, amocrm_user_id: 103, account_id: 1, name: 'Борис', group_id: 20, group_name: 'Поддержка', timezone: 'Europe/Moscow', status: 'finished', report_filter_allowed: false },
@@ -70,6 +74,42 @@ test('default date uses local calendar fields around local midnight', async () =
   fixture.controller.destroy();
 });
 
+test('server period bounds date fields and clear uses the server maximum', async () => {
+  const payload = directory('admin');
+  payload.report_period = { min_date: '2025-10-01', max_date: '2026-09-28', history_days: 365 };
+  const fixture = boot({ directoryResult: Promise.resolve(payload) });
+  await fixture.controller.ready;
+  assert.equal(select(fixture, 'date-from').min, '2025-10-01');
+  assert.equal(select(fixture, 'date-from').max, '2026-09-28');
+  assert.equal(select(fixture, 'date-to').min, '2025-10-01');
+  assert.equal(select(fixture, 'date-to').max, '2026-09-28');
+  assert.equal(select(fixture, 'date-from').value, '2026-09-28');
+  assert.equal(select(fixture, 'date-to').value, '2026-09-28');
+  select(fixture, 'date-from').value = '2026-01-01';
+  action(fixture, 'clear').click(); await tick();
+  assert.equal(select(fixture, 'date-from').value, '2026-09-28');
+  fixture.controller.destroy();
+});
+
+test('manager switches between strict all-groups and selected-group periods', async () => {
+  const payload = directory('manager');
+  payload.report_period = { min_date: '2026-09-23', max_date: '2026-09-29', history_days: 7 };
+  payload.groups[0] = { ...payload.groups[0], report_history_days: 30, report_min_date: '2026-08-31' };
+  payload.groups[1] = { ...payload.groups[1], report_history_days: 7, report_min_date: '2026-09-23' };
+  const fixture = boot({ directoryResult: Promise.resolve(payload) });
+  await fixture.controller.ready;
+  assert.equal(select(fixture, 'date-from').min, '2026-09-23');
+  select(fixture, 'group').value = '10';
+  select(fixture, 'group').dispatchEvent(new fixture.dom.window.Event('change'));
+  assert.equal(select(fixture, 'date-from').min, '2026-08-31');
+  select(fixture, 'date-from').value = '2026-09-01';
+  select(fixture, 'group').value = '';
+  select(fixture, 'group').dispatchEvent(new fixture.dom.window.Event('change'));
+  assert.equal(select(fixture, 'date-from').min, '2026-09-23');
+  assert.equal(select(fixture, 'date-from').value, '2026-09-23');
+  fixture.controller.destroy();
+});
+
 test('group narrows authorized employees, filters use internal ids, and clear restores defaults', async () => {
   const fixture = boot(); await fixture.controller.ready;
   select(fixture, 'date-from').value = '2026-09-01';
@@ -81,7 +121,7 @@ test('group narrows authorized employees, filters use internal ids, and clear re
   action(fixture, 'show').click(); await tick();
   assert.deepEqual(fixture.calls.at(-1).params, { date_from: '2026-09-01', date_to: '2026-09-30', page: 1, group_id: 10, user_id: 2 });
   action(fixture, 'clear').click(); await tick();
-  assert.deepEqual(fixture.calls.at(-1).params, { date_from: '2026-09-29', date_to: '2026-09-29', page: 1 });
+  assert.deepEqual(fixture.calls.at(-1).params, { date_from: '2026-09-30', date_to: '2026-09-30', page: 1 });
   assert.equal(select(fixture, 'group').value, '');
   assert.equal(select(fixture, 'employee').value, '');
   fixture.controller.destroy();

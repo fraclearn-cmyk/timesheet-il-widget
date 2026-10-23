@@ -89,6 +89,7 @@
     let authorized = false;
     let groups = [];
     let employees = [];
+    let reportPeriod = null;
     let page = 1;
     let exporting = false;
 
@@ -182,9 +183,35 @@
       }
       if (Array.from(select.options).some((option) => option.value === selected)) select.value = selected;
     }
+    function normalizePeriod(value) {
+      const validDate = (part) => /^\d{4}-\d{2}-\d{2}$/.test(String(part || ''));
+      if (!value || !validDate(value.min_date) || !validDate(value.max_date) || value.min_date > value.max_date) return null;
+      return { min: value.min_date, max: value.max_date };
+    }
+    function activePeriod() {
+      if (group.value) {
+        const selected = groups.find((item) => Number(item.id) === Number(group.value));
+        const selectedPeriod = selected && normalizePeriod({
+          min_date: selected.report_min_date, max_date: selected.report_max_date,
+        });
+        if (selectedPeriod) return selectedPeriod;
+      }
+      return reportPeriod || { min: today, max: today };
+    }
+    function applyPeriodBounds(reset) {
+      const period = activePeriod();
+      for (const input of [from, to]) {
+        input.min = period.min;
+        input.max = period.max;
+        if (reset) input.value = period.max;
+        else if (!input.value || input.value > period.max) input.value = period.max;
+        else if (input.value < period.min) input.value = period.min;
+      }
+    }
     function updateEmployees() {
       const groupId = group.value ? Number(group.value) : null;
       updateOptions(employee, employees.filter((item) => groupId === null || Number(item.group_id) === groupId), 'Все сотрудники');
+      applyPeriodBounds(false);
     }
     function filters() {
       const params = { date_from: from.value, date_to: to.value };
@@ -256,6 +283,7 @@
         }
         authorized = true;
         groups = Array.isArray(response.groups) ? response.groups : [];
+        reportPeriod = normalizePeriod(response.report_period);
         employees = Array.isArray(response.employees)
           ? response.employees.filter((item) => item.report_filter_allowed === true) : [];
         updateOptions(group, groups, 'Все группы'); updateEmployees();
@@ -310,7 +338,7 @@
     }
     listen(group, 'change', updateEmployees);
     listen(show, 'click', () => { page = 1; refresh(); });
-    listen(clear, 'click', () => { from.value = today; to.value = today; group.value = ''; updateEmployees(); employee.value = ''; page = 1; refresh(); });
+    listen(clear, 'click', () => { group.value = ''; updateEmployees(); applyPeriodBounds(true); employee.value = ''; page = 1; refresh(); });
     listen(previous, 'click', () => { if (page > 1) { --page; refresh(); } });
     listen(next, 'click', () => { if (!next.disabled) { ++page; refresh(); } });
     listen(retry, 'click', () => { if (authorized) refresh(); else loadDirectory(); });
