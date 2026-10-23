@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 
-RELEASE_VERSION = "3.0.26"
+RELEASE_VERSION = "3.0.27"
 RUNTIME_FILES = frozenset(
     {
         "manifest.json",

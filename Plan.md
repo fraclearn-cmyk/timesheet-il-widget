@@ -1977,3 +1977,16 @@ flowchart TD
 Создан файл `backend/app/services/report_retention_service.py`. Изменены `backend/app/services/ingestion_worker.py`, `backend/app/main.py`, `backend/tests/integration/test_ingestion_worker.py`; создан `backend/tests/integration/test_report_retention.py`.
 
 Что уже можно проверить локально: тестовая очистка удаляет только 366-й и более старые календарные дни, не трогает ровно 365 доступных дней и незавершённую смену. На рабочем сервере задача начнёт выполняться вместе с фоновым worker после выпуска.
+
+##### Блок 5 — подготовка выпуска 3.0.27
+
+- [x] Обновлены контракт API и release checklist для годового хранения и периода руководителя.
+- [x] Версия манифеста, AMD-зависимостей и валидатора повышена с `3.0.26` до `3.0.27` через RED→GREEN; пакетные тесты — `23 passed`.
+- [x] Общий release gate, сборка точного архива и миграция PostgreSQL `015 -> 016` выполнены; независимое ревью выполняется следующим шагом.
+- [ ] Загрузить `3.0.27` в amoCRM и проверить администратора и руководителя в Edge.
+
+Изменённые файлы подготовки: `docs/api-contract.md`, `docs/release-checklist.md`, `widget/manifest.json`, `widget/script.js`, `validate_widget_zip.py`, `test_widget_package.py`, `frontend/tests/widget-lifecycle.test.js`.
+
+Что уже можно проверить локально: манифест и все загрузочные зависимости показывают одну версию `3.0.27`; валидатор отклоняет смешанные или устаревшие версии.
+
+Собран `widget.zip`: 25 файлов, `58 421` байт, SHA-256 `9BF9FC3D6E68AE04716CF949D912FBAA02F6D80B0E9E398217E7B9458BCB426E`. Локальная PostgreSQL обновлена с `015` до `016 (head)`.

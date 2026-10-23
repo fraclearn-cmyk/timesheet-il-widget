@@ -82,7 +82,7 @@ class WidgetPackageTests(unittest.TestCase):
 
     def test_manifest_initializes_cards_settings_and_role_scoped_report_page(self):
         manifest = json.loads((ROOT / "widget" / "manifest.json").read_text("utf-8"))
-        self.assertEqual(manifest["widget"]["version"], "3.0.26")
+        self.assertEqual(manifest["widget"]["version"], "3.0.27")
         self.assertEqual(
             manifest["locations"],
             [
@@ -115,12 +115,12 @@ class WidgetPackageTests(unittest.TestCase):
     def test_validator_rejects_consistently_stale_release(self):
         entries = self.entries()
         entries["manifest.json"] = entries["manifest.json"].replace(
-            b"3.0.26", b"3.0.20"
+            b"3.0.27", b"3.0.20"
         )
-        entries["script.js"] = entries["script.js"].replace(b"3.0.26", b"3.0.20")
+        entries["script.js"] = entries["script.js"].replace(b"3.0.27", b"3.0.20")
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
-        self.assertIn("manifest.json widget version must be 3.0.26", validator.errors)
+        self.assertIn("manifest.json widget version must be 3.0.27", validator.errors)
 
     def test_validator_rejects_extra_stale_amd_cache_url(self):
         entries = self.entries()
@@ -188,10 +188,10 @@ class WidgetPackageTests(unittest.TestCase):
         entries = self.entries()
         entries["script.js"] = (
             entries["script.js"].replace(
-                b"'./reports/controller.js?v=3.0.26'",
-                b"'./reports/missing.js?v=3.0.26'",
+                b"'./reports/controller.js?v=3.0.27'",
+                b"'./reports/missing.js?v=3.0.27'",
             )
-            + b"\n// './reports/controller.js?v=3.0.26'\n"
+            + b"\n// './reports/controller.js?v=3.0.27'\n"
         )
         validator = WidgetValidator(self.make_zip(entries))
         self.assertFalse(validator.validate())
@@ -209,8 +209,8 @@ class WidgetPackageTests(unittest.TestCase):
     def test_validator_rejects_report_dependency_only_inside_amd_array_comment(self):
         entries = self.entries()
         entries["script.js"] = entries["script.js"].replace(
-            b"'./reports/controller.js?v=3.0.26'",
-            b"'./reports/missing.js?v=3.0.26', /* './reports/controller.js?v=3.0.26' */",
+            b"'./reports/controller.js?v=3.0.27'",
+            b"'./reports/missing.js?v=3.0.27', /* './reports/controller.js?v=3.0.27' */",
             1,
         )
         validator = WidgetValidator(self.make_zip(entries))
