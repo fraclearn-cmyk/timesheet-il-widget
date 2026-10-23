@@ -76,6 +76,7 @@ test('admin dashboard renders seven-day activity, safe tooltip, gaps, zoom, full
   await expect(page.locator('.ts-timeline__tooltip')).toContainText('<b>Сделка</b>');
   await expect(page.locator('.ts-timeline__tooltip b')).toHaveCount(0);
   await expect(page.locator('.ts-timeline__tooltip')).toHaveCSS('position', 'fixed');
+  expect((await page.locator('.ts-timeline__tooltip').boundingBox()).width).toBe(520);
   expect(await page.locator('.ts-timeline__tooltip').getAttribute('data-placement')).toMatch(/^(top|bottom)$/);
   const widthBefore = await page.locator('.ts-timeline__track').first().evaluate((node) => parseFloat(node.style.width));
   await page.locator('[data-zoom="4"]').click();

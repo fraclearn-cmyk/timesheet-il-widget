@@ -152,7 +152,7 @@ button.ts-monitoring__inline-activity:focus-visible { border-radius: 5px; outlin
 .ts-timeline__tooltip {
   box-sizing: border-box;
   z-index: 2147483640;
-  width: min(420px, calc(100vw - 16px));
+  width: min(520px, calc(100vw - 16px));
   overflow: auto;
   padding: 10px 12px;
   border: 1px solid #d0d5dd;

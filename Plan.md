@@ -1891,3 +1891,14 @@ flowchart TD
 Созданные и изменённые файлы этой фазы: `frontend/monitoring/timeline.js`, `frontend/monitoring/styles.css`, `frontend/tests/monitoring-timeline.test.js`, `frontend/tests/monitoring.spec.js`, `frontend/tests/widget-lifecycle.test.js`, `widget/manifest.json`, `widget/script.js`, `validate_widget_zip.py`, `test_widget_package.py`, `docs/release-checklist.md`, `docs/superpowers/specs/2026-10-23-floating-activity-tooltip-design.md`, `docs/superpowers/plans/2026-10-23-floating-activity-tooltip.md`, `Plan.md`.
 
 Что уже можно проверить в amoCRM: открыть «Сотрудники» → «Активность: Тест Сотрудник», прокрутить дни 21–22.10.2026 и нажимать отметки. Над каждой полосой видна почасовая шкала; подсказка выбирает свободную сторону экрана, не сдвигает окно и остаётся видимой после перехода «На весь экран».
+
+#### Ширина всплывающей карточки по макету — 23.10.2026
+
+- [x] По отмеченному пользователем прямоугольнику уточнено требование: ширина относится к всплывающей карточке события.
+- [x] TDD-проверка сначала зафиксировала прежнюю ширину `420px` вместо требуемых `520px`, затем подтвердила новую ширину `520px`.
+- [x] Карточка получила адаптивное правило `min(520px, calc(100vw - 16px))`, поэтому сохраняет ширину по макету на обычном экране и не выходит за границы узкого.
+- [x] Версия виджета повышена до `3.0.25`; frontend — `140 passed`, браузерные frontend-тесты — `36 passed`.
+- [x] Собран и проверен `widget.zip`: 25 runtime-файлов, `57 939` байт, SHA-256 `224DE48C6B5155609E3802728EB073EA8F6FA1084F3B146EA1E37DA0E89C3412`.
+- [ ] Загрузить `3.0.25` в amoCRM и подтвердить ширину карточки в Edge.
+
+Изменённые файлы этой корректировки: `frontend/monitoring/styles.css`, `frontend/tests/monitoring.spec.js`, `frontend/tests/widget-lifecycle.test.js`, `widget/manifest.json`, `widget/script.js`, `validate_widget_zip.py`, `test_widget_package.py`, `docs/superpowers/specs/2026-10-23-floating-activity-tooltip-design.md`, `docs/superpowers/plans/2026-10-23-floating-activity-tooltip.md`, `Plan.md`.
