@@ -64,6 +64,6 @@ Copy the tested timeline and styles into `widget/monitoring/`, update references
 
 Run: `npm run test:monitoring`, the package validation tests, `git diff --check`, and the project test suite used by the release checklist.
 
-- [ ] **Step 6: Record and publish the phase**
+- [x] **Step 6: Record and publish the phase**
 
 Mark this task complete in `Plan.md`, commit the implementation and documentation, push to GitHub, upload the rebuilt archive to the private integration, and verify the horizontal strip in Edge.
