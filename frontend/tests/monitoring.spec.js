@@ -63,11 +63,8 @@ test('admin dashboard renders seven-day activity, safe tooltip, gaps, zoom, full
   await expect(page.locator('[data-activity-user-id]')).toHaveCount(1);
   await page.locator('[data-activity-user-id="2"]').click();
   await expect(page.locator('.ts-activity-modal__day')).toHaveCount(7);
-  const widths = await page.evaluate(() => ({
-    directory: document.querySelector('.ts-monitoring-widget__panel').getBoundingClientRect().width,
-    detail: document.querySelector('.ts-activity-modal__panel').getBoundingClientRect().width,
-  }));
-  expect(widths.detail / widths.directory).toBeCloseTo(1.5, 1);
+  const detailWidth = await page.locator('.ts-activity-modal__panel').evaluate((node) => node.getBoundingClientRect().width);
+  expect(detailWidth).toBe(520);
   await expect(page.locator('.ts-timeline__hour-label')).toHaveCount(25 * 7);
   const segment = page.locator('.ts-timeline__item--confirmed');
   await expect(segment).toHaveCount(1);
