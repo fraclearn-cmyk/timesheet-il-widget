@@ -9,12 +9,13 @@ const sources = ['timeline.js', 'activity-modal.js', 'dashboard.js']
 const css = readFileSync(resolve(__dirname, '../monitoring/styles.css'), 'utf8');
 
 async function loadMonitoring(page) {
-  await page.setContent('<main id="root"></main>');
+  await page.setContent('<aside class="ts-monitoring-widget__panel"><main id="root"></main></aside>');
   await page.addStyleTag({ content: css });
   for (const source of sources) await page.addScriptTag({ content: source });
 }
 
 test('admin dashboard renders seven-day activity, safe tooltip, gaps, zoom, fullscreen and Escape', async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 900 });
   await loadMonitoring(page);
   await page.evaluate(() => {
     window.fetch = () => { throw new Error('direct fetch is forbidden'); };
@@ -62,22 +63,65 @@ test('admin dashboard renders seven-day activity, safe tooltip, gaps, zoom, full
   await expect(page.locator('[data-activity-user-id]')).toHaveCount(1);
   await page.locator('[data-activity-user-id="2"]').click();
   await expect(page.locator('.ts-activity-modal__day')).toHaveCount(7);
+  const widths = await page.evaluate(() => ({
+    directory: document.querySelector('.ts-monitoring-widget__panel').getBoundingClientRect().width,
+    detail: document.querySelector('.ts-activity-modal__panel').getBoundingClientRect().width,
+  }));
+  expect(widths.detail / widths.directory).toBeCloseTo(1.5, 1);
+  await expect(page.locator('.ts-timeline__hour-label')).toHaveCount(25 * 7);
   const segment = page.locator('.ts-timeline__item--confirmed');
   await expect(segment).toHaveCount(1);
   expect(await segment.evaluate((node) => parseFloat(node.style.left))).toBeGreaterThan(0);
   await segment.hover();
   await expect(page.locator('.ts-timeline__tooltip')).toContainText('<b>Сделка</b>');
   await expect(page.locator('.ts-timeline__tooltip b')).toHaveCount(0);
+  await expect(page.locator('.ts-timeline__tooltip')).toHaveCSS('position', 'fixed');
+  expect(await page.locator('.ts-timeline__tooltip').getAttribute('data-placement')).toMatch(/^(top|bottom)$/);
   const widthBefore = await page.locator('.ts-timeline__track').first().evaluate((node) => parseFloat(node.style.width));
   await page.locator('[data-zoom="4"]').click();
   const widthAfter = await page.locator('.ts-timeline__track').first().evaluate((node) => parseFloat(node.style.width));
   expect(widthAfter).toBe(widthBefore * 4);
   await page.locator('.ts-activity-modal__fullscreen').click();
   await expect(page.locator('.ts-activity-modal__fullscreen')).toHaveAttribute('aria-pressed', 'true');
+  await segment.hover();
+  await expect(page.locator('.ts-activity-modal__panel > .ts-timeline__tooltip')).toBeVisible();
+  await page.locator('.ts-timeline__tooltip a').focus();
+  await expect(page.locator('.ts-timeline__tooltip a')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('.ts-activity-modal')).toBeHidden();
   expect(await page.evaluate(() => window.transportCalls.find((call) => call.kind === 'activity')))
     .toMatchObject({ userId: 2, from: '2026-09-23', to: '2026-09-29' });
+});
+
+test('activity tooltip stays inside a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 480 });
+  await loadMonitoring(page);
+  await page.evaluate(() => {
+    const root = document.querySelector('#root');
+    const day = {
+      date: '2026-09-29',
+      started_at: '2026-09-29T00:00:00Z',
+      ended_at: '2026-09-30T00:00:00Z',
+      intervals: [{
+        id: 1,
+        started_at: '2026-09-29T23:50:00Z',
+        ended_at: '2026-09-29T23:50:00Z',
+        duration_seconds: 0,
+        duration_source: 'point',
+        kind: 'confirmed',
+        source: 'crm_event',
+        event_type: 'lead_updated',
+        description: 'Узкий экран',
+      }],
+    };
+    TimesheetTimeline.render(root, day, { zoom: 1, timezone: 'Europe/Moscow' });
+  });
+  await page.locator('.ts-timeline__item').hover();
+  const bounds = await page.locator('.ts-timeline__tooltip').boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(480);
 });
 
 test('server-scoped manager and employee views render only delivered rows and permissions', async ({ page }) => {

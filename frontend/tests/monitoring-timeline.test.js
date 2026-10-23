@@ -122,18 +122,72 @@ test('render keeps one horizontal band and groups every visually overlapping ite
   assert.equal(clusters.length, 2);
 
   clusters[0].click();
-  let tooltip = root.querySelector('.ts-timeline__tooltip');
+  let tooltip = root.ownerDocument.querySelector('.ts-timeline__tooltip');
   assert.match(tooltip.textContent, /Первый интервал/);
   assert.match(tooltip.textContent, /Второй интервал/);
   assert.match(tooltip.textContent, /03:00–05:00/);
   assert.match(tooltip.textContent, /04:00–06:00/);
 
   clusters[1].click();
-  tooltip = root.querySelector('.ts-timeline__tooltip');
+  tooltip = root.ownerDocument.querySelector('.ts-timeline__tooltip');
   assert.match(clusters[1].getAttribute('aria-label'), /2 события/);
   assert.ok(clusters[1].classList.contains('ts-timeline__item--mixed-point'));
   assert.match(tooltip.textContent, /Создана сделка/);
   assert.match(tooltip.textContent, /Добавлена задача/);
+  dom.window.close();
+});
+
+test('render adds an hourly scale from 00:00 through 24:00', () => {
+  const dom = new JSDOM('<main id="root"></main>');
+  const root = dom.window.document.querySelector('#root');
+  Timeline.render(root, day({
+    date: '2026-03-28',
+    started_at: '2026-03-28T00:00:00Z',
+    ended_at: '2026-03-29T00:00:00Z',
+    intervals: [],
+  }), { zoom: 1, timezone: 'UTC' });
+
+  const labels = Array.from(root.querySelectorAll('.ts-timeline__hour-label'), (node) => node.textContent);
+  assert.equal(labels.length, 25);
+  assert.equal(labels[0], '00:00');
+  assert.equal(labels[1], '01:00');
+  assert.equal(labels.at(-1), '24:00');
+  dom.window.close();
+});
+
+test('tooltip floats outside the timeline and chooses above or below without moving content', () => {
+  const dom = new JSDOM('<main id="root"><p id="after">После шкалы</p></main>');
+  const { document, HTMLElement } = dom.window;
+  const root = document.querySelector('#root');
+  let anchorTop = 520;
+  Object.defineProperty(dom.window, 'innerWidth', { configurable: true, value: 1000 });
+  Object.defineProperty(dom.window, 'innerHeight', { configurable: true, value: 600 });
+  HTMLElement.prototype.getBoundingClientRect = function () {
+    if (this.classList.contains('ts-timeline__item')) {
+      return { left: 400, right: 430, top: anchorTop, bottom: anchorTop + 24, width: 30, height: 24 };
+    }
+    if (this.classList.contains('ts-timeline__tooltip')) {
+      return { left: 0, right: 300, top: 0, bottom: 180, width: 300, height: 180 };
+    }
+    return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
+  };
+
+  Timeline.render(root, day(), { zoom: 1, timezone: 'UTC' });
+  const marker = root.querySelector('.ts-timeline__item');
+  const childCount = root.children.length;
+  marker.click();
+  let tooltip = document.querySelector('.ts-timeline__tooltip');
+  assert.equal(tooltip.parentElement, document.body);
+  assert.equal(tooltip.dataset.placement, 'top');
+  assert.equal(tooltip.style.position, 'fixed');
+  assert.equal(root.children.length, childCount);
+
+  marker.click();
+  anchorTop = 80;
+  marker.click();
+  tooltip = document.querySelector('.ts-timeline__tooltip');
+  assert.equal(tooltip.dataset.placement, 'bottom');
+  assert.equal(root.children.length, childCount);
   dom.window.close();
 });
 
@@ -177,7 +231,7 @@ test('tooltip renders hostile CRM text as text and allows only safe card links',
     event_type: '<script>bad()</script>',
   })] }), { zoom: 1, timezone: 'Europe/Berlin' });
   root.querySelector('.ts-timeline__item').click();
-  const tooltip = root.querySelector('.ts-timeline__tooltip');
+  const tooltip = root.ownerDocument.querySelector('.ts-timeline__tooltip');
   assert.match(tooltip.textContent, /<img src=x/);
   assert.equal(tooltip.querySelector('img'), null);
   assert.equal(tooltip.querySelector('script'), null);
@@ -188,7 +242,7 @@ test('tooltip renders hostile CRM text as text and allows only safe card links',
   const unsafe = day({ intervals: [interval({ card_url: 'javascript:alert(1)' })] });
   Timeline.render(root, unsafe, { zoom: 1 });
   root.querySelector('.ts-timeline__item').click();
-  assert.equal(root.querySelector('.ts-timeline__tooltip a'), null);
+  assert.equal(root.ownerDocument.querySelector('.ts-timeline__tooltip a'), null);
 });
 
 test('tooltip opens on hover and keyboard focus and includes every safe activity field', () => {
@@ -208,7 +262,7 @@ test('tooltip opens on hover and keyboard focus and includes every safe activity
   const marker = root.querySelector('.ts-timeline__item');
 
   marker.dispatchEvent(new dom.window.MouseEvent('mouseenter'));
-  let tooltip = root.querySelector('.ts-timeline__tooltip');
+  let tooltip = root.ownerDocument.querySelector('.ts-timeline__tooltip');
   assert.equal(marker.getAttribute('aria-expanded'), 'true');
   for (const expected of [
     'Дата: 29.03.2026',
@@ -225,16 +279,16 @@ test('tooltip opens on hover and keyboard focus and includes every safe activity
 
   marker.focus();
   marker.dispatchEvent(new dom.window.MouseEvent('mouseleave'));
-  assert.notEqual(root.querySelector('.ts-timeline__tooltip'), null, 'focus keeps tooltip open');
+  assert.notEqual(root.ownerDocument.querySelector('.ts-timeline__tooltip'), null, 'focus keeps tooltip open');
   marker.blur();
-  assert.equal(root.querySelector('.ts-timeline__tooltip'), null);
+  assert.equal(root.ownerDocument.querySelector('.ts-timeline__tooltip'), null);
   assert.equal(marker.getAttribute('aria-expanded'), 'false');
 
   marker.focus();
-  tooltip = root.querySelector('.ts-timeline__tooltip');
+  tooltip = root.ownerDocument.querySelector('.ts-timeline__tooltip');
   assert.notEqual(tooltip, null, 'focus alone opens tooltip');
   marker.blur();
-  assert.equal(root.querySelector('.ts-timeline__tooltip'), null, 'blur closes tooltip');
+  assert.equal(root.ownerDocument.querySelector('.ts-timeline__tooltip'), null, 'blur closes tooltip');
 });
 
 test('click pin composes with hover without stale aria-expanded state', () => {
@@ -246,9 +300,9 @@ test('click pin composes with hover without stale aria-expanded state', () => {
   assert.equal(marker.getAttribute('aria-expanded'), 'true');
   marker.dispatchEvent(new dom.window.MouseEvent('mouseenter'));
   marker.dispatchEvent(new dom.window.MouseEvent('mouseleave'));
-  assert.notEqual(root.querySelector('.ts-timeline__tooltip'), null);
+  assert.notEqual(root.ownerDocument.querySelector('.ts-timeline__tooltip'), null);
   marker.click();
-  assert.equal(root.querySelector('.ts-timeline__tooltip'), null);
+  assert.equal(root.ownerDocument.querySelector('.ts-timeline__tooltip'), null);
   assert.equal(marker.getAttribute('aria-expanded'), 'false');
 });
 
@@ -263,7 +317,7 @@ test('call without a direction uses a neutral label', () => {
   const marker = root.querySelector('.ts-timeline__item');
   assert.match(marker.getAttribute('aria-label'), /^Звонок,/);
   marker.focus();
-  assert.equal(root.querySelector('.ts-timeline__tooltip-title').textContent, 'Звонок');
+  assert.equal(root.ownerDocument.querySelector('.ts-timeline__tooltip-title').textContent, 'Звонок');
 });
 
 test('render labels a 23-hour local day from explicit UTC bounds', () => {

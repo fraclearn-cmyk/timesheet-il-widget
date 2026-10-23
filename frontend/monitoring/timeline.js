@@ -11,6 +11,7 @@
 
   const ALLOWED_ZOMS = new Set([1, 2, 4]);
   const MINUTE_MS = 60000;
+  const CONTROLLER_KEY = typeof Symbol === 'function' ? Symbol('timesheetTimelineController') : '__timesheetTimelineController';
 
   function timestamp(value, label) {
     const result = Date.parse(value);
@@ -155,6 +156,7 @@
 
   function render(root, day, options) {
     if (!root || !root.ownerDocument) throw new TypeError('A DOM root is required');
+    if (typeof root[CONTROLLER_KEY] === 'function') root[CONTROLLER_KEY]();
     const settings = options || {};
     const document = root.ownerDocument;
     const layout = layoutDay(day, settings.zoom || 1);
@@ -169,10 +171,27 @@
 
     const viewport = document.createElement('div');
     viewport.className = 'ts-timeline__viewport';
+    const hourScale = document.createElement('div');
+    hourScale.className = 'ts-timeline__hours';
+    hourScale.style.width = `${layout.width}px`;
+    const lastMinute = Math.round(layout.durationMinutes);
+    for (let minute = 0; minute <= lastMinute; minute += 60) {
+      const label = document.createElement('span');
+      label.className = 'ts-timeline__hour-label';
+      label.style.left = `${minute * layout.zoom}px`;
+      label.textContent = minute === lastMinute
+        ? '24:00'
+        : formatClock(layout.startMs + (minute * MINUTE_MS), settings.timezone);
+      if (minute === 0) label.classList.add('ts-timeline__hour-label--first');
+      if (minute === lastMinute) label.classList.add('ts-timeline__hour-label--last');
+      hourScale.appendChild(label);
+    }
+    viewport.appendChild(hourScale);
     const track = document.createElement('div');
     track.className = 'ts-timeline__track';
     track.style.width = `${layout.width}px`;
     track.style.height = '34px';
+    track.style.setProperty('--ts-hour-width', `${60 * layout.zoom}px`);
     viewport.appendChild(track);
     root.appendChild(viewport);
 
@@ -180,12 +199,36 @@
     let activeAnchor = null;
     let activeState = null;
     const listenerCleanup = [];
+    const view = document.defaultView;
     function hideTooltip() {
       if (activeAnchor) activeAnchor.setAttribute('aria-expanded', 'false');
       if (tooltip) tooltip.remove();
       tooltip = null;
       activeAnchor = null;
       activeState = null;
+    }
+    function positionTooltip() {
+      if (!tooltip || !activeAnchor) return;
+      const anchorRect = activeAnchor.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      const viewportWidth = view ? view.innerWidth : document.documentElement.clientWidth;
+      const viewportHeight = view ? view.innerHeight : document.documentElement.clientHeight;
+      const gap = 8;
+      const edge = 8;
+      const spaceAbove = Math.max(0, anchorRect.top - edge - gap);
+      const spaceBelow = Math.max(0, viewportHeight - anchorRect.bottom - edge - gap);
+      const placeAbove = spaceAbove > spaceBelow && tooltipRect.height > spaceBelow;
+      const available = Math.max(80, (placeAbove ? spaceAbove : spaceBelow));
+      const top = placeAbove
+        ? Math.max(edge, anchorRect.top - gap - Math.min(tooltipRect.height, available))
+        : Math.min(viewportHeight - edge, anchorRect.bottom + gap);
+      const preferredLeft = anchorRect.left + (anchorRect.width / 2) - (tooltipRect.width / 2);
+      const left = Math.max(edge, Math.min(preferredLeft, viewportWidth - tooltipRect.width - edge));
+      tooltip.dataset.placement = placeAbove ? 'top' : 'bottom';
+      tooltip.style.position = 'fixed';
+      tooltip.style.left = `${Math.round(left)}px`;
+      tooltip.style.top = `${Math.round(top)}px`;
+      tooltip.style.maxHeight = `${Math.floor(available)}px`;
     }
     function showTooltip(item, anchor, interactionState) {
       if (activeAnchor === anchor && tooltip) return;
@@ -239,8 +282,21 @@
       anchor.setAttribute('aria-expanded', 'true');
       activeAnchor = anchor;
       activeState = interactionState;
-      root.appendChild(tooltip);
+      tooltip.style.position = 'fixed';
+      tooltip.style.visibility = 'hidden';
+      const tooltipLayer = root.closest('.ts-activity-modal__panel') || document.body || document.documentElement;
+      tooltipLayer.appendChild(tooltip);
+      positionTooltip();
+      tooltip.style.visibility = '';
     }
+
+    function onViewportChange() { positionTooltip(); }
+    document.addEventListener('scroll', onViewportChange, true);
+    if (view) view.addEventListener('resize', onViewportChange);
+    listenerCleanup.push(() => {
+      document.removeEventListener('scroll', onViewportChange, true);
+      if (view) view.removeEventListener('resize', onViewportChange);
+    });
 
     for (const item of groupRenderItems(layout.items)) {
       const element = document.createElement('button');
@@ -288,7 +344,17 @@
       track.appendChild(element);
     }
 
-    return { layout, destroy: () => { for (const cleanup of listenerCleanup) cleanup(); hideTooltip(); root.replaceChildren(); } };
+    let destroyed = false;
+    function destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      for (const cleanup of listenerCleanup) cleanup();
+      hideTooltip();
+      root.replaceChildren();
+      if (root[CONTROLLER_KEY] === destroy) delete root[CONTROLLER_KEY];
+    }
+    root[CONTROLLER_KEY] = destroy;
+    return { layout, destroy };
   }
 
   return { normalizeDay, layoutDay, render };

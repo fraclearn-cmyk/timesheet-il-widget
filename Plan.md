@@ -1876,3 +1876,18 @@ flowchart TD
 Созданные и изменённые файлы этой фазы: `frontend/monitoring/timeline.js`, `frontend/monitoring/styles.css`, `frontend/tests/monitoring-timeline.test.js`, `frontend/tests/widget-lifecycle.test.js`, `widget/manifest.json`, `widget/script.js`, `validate_widget_zip.py`, `test_widget_package.py`, `docs/release-checklist.md`, `docs/superpowers/specs/2026-10-23-single-row-activity-timeline-design.md`, `docs/superpowers/plans/2026-10-23-single-row-activity-timeline.md`, `Plan.md`.
 
 Что уже можно проверить в amoCRM: открыть «Сотрудники», нажать на шкалу «Тест Сотрудник» и прокрутить до 21–22.10.2026. События находятся в одной горизонтальной строке; отметка «19 событий» раскрывает общий список с временем каждого действия. Временный сервер работает, пока запущены локальный backend и SSH-туннель.
+
+#### Плавающая подсказка, почасовая шкала и широкое окно — 23.10.2026
+
+- [x] Подсказка события вынесена в отдельный фиксированный слой и больше не раздвигает подробное окно или дневную полосу.
+- [x] Подсказка автоматически открывается снизу либо сверху в зависимости от свободного места, остаётся внутри экрана и прокручивает длинное содержимое внутри себя.
+- [x] При прокрутке и изменении размера окна позиция пересчитывается; повторная отрисовка и закрытие удаляют подсказку и обработчики.
+- [x] Над полосой добавлена почасовая разметка `00:00`–`24:00`, синхронизированная с масштабом 1/2/4.
+- [x] Подробное окно увеличено до `1470px`: это в 1,5 раза шире панели общего списка сотрудников `980px`; на узком экране ширина остаётся адаптивной.
+- [x] Локальные проверки завершены: frontend — `140 passed`; браузерные frontend-тесты — `36 passed`; пакет — `23 passed`.
+- [x] Собран кандидат `3.0.24`: 25 runtime-файлов, `57 940` байт, SHA-256 `C5695C76496F207D3689618ECDD940CB922CDC4A5686618F69AA57174A2B4A0E`.
+- [ ] Загрузить кандидат `3.0.24` в amoCRM и визуально подтвердить направление подсказки, неподвижность окна, почасовую разметку и новую ширину.
+
+Созданные и изменённые файлы этой фазы: `frontend/monitoring/timeline.js`, `frontend/monitoring/styles.css`, `frontend/tests/monitoring-timeline.test.js`, `frontend/tests/monitoring.spec.js`, `frontend/tests/widget-lifecycle.test.js`, `widget/manifest.json`, `widget/script.js`, `validate_widget_zip.py`, `test_widget_package.py`, `docs/release-checklist.md`, `docs/superpowers/specs/2026-10-23-floating-activity-tooltip-design.md`, `docs/superpowers/plans/2026-10-23-floating-activity-tooltip.md`, `Plan.md`.
+
+Что уже можно проверить локально: почасовые отметки, открытие подсказки сверху и снизу без изменения размеров содержимого и подробное окно шириной в 1,5 раза больше панели сотрудников. Живая проверка начнётся после загрузки `3.0.24` в приватную интеграцию.
