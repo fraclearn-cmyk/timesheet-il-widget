@@ -89,6 +89,111 @@ def test_activity_range_validation_has_stable_public_errors(scoped_client):
     assert too_large.headers["X-Request-Id"] == error["request_id"]
 
 
+def test_activity_days_expose_session_based_timeline_bounds(
+    scoped_client, db, monkeypatch
+):
+    now = datetime(2026, 10, 24, 13)
+    monkeypatch.setattr("app.services.team_service.utc_now", lambda: now)
+    group = db.get(WidgetGroup, 10)
+    group.timezone = "UTC"
+    group.work_start_time = time(9)
+    group.work_end_time = time(18)
+    db.add_all(
+        [
+            WorkSession(
+                id=701,
+                amocrm_user_id=102,
+                amocrm_account_id=10,
+                user_name="Employee",
+                start_time=datetime(2026, 10, 22, 9),
+                end_time=datetime(2026, 10, 22, 10),
+                current_status=WorkStatus.FINISHED,
+            ),
+            WorkSession(
+                id=702,
+                amocrm_user_id=102,
+                amocrm_account_id=10,
+                user_name="Employee",
+                start_time=datetime(2026, 10, 22, 14),
+                end_time=datetime(2026, 10, 22, 20, 30),
+                current_status=WorkStatus.FINISHED,
+            ),
+            WorkSession(
+                id=703,
+                amocrm_user_id=102,
+                amocrm_account_id=10,
+                user_name="Employee",
+                start_time=datetime(2026, 10, 24, 10),
+                current_status=WorkStatus.WORKING,
+            ),
+            WorkSession(
+                id=704,
+                amocrm_user_id=102,
+                amocrm_account_id=11,
+                user_name="Foreign employee",
+                start_time=datetime(2026, 10, 23, 5),
+                end_time=datetime(2026, 10, 23, 23),
+                current_status=WorkStatus.FINISHED,
+            ),
+        ]
+    )
+    db.commit()
+
+    response = scoped_client("admin").get(
+        "/api/v1/team/2/activity?from=2026-10-22&to=2026-10-24"
+    )
+
+    assert response.status_code == 200, response.text
+    days = response.json()["days"]
+    assert (days[0]["timeline_started_at"], days[0]["timeline_ended_at"]) == (
+        "2026-10-22T09:00:00Z",
+        "2026-10-22T20:30:00Z",
+    )
+    assert (days[1]["timeline_started_at"], days[1]["timeline_ended_at"]) == (
+        "2026-10-23T09:00:00Z",
+        "2026-10-23T18:00:00Z",
+    )
+    assert (days[2]["timeline_started_at"], days[2]["timeline_ended_at"]) == (
+        "2026-10-24T10:00:00Z",
+        "2026-10-24T18:00:00Z",
+    )
+    assert days[0]["started_at"] == "2026-10-22T00:00:00Z"
+    assert days[0]["shift_started_at"] == "2026-10-22T09:00:00Z"
+
+
+def test_activity_day_keeps_positive_overnight_timeline(scoped_client, db, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.team_service.utc_now", lambda: datetime(2026, 10, 25, 8)
+    )
+    group = db.get(WidgetGroup, 10)
+    group.timezone = "UTC"
+    group.work_start_time = time(22)
+    group.work_end_time = time(6)
+    db.add(
+        WorkSession(
+            id=705,
+            amocrm_user_id=102,
+            amocrm_account_id=10,
+            user_name="Employee",
+            start_time=datetime(2026, 10, 24, 22),
+            end_time=datetime(2026, 10, 25, 7),
+            current_status=WorkStatus.FINISHED,
+        )
+    )
+    db.commit()
+
+    response = scoped_client("admin").get(
+        "/api/v1/team/2/activity?from=2026-10-24&to=2026-10-24"
+    )
+
+    assert response.status_code == 200, response.text
+    day = response.json()["days"][0]
+    assert day["timeline_started_at"] == "2026-10-24T22:00:00Z"
+    assert day["timeline_ended_at"] == "2026-10-25T07:00:00Z"
+    assert day["started_at"] == "2026-10-24T00:00:00Z"
+    assert day["ended_at"] == "2026-10-25T00:00:00Z"
+
+
 def test_dst_overnight_window_clips_splits_and_resolves_safe_evidence(
     scoped_client, db
 ):
@@ -354,7 +459,7 @@ def test_detail_query_count_and_duplicate_external_ids_stay_account_scoped(
     assert response.status_code == 200
     assert response.json()["target"]["id"] == 2
     assert response.json()["days"][2]["intervals"] == []
-    assert selects == 4
+    assert selects == 5
 
 
 def test_evidence_queries_stay_inside_request_window_and_account(scoped_client, db):

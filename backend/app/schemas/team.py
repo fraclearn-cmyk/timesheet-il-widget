@@ -52,6 +52,8 @@ class TeamMemberSummary(_StrictTeamModel):
     timezone: str
     workday_started_at: datetime
     workday_ended_at: datetime
+    timeline_started_at: datetime
+    timeline_ended_at: datetime
     status: Literal["working", "on_break", "finished", "not_started"]
     status_since: datetime | None
     session_started_at: datetime | None
@@ -122,6 +124,8 @@ class ActivityWindowDay(_StrictTeamModel):
     ended_at: datetime
     shift_started_at: datetime
     shift_ended_at: datetime
+    timeline_started_at: datetime
+    timeline_ended_at: datetime
     confirmed_seconds: int
     confirmed_events: int
     unconfirmed_seconds: int

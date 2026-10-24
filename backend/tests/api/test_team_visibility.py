@@ -69,10 +69,13 @@ def test_role_visibility_filters_and_stable_errors(scoped_client, db, monkeypatc
     assert payload["groups"][0]["report_max_date"] == "2026-09-28"
     assert [row["amocrm_user_id"] for row in payload["employees"]] == [105]
     assert all(row["account_id"] == 10 for row in payload["employees"])
+    assert payload["employees"][0]["timeline_started_at"] == "2026-09-28T06:00:00Z"
+    assert payload["employees"][0]["timeline_ended_at"] == "2026-09-28T15:00:00Z"
 
     employee = scoped_client("employee").get("/api/v1/team/status")
     assert [row["id"] for row in employee.json()["employees"]] == [2]
     assert employee.json()["employees"][0]["activity_detail_allowed"] is False
+    assert employee.json()["employees"][0]["timeline_started_at"] == "2026-09-28T06:00:00Z"
 
     admin = scoped_client("admin").get("/api/v1/team/status")
     assert {row["id"] for row in admin.json()["employees"]} == {1, 2, 3, 5, 7}
@@ -330,6 +333,8 @@ def test_status_workday_and_aggregate_contract(scoped_client, db, monkeypatch):
     row = rows[2]
     assert row["workday_started_at"] == "2026-09-28T09:00:00Z"
     assert row["workday_ended_at"] == "2026-09-28T18:00:00Z"
+    assert row["timeline_started_at"] == "2026-09-28T08:30:00Z"
+    assert row["timeline_ended_at"] == "2026-09-28T16:30:00Z"
     assert row["session_started_at"] == "2026-09-28T08:30:00Z"
     # Фактическая смена учитывается целиком в пределах календарного дня,
     # даже если сотрудник начал работу раньше настроенного графика.
@@ -443,6 +448,8 @@ def test_status_includes_after_hours_sessions_and_activity(
     row = next(item for item in response.json()["employees"] if item["id"] == 2)
     assert row["workday_started_at"] == "2026-09-28T09:00:00Z"
     assert row["workday_ended_at"] == "2026-09-28T18:00:00Z"
+    assert row["timeline_started_at"] == "2026-09-28T09:00:00Z"
+    assert row["timeline_ended_at"] == "2026-09-28T20:30:00Z"
     assert row["status"] == "working"
     assert row["session_started_at"] == "2026-09-28T20:00:00Z"
     assert row["work_seconds"] == 5_400

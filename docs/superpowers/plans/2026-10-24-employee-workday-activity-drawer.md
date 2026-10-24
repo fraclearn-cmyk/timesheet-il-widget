@@ -93,15 +93,15 @@ Commit: `feat: calculate employee activity ranges`
 - Consumes: `activity_timeline_bounds(...)` from Task 1 and `WorkSession` rows scoped by `(account_id, amocrm_user_id)`.
 - Produces: required `timeline_started_at: datetime` and `timeline_ended_at: datetime` on `TeamMemberSummary` and `ActivityWindowDay`.
 
-- [ ] **Step 1: Write failing API tests for the detailed seven-day response**
+- [x] **Step 1: Write failing API tests for the detailed seven-day response**
 
 Extend `test_activity_window.py` with exact assertions for no-session fallback, two completed sessions, overtime, an open session under fixed server time, an overnight shift, and tenant isolation. Assert legacy calendar/shift fields stay unchanged.
 
-- [ ] **Step 2: Write failing API tests for the monitoring response**
+- [x] **Step 2: Write failing API tests for the monitoring response**
 
 Extend `test_team_visibility.py` so the current-day summary exposes the same authoritative bounds for administrator and manager responses while an employee cannot gain access to another user's data.
 
-- [ ] **Step 3: Run the focused API tests and confirm RED**
+- [x] **Step 3: Run the focused API tests and confirm RED**
 
 Run from `backend`:
 
@@ -109,17 +109,17 @@ Run from `backend`:
 
 Expected: failures because the two timeline fields are absent.
 
-- [ ] **Step 4: Implement account-scoped session loading and schema fields**
+- [x] **Step 4: Implement account-scoped session loading and schema fields**
 
 Add the two datetime fields to both schemas. In `TeamService`, fetch all relevant sessions in bounded queries, group them by employee/day, call Task 1's helper, and serialize UTC values. Keep query count independent of employee count and avoid per-employee database queries.
 
-- [ ] **Step 5: Document and verify GREEN**
+- [x] **Step 5: Document and verify GREEN**
 
 Document both response fields and their eight-hour/fallback meaning in `docs/api-contract.md`.
 
 Run the focused tests plus the existing query-count tests for 50 users/accounts. Expected: all pass and query counts remain bounded.
 
-- [ ] **Step 6: Update phase status and commit**
+- [x] **Step 6: Update phase status and commit**
 
 Mark Task 2 complete in `Plan.md` and record the test totals.
 

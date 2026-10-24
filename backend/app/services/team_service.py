@@ -13,6 +13,7 @@ from app.models.widget_group import WidgetGroup
 from app.models.crm_event import CrmEvent
 from app.models.call_event import CallEvent
 from app.core.access_policy import AccessPolicy, RequestContext
+from app.core.activity_timeline_range import activity_timeline_bounds
 from app.core.business_time import (
     business_date,
     local_date_range_utc_bounds,
@@ -180,6 +181,23 @@ class TeamService:
 
         zone_name = group.timezone if group is not None else "UTC"
         utc_start, utc_end = local_date_range_utc_bounds(from_date, to_date, zone_name)
+        now = utc_now()
+        if now.tzinfo is not None:
+            now = now.astimezone(timezone.utc).replace(tzinfo=None)
+        sessions = (
+            self.db.query(WorkSession)
+            .filter(
+                WorkSession.amocrm_account_id == context.account_id,
+                WorkSession.amocrm_user_id == target.amocrm_user_id,
+                WorkSession.start_time < utc_end,
+                or_(
+                    WorkSession.end_time.is_(None),
+                    WorkSession.end_time > utc_start,
+                ),
+            )
+            .order_by(WorkSession.start_time, WorkSession.id)
+            .all()
+        )
         intervals = (
             self.db.query(ActivityInterval)
             .filter(
@@ -294,6 +312,20 @@ class TeamService:
                     group.work_start_time,
                     group.work_end_time,
                 )
+            day_sessions = [
+                (session.start_time, session.end_time)
+                for session in sessions
+                if session.start_time < day_end
+                and (session.end_time is None or session.end_time > day_start)
+            ]
+            timeline_start, timeline_end = activity_timeline_bounds(
+                day_start=day_start,
+                day_end=day_end,
+                scheduled_start=shift_start,
+                scheduled_end=shift_end,
+                sessions=day_sessions,
+                now=now,
+            )
             dto_intervals: list[ActivityWindowInterval] = []
             confirmed_ranges: list[tuple[datetime, datetime]] = []
             unconfirmed_ranges: list[tuple[datetime, datetime]] = []
@@ -358,6 +390,8 @@ class TeamService:
                     ended_at=self._utc(day_end),
                     shift_started_at=self._utc(shift_start),
                     shift_ended_at=self._utc(shift_end),
+                    timeline_started_at=self._utc(timeline_start),
+                    timeline_ended_at=self._utc(timeline_end),
                     confirmed_seconds=self._merged_seconds(confirmed_ranges),
                     confirmed_events=len(day_confirmed_ids),
                     unconfirmed_seconds=self._merged_seconds(unconfirmed_ranges),
@@ -642,6 +676,17 @@ class TeamService:
                 and bool(membership.track_time)
                 and group is not None
             )
+            timeline_start, timeline_end = activity_timeline_bounds(
+                day_start=day_start,
+                day_end=day_end,
+                scheduled_start=workday_start,
+                scheduled_end=workday_end,
+                sessions=[
+                    (session.start_time, session.end_time)
+                    for session in user_sessions
+                ],
+                now=now,
+            )
             employees.append(
                 TeamMemberSummary(
                     id=user.id,
@@ -654,6 +699,8 @@ class TeamService:
                     timezone=timezone_name,
                     workday_started_at=self._utc(workday_start),
                     workday_ended_at=self._utc(workday_end),
+                    timeline_started_at=self._utc(timeline_start),
+                    timeline_ended_at=self._utc(timeline_end),
                     status=canonical_status,
                     status_since=self._utc(status_since),
                     session_started_at=(
