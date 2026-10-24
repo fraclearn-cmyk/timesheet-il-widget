@@ -50,14 +50,15 @@
 .ts-monitoring__employee--working::before { background: #22a06b; }
 .ts-monitoring__employee--on_break::before { background: #f79009; }
 .ts-monitoring__employee--finished::before { background: #667085; }
+.ts-monitoring__employee[role="button"] { cursor: pointer; }
+.ts-monitoring__employee[role="button"]:hover { background: #f8faff; }
+.ts-monitoring__employee[role="button"]:focus-visible { border-radius: 6px; outline: 2px solid #2563eb; outline-offset: -2px; }
 .ts-monitoring__identity { display: flex; flex-direction: column; }
 .ts-monitoring__employee-status,
 .ts-monitoring__metrics,
 .ts-monitoring__shift { color: #667085; font-size: 12px; }
 .ts-monitoring__inline-activity { display: block; min-width: 0; padding: 4px 0 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
-button.ts-monitoring__inline-activity { cursor: pointer; }
-button.ts-monitoring__inline-activity:hover .ts-monitoring__activity-track { border-color: #84adff; background: #eef4ff; }
-button.ts-monitoring__inline-activity:focus-visible { border-radius: 5px; outline: 2px solid #2563eb; outline-offset: 3px; }
+.ts-monitoring__employee[role="button"]:hover .ts-monitoring__activity-track { border-color: #84adff; background: #eef4ff; }
 .ts-monitoring__activity-track { position: relative; display: block; height: 14px; overflow: hidden; border: 1px solid #d0d5dd; border-radius: 7px; background: #f2f4f7; }
 .ts-monitoring__activity-track::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), rgba(152, 162, 179, .35) 25%); pointer-events: none; }
 .ts-monitoring__activity-segment { position: absolute; top: 1px; bottom: 1px; z-index: 1; min-width: 2px; border-radius: 2px; background: #32c766; }

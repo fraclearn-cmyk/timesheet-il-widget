@@ -23,12 +23,14 @@ test('admin dashboard renders seven-day activity, safe tooltip, gaps, zoom, full
     const employees = [
       { id: 2, amocrm_user_id: 102, account_id: 1, name: 'Анна', avatar_url: null, group_id: 10,
         group_name: 'Продажи', timezone: 'Europe/Moscow', workday_started_at: '2026-09-29T06:00:00Z',
-        workday_ended_at: '2026-09-29T15:00:00Z', status: 'working', status_since: '2026-09-29T06:00:00Z',
+        workday_ended_at: '2026-09-29T15:00:00Z', timeline_started_at: '2026-09-29T06:00:00Z',
+        timeline_ended_at: '2026-09-29T14:00:00Z', status: 'working', status_since: '2026-09-29T06:00:00Z',
         session_started_at: '2026-09-29T06:00:00Z', session_ended_at: null, work_seconds: 3600,
         break_seconds: 60, confirmed_seconds: 1800, confirmed_events: 1, activity_detail_allowed: true },
       { id: 3, amocrm_user_id: 103, account_id: 1, name: 'Борис', avatar_url: null, group_id: 20,
         group_name: 'Поддержка', timezone: 'Europe/Moscow', workday_started_at: '2026-09-29T06:00:00Z',
-        workday_ended_at: '2026-09-29T15:00:00Z', status: 'not_started', status_since: null,
+        workday_ended_at: '2026-09-29T15:00:00Z', timeline_started_at: '2026-09-29T06:00:00Z',
+        timeline_ended_at: '2026-09-29T15:00:00Z', status: 'not_started', status_since: null,
         session_started_at: null, session_ended_at: null, work_seconds: 0,
         break_seconds: 0, confirmed_seconds: 0, confirmed_events: 0, activity_detail_allowed: false },
     ];
@@ -61,6 +63,9 @@ test('admin dashboard renders seven-day activity, safe tooltip, gaps, zoom, full
 
   await expect(page.locator('.ts-monitoring__group-title')).toHaveText(['Продажи', 'Поддержка']);
   await expect(page.locator('[data-activity-user-id]')).toHaveCount(1);
+  await expect(page.locator('[data-activity-user-id="2"]')).toHaveAttribute('role', 'button');
+  await expect(page.locator('[data-activity-user-id="2"]')).toHaveAttribute('tabindex', '0');
+  await expect(page.locator('[data-activity-user-id="2"] button')).toHaveCount(0);
   await page.locator('[data-activity-user-id="2"]').click();
   await expect(page.locator('.ts-activity-modal__day')).toHaveCount(7);
   const detailWidth = await page.locator('.ts-activity-modal__panel').evaluate((node) => node.getBoundingClientRect().width);
@@ -128,6 +133,7 @@ test('server-scoped manager and employee views render only delivered rows and pe
     function employee(id, name, allowed) {
       return { id, amocrm_user_id: 100 + id, account_id: 1, name, avatar_url: null, group_id: 10, group_name: 'Продажи',
         timezone: 'Europe/Moscow', workday_started_at: '2026-09-29T06:00:00Z', workday_ended_at: '2026-09-29T15:00:00Z',
+        timeline_started_at: '2026-09-29T06:00:00Z', timeline_ended_at: '2026-09-29T14:00:00Z',
         status: 'working', status_since: null, session_started_at: null, session_ended_at: null, work_seconds: 0,
         break_seconds: 0, confirmed_seconds: 0, confirmed_events: 0, activity_detail_allowed: allowed };
     }

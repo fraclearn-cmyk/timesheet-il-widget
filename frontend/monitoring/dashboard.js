@@ -51,48 +51,46 @@
     return `${value.year}-${value.month}-${value.day}`;
   }
 
-  function minuteOfDay(value, timezone) {
-    const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) return null;
-    try {
-      const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: timezone || 'UTC', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-      }).formatToParts(date);
-      const clockParts = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-      return (Number(clockParts.hour) * 60) + Number(clockParts.minute);
-    } catch (_error) {
-      return null;
-    }
+  function timelineRange(employee) {
+    const start = Date.parse(employee.timeline_started_at || employee.workday_started_at);
+    const end = Date.parse(employee.timeline_ended_at || employee.workday_ended_at);
+    return Number.isFinite(start) && Number.isFinite(end) && end > start ? { start, end } : null;
+  }
+
+  function timelineTicks(range, timezone) {
+    if (!range) return ['—', '—', '—', '—', '—'];
+    return [0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+      clock(new Date(range.start + ((range.end - range.start) * ratio)).toISOString(), timezone)
+    ));
   }
 
   function activityScale(document, employee) {
-    const canOpen = Boolean(employee.activity_detail_allowed);
-    const scale = element(document, canOpen ? 'button' : 'div', 'ts-monitoring__inline-activity');
-    if (canOpen) {
-      scale.type = 'button';
-      scale.dataset.activityUserId = String(employee.id);
-    }
+    const scale = element(document, 'div', 'ts-monitoring__inline-activity');
     scale.setAttribute('aria-label', `Активность: ${employee.name}`);
     const track = element(document, 'span', 'ts-monitoring__activity-track');
+    const range = timelineRange(employee);
     for (const source of Array.isArray(employee.activity_segments) ? employee.activity_segments : []) {
-      const start = minuteOfDay(source.started_at, employee.timezone);
-      if (start === null) continue;
-      const segment = element(document, 'span', 'ts-monitoring__activity-segment');
+      if (!range) break;
+      const start = Date.parse(source.started_at);
+      const end = Date.parse(source.ended_at);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
       const point = Boolean(source.is_point) || source.started_at === source.ended_at;
-      segment.style.left = `${(start / 1440) * 100}%`;
+      if (point && (start < range.start || start > range.end)) continue;
+      const visibleStart = Math.max(start, range.start);
+      const visibleEnd = Math.min(end, range.end);
+      if (!point && (end <= start || visibleEnd <= visibleStart)) continue;
+      const segment = element(document, 'span', 'ts-monitoring__activity-segment');
+      segment.style.left = `${((visibleStart - range.start) / (range.end - range.start)) * 100}%`;
       if (point) {
         segment.classList.add('ts-monitoring__activity-segment--point');
       } else {
-        const durationMinutes = Math.max(0, (Date.parse(source.ended_at) - Date.parse(source.started_at)) / 60000);
-        const visibleMinutes = Math.min(durationMinutes, Math.max(0, 1440 - start));
-        if (!Number.isFinite(visibleMinutes) || visibleMinutes <= 0) continue;
-        segment.style.width = `${(visibleMinutes / 1440) * 100}%`;
+        segment.style.width = `${((visibleEnd - visibleStart) / (range.end - range.start)) * 100}%`;
       }
       track.appendChild(segment);
     }
     scale.appendChild(track);
     const ticks = element(document, 'span', 'ts-monitoring__activity-ticks');
-    ['00:00', '06:00', '12:00', '18:00', '24:00'].forEach((label) => {
+    timelineTicks(range, employee.timezone).forEach((label) => {
       ticks.appendChild(element(document, 'span', 'ts-monitoring__activity-tick', label));
     });
     scale.appendChild(ticks);
@@ -208,6 +206,11 @@
     function employeeRow(employee) {
       const row = element(document, 'article', `ts-monitoring__employee ts-monitoring__employee--${employee.status}`);
       row.dataset.userId = String(employee.id);
+      if (employee.activity_detail_allowed) {
+        row.dataset.activityUserId = String(employee.id);
+        row.setAttribute('role', 'button');
+        row.tabIndex = 0;
+      }
       const identity = element(document, 'div', 'ts-monitoring__identity');
       identity.appendChild(element(document, 'strong', 'ts-monitoring__name', String(employee.name || 'Сотрудник')));
       identity.appendChild(element(document, 'span', 'ts-monitoring__employee-status', STATUS_LABELS[employee.status] || 'Статус неизвестен'));
@@ -325,6 +328,15 @@
       const employee = (latestResponse.employees || []).find((item) => String(item.id) === button.dataset.activityUserId);
       if (employee && employee.activity_detail_allowed) openActivity(employee, button);
     }
+    function onContentKeydown(event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const row = event.target && event.target.closest && event.target.closest('[data-activity-user-id]');
+      if (!row || !content.contains(row) || !latestResponse) return;
+      const employee = (latestResponse.employees || []).find((item) => String(item.id) === row.dataset.activityUserId);
+      if (!employee || !employee.activity_detail_allowed) return;
+      event.preventDefault();
+      openActivity(employee, row);
+    }
     function onVisibility() {
       if (document.hidden) { refreshQueued = false; cancelTimer(); if (statusAbort) statusAbort.abort(); }
       else refresh();
@@ -334,6 +346,7 @@
     listen(group, 'change', onFilter);
     listen(refreshButton, 'click', refresh);
     listen(content, 'click', onContentClick);
+    listen(content, 'keydown', onContentKeydown);
     listen(document, 'visibilitychange', onVisibility);
 
     const ready = refresh();

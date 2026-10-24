@@ -140,25 +140,25 @@ Commit: `feat: expose workday activity bounds`
 - Consumes: `employee.timeline_started_at`, `employee.timeline_ended_at`, activity segments and `activity_detail_allowed`.
 - Produces: `activityScale(document, employee)` relative to the supplied range and an accessible employee row that emits the existing employee-selection behavior by mouse, `Enter`, or `Space`.
 
-- [ ] **Step 1: Write failing Node tests for range-relative rendering**
+- [x] **Step 1: Write failing Node tests for range-relative rendering**
 
 Assert a `09:00–17:00` range places `13:00` at 50%, clips partially overlapping segments, skips invalid segments safely, and renders five labels `09:00`, `11:00`, `13:00`, `15:00`, `17:00` instead of 24-hour labels.
 
-- [ ] **Step 2: Write failing interaction tests**
+- [x] **Step 2: Write failing interaction tests**
 
 Assert the employee article is focusable only when `activity_detail_allowed=true`; click, `Enter`, and `Space` open that employee; users without permission remain noninteractive; the inline scale is not a nested button.
 
-- [ ] **Step 3: Run monitoring tests and confirm RED**
+- [x] **Step 3: Run monitoring tests and confirm RED**
 
 Run: `node --test frontend/tests/monitoring-dashboard.test.js`
 
 Expected: failures showing 1440-minute placement and missing row keyboard behavior.
 
-- [ ] **Step 4: Implement range utilities and row behavior**
+- [x] **Step 4: Implement range utilities and row behavior**
 
 Add focused helpers for parsing bounds, formatting five ticks and projecting segments. Reuse `openActivity(employee, row)`; preserve request cancellation, polling, filters and role behavior.
 
-- [ ] **Step 5: Verify Node and browser GREEN**
+- [x] **Step 5: Verify Node and browser GREEN**
 
 Run:
 
@@ -167,7 +167,7 @@ Run:
 
 Expected: all monitoring-list tests pass and no nested interactive element appears.
 
-- [ ] **Step 6: Update phase status and commit**
+- [x] **Step 6: Update phase status and commit**
 
 Mark Task 3 complete in `Plan.md` and record files and test totals.
 

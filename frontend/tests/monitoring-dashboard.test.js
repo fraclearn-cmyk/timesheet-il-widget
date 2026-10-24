@@ -12,16 +12,19 @@ function response(overrides = {}) {
     employees: [
       { id: 2, amocrm_user_id: 102, account_id: 1, name: 'Анна', avatar_url: null, group_id: 10,
         group_name: 'Продажи', timezone: 'Europe/Moscow', workday_started_at: '2026-09-29T06:00:00Z',
-        workday_ended_at: '2026-09-29T15:00:00Z', status: 'working', status_since: '2026-09-29T06:00:00Z',
+        workday_ended_at: '2026-09-29T15:00:00Z', timeline_started_at: '2026-09-29T06:00:00Z',
+        timeline_ended_at: '2026-09-29T14:00:00Z', status: 'working', status_since: '2026-09-29T06:00:00Z',
         session_started_at: '2026-09-29T06:00:00Z', session_ended_at: null, work_seconds: 3600,
         break_seconds: 60, confirmed_seconds: 600, confirmed_events: 2, activity_detail_allowed: true,
         activity_segments: [
-          { started_at: '2026-09-29T06:00:00Z', ended_at: '2026-09-29T06:30:00Z', is_point: false },
-          { started_at: '2026-09-29T09:00:00Z', ended_at: '2026-09-29T09:00:00Z', is_point: true },
+          { started_at: '2026-09-29T05:30:00Z', ended_at: '2026-09-29T06:30:00Z', is_point: false },
+          { started_at: '2026-09-29T10:00:00Z', ended_at: '2026-09-29T10:00:00Z', is_point: true },
+          { started_at: 'invalid', ended_at: 'invalid', is_point: false },
         ] },
       { id: 3, amocrm_user_id: 103, account_id: 1, name: 'Борис', avatar_url: null, group_id: 20,
         group_name: 'Поддержка', timezone: 'Europe/Moscow', workday_started_at: '2026-09-29T06:00:00Z',
-        workday_ended_at: '2026-09-29T15:00:00Z', status: 'not_started', status_since: null,
+        workday_ended_at: '2026-09-29T15:00:00Z', timeline_started_at: '2026-09-29T06:00:00Z',
+        timeline_ended_at: '2026-09-29T15:00:00Z', status: 'not_started', status_since: null,
         session_started_at: null, session_ended_at: null, work_seconds: 0, break_seconds: 0,
         confirmed_seconds: 0, confirmed_events: 0, activity_detail_allowed: false, activity_segments: [] },
     ],
@@ -88,24 +91,37 @@ test('renders grouped rows, totals, Russian statuses, and activity permission', 
   fixture.dashboard.destroy();
 });
 
-test('renders a 24-hour inline activity scale and opens detail from the scale', async () => {
+test('renders a workday-relative inline activity scale', async () => {
   const fixture = boot();
   await fixture.dashboard.ready;
-  const timeline = fixture.document.querySelector('[data-activity-user-id="2"].ts-monitoring__inline-activity');
+  const timeline = fixture.document.querySelector('[data-user-id="2"] .ts-monitoring__inline-activity');
   assert.ok(timeline);
   assert.equal(timeline.getAttribute('aria-label'), 'Активность: Анна');
   assert.deepEqual(
     Array.from(timeline.querySelectorAll('.ts-monitoring__activity-tick'), (node) => node.textContent),
-    ['00:00', '06:00', '12:00', '18:00', '24:00'],
+    ['09:00', '11:00', '13:00', '15:00', '17:00'],
   );
   const segments = timeline.querySelectorAll('.ts-monitoring__activity-segment');
   assert.equal(segments.length, 2);
-  assert.equal(segments[0].style.left, '37.5%');
-  assert.equal(segments[0].style.width, '2.083333333333333%');
+  assert.equal(segments[0].style.left, '0%');
+  assert.equal(segments[0].style.width, '6.25%');
+  assert.equal(segments[1].style.left, '50%');
   assert.equal(segments[1].classList.contains('ts-monitoring__activity-segment--point'), true);
-  timeline.click();
-  await tick();
-  assert.equal(fixture.calls.at(-1).kind, 'activity');
+  fixture.dashboard.destroy();
+});
+
+test('opens an allowed employee row by click, Enter, and Space without a nested button', async () => {
+  const fixture = boot();
+  await fixture.dashboard.ready;
+  const row = fixture.document.querySelector('[data-user-id="2"]');
+  assert.equal(row.getAttribute('role'), 'button');
+  assert.equal(row.getAttribute('tabindex'), '0');
+  assert.equal(row.querySelector('.ts-monitoring__inline-activity').tagName, 'DIV');
+  assert.equal(row.querySelector('button'), null);
+  row.click(); await tick();
+  row.dispatchEvent(new fixture.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await tick();
+  row.dispatchEvent(new fixture.dom.window.KeyboardEvent('keydown', { key: ' ', bubbles: true })); await tick();
+  assert.equal(fixture.calls.filter((call) => call.kind === 'activity').length, 3);
   assert.equal(fixture.calls.at(-1).userId, 2);
   fixture.dashboard.destroy();
 });
@@ -117,6 +133,8 @@ test('keeps an empty read-only activity scale visible without a detail request',
   const timeline = row.querySelector('.ts-monitoring__inline-activity');
   assert.ok(timeline);
   assert.equal(timeline.tagName, 'DIV');
+  assert.equal(row.hasAttribute('role'), false);
+  assert.equal(row.hasAttribute('tabindex'), false);
   assert.equal(timeline.querySelectorAll('.ts-monitoring__activity-segment').length, 0);
   timeline.click();
   await tick();
