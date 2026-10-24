@@ -42,7 +42,7 @@
 - Consumes: UTC-aware `day_start`, `day_end`, configured `scheduled_start`, `scheduled_end`, session `(start, optional end)` pairs, and a fixed UTC `now`.
 - Produces: `activity_timeline_bounds(*, day_start: datetime, day_end: datetime, scheduled_start: datetime, scheduled_end: datetime, sessions: Sequence[tuple[datetime, datetime | None]], now: datetime, minimum: timedelta = timedelta(hours=8)) -> tuple[datetime, datetime]`.
 
-- [ ] **Step 1: Write failing unit tests**
+- [x] **Step 1: Write failing unit tests**
 
 Add tests named:
 
@@ -55,23 +55,23 @@ Add tests named:
 
 Assert exact UTC start/end values and verify input sessions outside the relevant local day do not change the range.
 
-- [ ] **Step 2: Run tests and confirm RED**
+- [x] **Step 2: Run tests and confirm RED**
 
 Run from `backend`: `..\.venv312\Scripts\python.exe -m pytest tests/unit/test_activity_timeline_range.py -q`
 
 Expected: collection/import failure because `activity_timeline_bounds` does not exist.
 
-- [ ] **Step 3: Implement the helper**
+- [x] **Step 3: Implement the helper**
 
 Create the exact signature above. Normalize datetimes to UTC, select intersecting sessions, use earliest start/latest natural end, apply the eight-hour minimum, and keep a positive range for an overnight interval. Do not import SQLAlchemy models into the core helper.
 
-- [ ] **Step 4: Run unit tests and confirm GREEN**
+- [x] **Step 4: Run unit tests and confirm GREEN**
 
 Run: `..\.venv312\Scripts\python.exe -m pytest tests/unit/test_activity_timeline_range.py -q`
 
 Expected: all new tests pass.
 
-- [ ] **Step 5: Update phase status and commit**
+- [x] **Step 5: Update phase status and commit**
 
 Mark Task 1 complete in `Plan.md`, list created files and what can be tested.
 
