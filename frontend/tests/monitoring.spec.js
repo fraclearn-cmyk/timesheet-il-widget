@@ -42,6 +42,7 @@ test('admin dashboard renders seven-day activity, safe tooltip, gaps, zoom, full
       const next = String(24 + index).padStart(2, '0');
       return { date: `2026-09-${day}`, started_at: `2026-09-${day}T00:00:00Z`, ended_at: `2026-09-${next}T00:00:00Z`,
         shift_started_at: `2026-09-${day}T06:00:00Z`, shift_ended_at: `2026-09-${day}T15:00:00Z`,
+        timeline_started_at: `2026-09-${day}T06:00:00Z`, timeline_ended_at: `2026-09-${day}T14:00:00Z`,
         confirmed_seconds: index === 0 ? 1800 : 0, confirmed_events: index === 0 ? 1 : 0, unconfirmed_seconds: 0,
         intervals: index === 0 ? [{ id: 1, started_at: `2026-09-${day}T08:00:00Z`, ended_at: `2026-09-${day}T08:30:00Z`,
           duration_seconds: 1800, kind: 'confirmed', source: 'crm_event', duration_source: 'calculated',
@@ -66,11 +67,14 @@ test('admin dashboard renders seven-day activity, safe tooltip, gaps, zoom, full
   await expect(page.locator('[data-activity-user-id="2"]')).toHaveAttribute('role', 'button');
   await expect(page.locator('[data-activity-user-id="2"]')).toHaveAttribute('tabindex', '0');
   await expect(page.locator('[data-activity-user-id="2"] button')).toHaveCount(0);
+  const hostBefore = await page.locator('.ts-monitoring-widget__panel').boundingBox();
   await page.locator('[data-activity-user-id="2"]').click();
   await expect(page.locator('.ts-activity-modal__day')).toHaveCount(7);
-  const detailWidth = await page.locator('.ts-activity-modal__panel').evaluate((node) => node.getBoundingClientRect().width);
-  expect(detailWidth).toBe(520);
-  await expect(page.locator('.ts-timeline__hour-label')).toHaveCount(25 * 7);
+  const detailBounds = await page.locator('.ts-activity-modal__panel').boundingBox();
+  expect(detailBounds.width).toBe(520);
+  expect(detailBounds.x + detailBounds.width).toBe(1800);
+  expect(await page.locator('.ts-monitoring-widget__panel').boundingBox()).toEqual(hostBefore);
+  await expect(page.locator('.ts-timeline__hour-label')).toHaveCount(5 * 7);
   const segment = page.locator('.ts-timeline__item--confirmed');
   await expect(segment).toHaveCount(1);
   expect(await segment.evaluate((node) => parseFloat(node.style.left))).toBeGreaterThan(0);
@@ -92,6 +96,7 @@ test('admin dashboard renders seven-day activity, safe tooltip, gaps, zoom, full
   await expect(page.locator('.ts-timeline__tooltip a')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('.ts-activity-modal')).toBeHidden();
+  await expect(page.locator('[data-activity-user-id="2"]')).toBeFocused();
   expect(await page.evaluate(() => window.transportCalls.find((call) => call.kind === 'activity')))
     .toMatchObject({ userId: 2, from: '2026-09-23', to: '2026-09-29' });
 });
@@ -105,6 +110,8 @@ test('activity tooltip stays inside a narrow viewport', async ({ page }) => {
       date: '2026-09-29',
       started_at: '2026-09-29T00:00:00Z',
       ended_at: '2026-09-30T00:00:00Z',
+      timeline_started_at: '2026-09-29T16:00:00Z',
+      timeline_ended_at: '2026-09-30T00:00:00Z',
       intervals: [{
         id: 1,
         started_at: '2026-09-29T23:50:00Z',

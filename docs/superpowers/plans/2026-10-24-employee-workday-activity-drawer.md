@@ -190,19 +190,19 @@ Commit: `feat: scale monitoring to employee workday`
 - Consumes: `ActivityWindowDay.timeline_started_at`, `timeline_ended_at`, existing intervals and payload timezone.
 - Produces: `Timeline.normalizeDay(day)` clipped to the authoritative workday range and the existing `ActivityModal.create(...)` controller rendered as one reusable right drawer.
 
-- [ ] **Step 1: Write failing timeline tests**
+- [x] **Step 1: Write failing timeline tests**
 
 Change fixtures to include timeline fields. Assert an eight-hour day has `durationMinutes=480`, hour labels use the work range, overtime widens the track, point/interval grouping remains one horizontal lane, and legacy calendar fields no longer determine placement.
 
-- [ ] **Step 2: Write failing drawer behavior and layout tests**
+- [x] **Step 2: Write failing drawer behavior and layout tests**
 
 Assert the panel is anchored right, has a `520px` desktop width, full mobile width, does not alter amoCRM content geometry, closes by close button/backdrop/`Escape`, restores focus, preserves fullscreen and zoom, and updates in place when a second employee is selected.
 
-- [ ] **Step 3: Write the stale-response regression test**
+- [x] **Step 3: Write the stale-response regression test**
 
 Start requests for employees A then B, resolve A last, and assert the single drawer still shows B with B's data.
 
-- [ ] **Step 4: Run focused tests and confirm RED**
+- [x] **Step 4: Run focused tests and confirm RED**
 
 Run:
 
@@ -211,15 +211,15 @@ Run:
 
 Expected: failures for 24-hour duration, centered modal geometry and/or stale content.
 
-- [ ] **Step 5: Implement authoritative timeline bounds**
+- [x] **Step 5: Implement authoritative timeline bounds**
 
 Update `normalizeDay(day)` to require valid timeline bounds, clip intervals to them, and keep tooltip times/durations from source data. Render five evenly spaced labels synchronized with zoom.
 
-- [ ] **Step 6: Convert the modal presentation to a drawer**
+- [x] **Step 6: Convert the modal presentation to a drawer**
 
 Keep the exported `create`, `open`, `update`, `close`, `destroy`, `isOpen` API. Change DOM/CSS behavior to a fixed right-side panel with backdrop dismissal and one reusable instance; preserve focus trap, cleanup, fullscreen and tooltip behavior.
 
-- [ ] **Step 7: Verify focused and complete frontend GREEN**
+- [x] **Step 7: Verify focused and complete frontend GREEN**
 
 Run all Node tests: `node --test frontend/tests/*.test.js`
 
@@ -227,7 +227,7 @@ Run all browser tests: `npx playwright test frontend/tests/*.spec.js`
 
 Expected: every frontend and Playwright test passes.
 
-- [ ] **Step 8: Update phase status and commit**
+- [x] **Step 8: Update phase status and commit**
 
 Mark Task 4 complete in `Plan.md`, list modified files and what can be checked locally.
 

@@ -35,6 +35,8 @@ function day(overrides = {}) {
     ended_at: '2026-03-29T23:00:00Z',
     shift_started_at: '2026-03-29T07:00:00Z',
     shift_ended_at: '2026-03-29T16:00:00Z',
+    timeline_started_at: '2026-03-29T00:00:00Z',
+    timeline_ended_at: '2026-03-29T08:00:00Z',
     confirmed_seconds: 3600,
     confirmed_events: 1,
     unconfirmed_seconds: 0,
@@ -86,18 +88,18 @@ test('normalizeDay clips intervals and keeps overlapping activity in one lane', 
       interval({ id: 1, started_at: '2026-03-28T23:30:00Z', ended_at: '2026-03-29T01:00:00Z', duration_seconds: 5400 }),
       interval({ id: 2, started_at: '2026-03-29T00:30:00Z', ended_at: '2026-03-29T01:30:00Z' }),
       interval({ id: 3, started_at: '2026-03-29T04:00:00Z', ended_at: '2026-03-29T04:00:00Z', duration_seconds: 0, duration_source: 'point' }),
-      interval({ id: 4, started_at: '2026-03-29T22:00:00Z', ended_at: '2026-03-30T02:00:00Z', kind: 'unconfirmed', source: 'unconfirmed_input' }),
+      interval({ id: 4, started_at: '2026-03-29T07:00:00Z', ended_at: '2026-03-29T10:00:00Z', kind: 'unconfirmed', source: 'unconfirmed_input' }),
     ],
   }));
 
-  assert.equal(normalized.durationMinutes, 23 * 60);
+  assert.equal(normalized.durationMinutes, 8 * 60);
   assert.equal(normalized.items[0].startMs, Date.parse('2026-03-29T00:00:00Z'));
   assert.equal(normalized.items[0].endMs, Date.parse('2026-03-29T01:00:00Z'));
   assert.equal(normalized.items[0].lane, 0);
   assert.equal(normalized.items[1].lane, 0);
   assert.equal(normalized.items[2].isPoint, true);
   assert.equal(normalized.items[2].endMs, normalized.items[2].startMs);
-  assert.equal(normalized.items[3].endMs, Date.parse('2026-03-29T23:00:00Z'));
+  assert.equal(normalized.items[3].endMs, Date.parse('2026-03-29T08:00:00Z'));
   assert.equal(normalized.laneCount, 1);
 });
 
@@ -137,21 +139,20 @@ test('render keeps one horizontal band and groups every visually overlapping ite
   dom.window.close();
 });
 
-test('render adds an hourly scale from 00:00 through 24:00', () => {
+test('render adds five evenly spaced labels for the authoritative work range', () => {
   const dom = new JSDOM('<main id="root"></main>');
   const root = dom.window.document.querySelector('#root');
   Timeline.render(root, day({
     date: '2026-03-28',
     started_at: '2026-03-28T00:00:00Z',
     ended_at: '2026-03-29T00:00:00Z',
+    timeline_started_at: '2026-03-28T09:00:00Z',
+    timeline_ended_at: '2026-03-28T17:00:00Z',
     intervals: [],
   }), { zoom: 1, timezone: 'UTC' });
 
   const labels = Array.from(root.querySelectorAll('.ts-timeline__hour-label'), (node) => node.textContent);
-  assert.equal(labels.length, 25);
-  assert.equal(labels[0], '00:00');
-  assert.equal(labels[1], '01:00');
-  assert.equal(labels.at(-1), '24:00');
+  assert.deepEqual(labels, ['09:00', '11:00', '13:00', '15:00', '17:00']);
   dom.window.close();
 });
 
@@ -194,7 +195,7 @@ test('tooltip floats outside the timeline and chooses above or below without mov
 test('layoutDay supports only zoom 1, 2, 4 without changing data durations', () => {
   const one = Timeline.layoutDay(day(), 1);
   const four = Timeline.layoutDay(day(), 4);
-  assert.equal(one.width, 23 * 60);
+  assert.equal(one.width, 8 * 60);
   assert.equal(four.width, one.width * 4);
   assert.equal(one.items[0].width, 60);
   assert.equal(four.items[0].width, 240);
@@ -218,7 +219,7 @@ test('render reserves green for confirmed spans and uses accessible point marker
   assert.equal(root.querySelectorAll('.ts-timeline__item--unconfirmed').length, 1);
   assert.equal(root.querySelector('.ts-timeline__item--point').style.width, '6px');
   assert.equal(root.querySelector('.ts-timeline__item--point').getAttribute('role'), 'button');
-  assert.equal(root.querySelector('.ts-timeline__track').style.width, '1380px');
+  assert.equal(root.querySelector('.ts-timeline__track').style.width, '480px');
   assert.equal(result.destroy instanceof Function, true);
   result.destroy();
 });
@@ -320,12 +321,12 @@ test('call without a direction uses a neutral label', () => {
   assert.equal(root.ownerDocument.querySelector('.ts-timeline__tooltip-title').textContent, 'Звонок');
 });
 
-test('render labels a 23-hour local day from explicit UTC bounds', () => {
+test('legacy calendar bounds do not control workday duration', () => {
   const dom = new JSDOM('<main id="root"></main>');
   const root = dom.window.document.querySelector('#root');
   Timeline.render(root, day(), { zoom: 1, timezone: 'Europe/Berlin' });
   assert.equal(root.querySelector('.ts-timeline__day-label').textContent, '29.03.2026');
-  assert.match(root.querySelector('.ts-timeline__duration-label').textContent, /23 ч/);
+  assert.match(root.querySelector('.ts-timeline__duration-label').textContent, /8 ч/);
 });
 
 test('modal renders totals and seven rows, updates in place, and preserves zoom', () => {
@@ -338,6 +339,9 @@ test('modal renders totals and seven rows, updates in place, and preserves zoom'
     date: `2026-03-${String(23 + index).padStart(2, '0')}`,
     started_at: `2026-03-${String(23 + index).padStart(2, '0')}T00:00:00Z`,
     ended_at: `2026-03-${String(24 + index).padStart(2, '0')}T00:00:00Z`,
+    timeline_started_at: `2026-03-${String(23 + index).padStart(2, '0')}T09:00:00Z`,
+    timeline_ended_at: `2026-03-${String(23 + index).padStart(2, '0')}T17:00:00Z`,
+    intervals: [],
   }));
   modal.open(payload({ days: sevenDays }), { trigger: opener });
   assert.equal(document.querySelectorAll('.ts-activity-modal__day').length, 7);
@@ -359,11 +363,29 @@ test('modal Escape closes, returns focus, and restores original body overflow', 
   const modal = ActivityModal.create({ document, mount: document.querySelector('#host') });
   modal.open(payload(), { trigger: opener });
   assert.equal(modal.isOpen(), true);
+  document.querySelector('.ts-activity-modal').click();
+  assert.equal(modal.isOpen(), false);
+  assert.equal(document.activeElement, opener);
+  modal.open(payload(), { trigger: opener });
   document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(modal.isOpen(), false);
   assert.equal(document.activeElement, opener);
   assert.equal(document.body.style.overflow, 'scroll');
   assert.equal(document.body.classList.contains('ts-modal-open'), false);
+  modal.destroy();
+});
+
+test('reusing an open drawer restores focus to the most recently selected employee', () => {
+  const dom = new JSDOM('<button id="first">First</button><button id="second">Second</button><main id="host"></main>');
+  const { document } = dom.window;
+  const first = document.querySelector('#first');
+  const second = document.querySelector('#second');
+  const modal = ActivityModal.create({ document, mount: document.querySelector('#host') });
+  modal.open(payload(), { trigger: first });
+  modal.open(payload({ target: { id: 3, name: 'Second' } }), { trigger: second });
+  assert.equal(document.querySelectorAll('.ts-activity-modal').length, 1);
+  modal.close();
+  assert.equal(document.activeElement, second);
   modal.destroy();
 });
 

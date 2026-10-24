@@ -69,19 +69,20 @@
   position: fixed;
   inset: 0;
   z-index: 2147483200;
-  display: grid;
-  place-items: center;
-  padding: 24px;
+  display: block;
+  padding: 0;
   background: rgba(20, 28, 38, 0.58);
 }
 
 .ts-activity-modal[hidden] { display: none; }
 
 .ts-activity-modal__panel {
-  width: min(520px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
+  width: min(520px, 100vw);
+  height: 100vh;
+  max-height: 100vh;
+  margin-left: auto;
   overflow: auto;
-  border-radius: 12px;
+  border-radius: 12px 0 0 12px;
   background: #fff;
   box-shadow: 0 20px 60px rgba(16, 24, 40, 0.24);
   color: #1f2937;

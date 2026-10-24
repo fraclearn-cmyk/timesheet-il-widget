@@ -21,14 +21,16 @@
 
   function normalizeDay(day) {
     if (!day || typeof day !== 'object') throw new TypeError('Day is required');
-    const startMs = timestamp(day.started_at, 'day start');
-    const endMs = timestamp(day.ended_at, 'day end');
-    if (endMs <= startMs) throw new RangeError('Day end must be after its start');
+    const startMs = timestamp(day.timeline_started_at, 'timeline start');
+    const endMs = timestamp(day.timeline_ended_at, 'timeline end');
+    if (endMs <= startMs) throw new RangeError('Timeline end must be after its start');
 
     const candidates = [];
     for (const source of Array.isArray(day.intervals) ? day.intervals : []) {
-      let itemStart = timestamp(source.started_at, 'interval start');
-      let itemEnd = timestamp(source.ended_at, 'interval end');
+      const sourceStartMs = timestamp(source.started_at, 'interval start');
+      const sourceEndMs = timestamp(source.ended_at, 'interval end');
+      let itemStart = sourceStartMs;
+      let itemEnd = sourceEndMs;
       const isPoint = source.duration_source === 'point' || itemStart === itemEnd;
       if (isPoint) {
         if (itemStart < startMs || itemStart >= endMs) continue;
@@ -42,6 +44,8 @@
         ...source,
         startMs: itemStart,
         endMs: itemEnd,
+        sourceStartMs,
+        sourceEndMs,
         isPoint,
         presentationDurationSeconds: isPoint ? 0 : Math.max(0, (itemEnd - itemStart) / 1000),
       });
@@ -174,16 +178,14 @@
     const hourScale = document.createElement('div');
     hourScale.className = 'ts-timeline__hours';
     hourScale.style.width = `${layout.width}px`;
-    const lastMinute = Math.round(layout.durationMinutes);
-    for (let minute = 0; minute <= lastMinute; minute += 60) {
+    for (const ratio of [0, 0.25, 0.5, 0.75, 1]) {
+      const minute = layout.durationMinutes * ratio;
       const label = document.createElement('span');
       label.className = 'ts-timeline__hour-label';
       label.style.left = `${minute * layout.zoom}px`;
-      label.textContent = minute === lastMinute
-        ? '24:00'
-        : formatClock(layout.startMs + (minute * MINUTE_MS), settings.timezone);
-      if (minute === 0) label.classList.add('ts-timeline__hour-label--first');
-      if (minute === lastMinute) label.classList.add('ts-timeline__hour-label--last');
+      label.textContent = formatClock(layout.startMs + (minute * MINUTE_MS), settings.timezone);
+      if (ratio === 0) label.classList.add('ts-timeline__hour-label--first');
+      if (ratio === 1) label.classList.add('ts-timeline__hour-label--last');
       hourScale.appendChild(label);
     }
     viewport.appendChild(hourScale);
@@ -249,11 +251,13 @@
           tooltip.appendChild(container);
         }
         appendText(document, container, members.length > 1 ? 'ts-timeline__tooltip-event-title' : 'ts-timeline__tooltip-title', sourceLabel(member));
-        const endLabel = member.isPoint ? '' : `–${formatClock(member.endMs, settings.timezone)}`;
+        const tooltipStart = Number.isFinite(member.sourceStartMs) ? member.sourceStartMs : member.startMs;
+        const tooltipEnd = Number.isFinite(member.sourceEndMs) ? member.sourceEndMs : member.endMs;
+        const endLabel = member.isPoint ? '' : `–${formatClock(tooltipEnd, settings.timezone)}`;
         if (members.length === 1) {
           appendText(document, container, 'ts-timeline__tooltip-date', `Дата: ${formatDate(layout.date)}`);
         }
-        appendText(document, container, 'ts-timeline__tooltip-time', `Время: ${formatClock(member.startMs, settings.timezone)}${endLabel}`);
+        appendText(document, container, 'ts-timeline__tooltip-time', `Время: ${formatClock(tooltipStart, settings.timezone)}${endLabel}`);
         appendText(document, container, 'ts-timeline__tooltip-type', `Тип: ${member.event_type || 'Не указан'}`);
         if (member.object_type || member.object_id !== null && member.object_id !== undefined) {
           const identifier = member.object_id === null || member.object_id === undefined ? '' : ` #${member.object_id}`;

@@ -69,7 +69,7 @@ function boot(options = {}) {
     },
     activity(userId, from, to, signal) {
       calls.push({ kind: 'activity', userId, from, to, signal });
-      return Promise.resolve(activity(userId));
+      return options.activity ? options.activity(userId, from, to, signal) : Promise.resolve(activity(userId));
     },
   };
   const dashboard = Dashboard.mount(dom.window.document.querySelector('#root'), {
@@ -172,6 +172,28 @@ test('requests exactly seven local dates and refreshes an open modal in place', 
   await tick();
   assert.equal(fixture.document.querySelector('.ts-activity-modal'), firstModal);
   assert.equal(fixture.calls.filter((call) => call.kind === 'activity').length, 2);
+  fixture.dashboard.destroy();
+});
+
+test('a stale first employee response cannot replace the second employee in one drawer', async () => {
+  let resolveFirst;
+  let resolveSecond;
+  const first = new Promise((resolve) => { resolveFirst = resolve; });
+  const second = new Promise((resolve) => { resolveSecond = resolve; });
+  const status = response({ employees: response().employees.map((employee) => ({
+    ...employee, activity_detail_allowed: true,
+  })) });
+  const fixture = boot({
+    statusQueue: [Promise.resolve(status)],
+    activity: (userId) => (userId === 2 ? first : second),
+  });
+  await fixture.dashboard.ready;
+  fixture.document.querySelector('[data-user-id="2"]').click();
+  fixture.document.querySelector('[data-user-id="3"]').click();
+  resolveSecond({ ...activity(3), target: { ...activity(3).target, name: 'Борис' } }); await tick();
+  resolveFirst(activity(2)); await tick(); await tick();
+  assert.equal(fixture.document.querySelectorAll('.ts-activity-modal').length, 1);
+  assert.match(fixture.document.querySelector('.ts-activity-modal__title').textContent, /Борис/);
   fixture.dashboard.destroy();
 });
 

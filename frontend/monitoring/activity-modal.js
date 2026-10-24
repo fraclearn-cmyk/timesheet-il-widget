@@ -198,9 +198,10 @@
     function open(nextPayload, openOptions) {
       if (destroyed) throw new Error('Activity modal is destroyed');
       payload = nextPayload || { state: 'loading' };
+      const trigger = openOptions && openOptions.trigger;
+      if (trigger && typeof trigger.focus === 'function') previousFocus = trigger;
       if (!opened) {
-        const trigger = openOptions && openOptions.trigger;
-        previousFocus = trigger && typeof trigger.focus === 'function' ? trigger : document.activeElement;
+        previousFocus = previousFocus || document.activeElement;
         previousOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
         document.body.classList.add('ts-modal-open');
@@ -230,7 +231,14 @@
       document.removeEventListener('keydown', onKeydown);
       document.body.style.overflow = previousOverflow;
       document.body.classList.remove('ts-modal-open');
-      if (previousFocus && typeof previousFocus.focus === 'function' && previousFocus.isConnected) previousFocus.focus();
+      const focusTarget = previousFocus;
+      const restoreFocus = () => {
+        if (focusTarget && typeof focusTarget.focus === 'function' && focusTarget.isConnected) focusTarget.focus();
+      };
+      restoreFocus();
+      if (document.defaultView && typeof document.defaultView.setTimeout === 'function') {
+        document.defaultView.setTimeout(restoreFocus, 0);
+      }
       previousFocus = null;
     }
 
@@ -238,6 +246,7 @@
       if (destroyed) return;
       close();
       closeButton.removeEventListener('click', close);
+      overlay.removeEventListener('click', onOverlayClick);
       fullscreenButton.removeEventListener('click', toggleFullscreen);
       for (const button of zoomButtons) button.removeEventListener('click', onZoomClick);
       document.removeEventListener('fullscreenchange', onFullscreenChange);
@@ -246,6 +255,10 @@
     }
 
     closeButton.addEventListener('click', close);
+    function onOverlayClick(event) {
+      if (event.target === overlay) close();
+    }
+    overlay.addEventListener('click', onOverlayClick);
     fullscreenButton.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', onFullscreenChange);
     function onZoomClick(event) {
